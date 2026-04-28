@@ -185,6 +185,86 @@ export async function generateApp(prompt, conversationId, messages, clarificatio
   return response.json()
 }
 
+export async function generateSpec(prompt, conversationId, clarificationAnswers = null) {
+  if (MOCK_MODE) {
+    // Mock spec for testing
+    await new Promise(r => setTimeout(r, 1500))
+    const workflowType = classifyPrompt(prompt)
+    const themeMap = {
+      approval_workflow: { name: 'violet', primary: '#8B5CF6', light: '#F5F3FF', text: '#1E1B4B' },
+      intake_tracker: { name: 'ocean', primary: '#0EA5E9', light: '#F0F9FF', text: '#0C4A6E' },
+      status_board: { name: 'forest', primary: '#10B981', light: '#F0FDF4', text: '#064E3B' },
+    }
+    const statusMap = {
+      approval_workflow: ['Pending Review', 'Approved', 'Rejected'],
+      intake_tracker: ['New', 'In Progress', 'Resolved', 'Closed'],
+      status_board: ['Active', 'In Progress', 'Complete', 'On Hold'],
+    }
+    const titleMap = {
+      approval_workflow: 'Request Approval Tracker',
+      intake_tracker: 'Issue Intake Tracker',
+      status_board: 'Project Status Board',
+    }
+    const spec = {
+      appTitle: titleMap[workflowType],
+      tagline: 'Streamline your workflow with ease',
+      purpose: 'This tool helps teams manage and track requests efficiently. It provides a centralized place to submit, review, and process items through a defined workflow.',
+      workflowType,
+      colorTheme: themeMap[workflowType],
+      features: [
+        'Submit requests with structured form fields',
+        'Track status through defined workflow stages',
+        'Review all submissions in a unified dashboard',
+        'Update and manage statuses in real time',
+      ],
+      fields: [
+        { label: 'Requester Name', type: 'text' },
+        { label: 'Requester Email', type: 'email' },
+        { label: 'Description', type: 'textarea' },
+        { label: 'Priority', type: 'select' },
+        { label: 'Status', type: 'select' },
+      ],
+      statusFlow: statusMap[workflowType],
+      primaryActionLabel: 'Submit Request',
+    }
+    const { supabase } = await import('./supabase.js')
+    await supabase.from('messages').insert({
+      conversation_id: conversationId,
+      role: 'assistant',
+      content: '',
+      message_type: 'spec',
+      metadata: { spec },
+    })
+    return { spec }
+  }
+
+  const response = await fetch('/api/spec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, conversationId, clarificationAnswers }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(err.error || 'Spec generation failed')
+  }
+  return response.json()
+}
+
+export async function buildApp(prompt, conversationId, spec, clarificationAnswers = null) {
+  if (MOCK_MODE) return mockGenerate(prompt, conversationId)
+
+  const response = await fetch('/api/build', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, conversationId, spec, clarificationAnswers }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(err.error || 'Build failed')
+  }
+  return response.json()
+}
+
 export async function submitForm(appId, formData) {
   if (MOCK_MODE) return mockSubmit(appId, formData)
 

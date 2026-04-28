@@ -38,6 +38,16 @@ app.post('/api/generate', async (req, res) => {
   return handler(req, res)
 })
 
+app.post('/api/spec', async (req, res) => {
+  const handler = await loadHandler('spec')
+  return handler(req, res)
+})
+
+app.post('/api/build', async (req, res) => {
+  const handler = await loadHandler('build')
+  return handler(req, res)
+})
+
 app.post('/api/submit', async (req, res) => {
   const handler = await loadHandler('submit')
   return handler(req, res)

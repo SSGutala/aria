@@ -1,6 +1,8 @@
 import React from 'react'
 import GeneratedAppCard from './GeneratedAppCard'
 import ClarificationCard from './ClarificationCard'
+import SpecCard from './SpecCard'
+import BuildingIndicator from './BuildingIndicator'
 
 function AIIcon() {
   return (
@@ -21,43 +23,8 @@ function AIIcon() {
   )
 }
 
-function TypingIndicator() {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-      <AIIcon />
-      <div style={{
-        background: '#1A1A1A',
-        border: '0.5px solid #222',
-        borderRadius: 10,
-        padding: '10px 14px',
-        display: 'flex',
-        gap: 4,
-        alignItems: 'center',
-      }}>
-        {[0, 1, 2].map(i => (
-          <div
-            key={i}
-            style={{
-              width: 5, height: 5, borderRadius: '50%',
-              background: '#525252',
-              animation: 'bounce 1.2s infinite',
-              animationDelay: `${i * 0.2}s`,
-            }}
-          />
-        ))}
-        <style>{`
-          @keyframes bounce {
-            0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
-            40% { transform: translateY(-4px); opacity: 1; }
-          }
-        `}</style>
-      </div>
-    </div>
-  )
-}
-
-export default function MessageBubble({ message, isTyping }) {
-  if (isTyping) return <TypingIndicator />
+export default function MessageBubble({ message, isTyping, buildingLabel }) {
+  if (isTyping) return <BuildingIndicator label={buildingLabel} />
 
   const isUser = message.role === 'user'
   const isAppCard = message.message_type === 'app_card'
@@ -93,6 +60,26 @@ export default function MessageBubble({ message, isTyping }) {
     )
   }
 
+  if (message.message_type === 'spec') {
+    const spec = message.metadata?.spec
+    if (!spec) return null
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <AIIcon />
+        {message.onBuild ? (
+          <SpecCard spec={spec} onBuild={message.onBuild} />
+        ) : (
+          <div style={{
+            background: '#1A1A1A', border: '0.5px solid #222', borderRadius: 10,
+            padding: '10px 13px', color: '#525252', fontSize: 12, maxWidth: '88%',
+          }}>
+            Spec reviewed, building app...
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (message.message_type === 'clarification' && message.metadata?.questions && message.onClarify) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -103,7 +90,6 @@ export default function MessageBubble({ message, isTyping }) {
   }
 
   if (message.message_type === 'clarification' && message.metadata?.questions && !message.onClarify) {
-    // already answered — show collapsed version
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
@@ -130,9 +116,7 @@ export default function MessageBubble({ message, isTyping }) {
         lineHeight: 1.6,
         maxWidth: '88%',
         whiteSpace: 'pre-wrap',
-      }}
-        dangerouslySetInnerHTML={message.content.includes('**') ? undefined : undefined}
-      >
+      }}>
         {renderContent(message.content)}
       </div>
     </div>

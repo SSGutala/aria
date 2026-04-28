@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import MessageBubble from './MessageBubble'
 
-export default function ChatArea({ messages, isTyping }) {
+export default function ChatArea({ messages, isTyping, buildingLabel }) {
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export default function ChatArea({ messages, isTyping }) {
       {messages.map(msg => (
         <MessageBubble key={msg.id} message={msg} />
       ))}
-      {isTyping && <MessageBubble isTyping />}
+      {isTyping && <MessageBubble isTyping buildingLabel={buildingLabel} />}
       <div ref={bottomRef} />
     </div>
   )

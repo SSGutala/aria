@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { generateApp } from '../lib/claude'
+import { generateApp, generateSpec, buildApp } from '../lib/claude'
 import Sidebar from '../components/Sidebar'
 import Topbar from '../components/Topbar'
 import ChatArea from '../components/ChatArea'
@@ -19,11 +19,15 @@ export default function Workspace() {
   const [currentConv, setCurrentConv] = useState(null)
   const [currentApp, setCurrentApp] = useState(null)
   const [isTyping, setIsTyping] = useState(false)
+  const [buildingLabel, setBuildingLabel] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
-  // Track pending clarification so we can resolve it inline
+  // Track pending state across clarification and spec steps
   const pendingPromptRef = useRef(null)
   const pendingClarMsgIdRef = useRef(null)
+  const pendingSpecMsgIdRef = useRef(null)
+  const pendingSpecRef = useRef(null)
+  const pendingClarAnswersRef = useRef(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -69,17 +73,115 @@ export default function Workspace() {
       .then(({ data }) => setCurrentApp(data || null))
     pendingPromptRef.current = null
     pendingClarMsgIdRef.current = null
+    pendingSpecMsgIdRef.current = null
+    pendingSpecRef.current = null
+    pendingClarAnswersRef.current = null
   }, [convId])
+
+  async function runSpec(prompt, clarificationAnswers = null) {
+    setBuildingLabel('Analyzing your prompt...')
+    setIsTyping(true)
+    try {
+      const result = await generateSpec(prompt, convId, clarificationAnswers)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const specId = Date.now().toString() + '_spec'
+      pendingSpecMsgIdRef.current = specId
+      pendingSpecRef.current = result.spec
+      pendingPromptRef.current = prompt
+      pendingClarAnswersRef.current = clarificationAnswers
+
+      const specMsg = {
+        id: specId,
+        role: 'assistant',
+        content: '',
+        message_type: 'spec',
+        metadata: { spec: result.spec },
+      }
+      setMessages(prev => [...prev, specMsg])
+    } catch (err) {
+      setIsTyping(false)
+      setBuildingLabel(null)
+      setMessages(prev => [...prev, {
+        id: Date.now().toString() + '_err',
+        role: 'assistant',
+        content: err.message || 'Failed to generate spec. Please try again.',
+        message_type: 'text',
+        isError: true,
+        metadata: {},
+      }])
+    }
+  }
+
+  async function handleBuildApp() {
+    const spec = pendingSpecRef.current
+    const prompt = pendingPromptRef.current
+    const clarAnswers = pendingClarAnswersRef.current
+    if (!spec || !prompt) return
+
+    // Collapse the spec card
+    pendingSpecMsgIdRef.current = null
+
+    const cyclingLabels = [
+      'Designing data structure...',
+      'Planning the workflow...',
+      'Crafting your form fields...',
+      'Building the app...',
+      'Almost ready...',
+    ]
+    let labelIdx = 0
+    setBuildingLabel(cyclingLabels[0])
+    setIsTyping(true)
+
+    const labelInterval = setInterval(() => {
+      labelIdx = (labelIdx + 1) % cyclingLabels.length
+      setBuildingLabel(cyclingLabels[labelIdx])
+    }, 1800)
+
+    try {
+      const result = await buildApp(prompt, convId, spec, clarAnswers)
+      clearInterval(labelInterval)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const { data: freshMsgs } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', convId)
+        .order('created_at')
+      setMessages(freshMsgs || [])
+      setCurrentApp({ slug: result.slug, id: result.appId, title: result.schema?.appTitle })
+      pendingSpecRef.current = null
+      pendingPromptRef.current = null
+      loadApps()
+      loadConversations()
+    } catch (err) {
+      clearInterval(labelInterval)
+      setIsTyping(false)
+      setBuildingLabel(null)
+      setMessages(prev => [...prev, {
+        id: Date.now().toString() + '_err',
+        role: 'assistant',
+        content: err.message || 'Build failed. Please try again.',
+        message_type: 'text',
+        isError: true,
+        metadata: {},
+      }])
+    }
+  }
 
   async function runGeneration(prompt, clarificationAnswers = null) {
     setIsTyping(true)
+    setBuildingLabel('Thinking...')
     try {
       const result = await generateApp(prompt, convId, [], clarificationAnswers)
       setIsTyping(false)
+      setBuildingLabel(null)
 
       if (result.type === 'clarification') {
-        // Store the pending prompt so we can resubmit after clarification
         pendingPromptRef.current = prompt
+        pendingClarAnswersRef.current = clarificationAnswers
         const clarId = Date.now().toString() + '_c'
         pendingClarMsgIdRef.current = clarId
         const clarMsg = {
@@ -91,8 +193,11 @@ export default function Workspace() {
         }
         setMessages(prev => [...prev, clarMsg])
 
+      } else if (result.needsClarification === false || !result.type) {
+        // No clarification needed, proceed to spec
+        await runSpec(prompt, clarificationAnswers)
+
       } else if (result.type === 'app_card') {
-        // Pull fresh messages from DB to get the confirmation msg too
         const { data: freshMsgs } = await supabase
           .from('messages')
           .select('*')
@@ -105,6 +210,7 @@ export default function Workspace() {
       }
     } catch (err) {
       setIsTyping(false)
+      setBuildingLabel(null)
       setMessages(prev => [...prev, {
         id: Date.now().toString() + '_err',
         role: 'assistant',
@@ -119,7 +225,6 @@ export default function Workspace() {
   async function handleSubmit(prompt) {
     if (!convId || !user) return
 
-    // Save user message
     const userMsg = {
       id: Date.now().toString(),
       role: 'user',
@@ -151,10 +256,8 @@ export default function Workspace() {
     const originalPrompt = pendingPromptRef.current
     if (!originalPrompt) return
 
-    // Collapse the clarification card (remove onClarify so it shows answered state)
     pendingClarMsgIdRef.current = null
 
-    // Show user's answers as a chat message
     const userAnswerMsg = {
       id: Date.now().toString() + '_ua',
       role: 'user',
@@ -171,10 +274,10 @@ export default function Workspace() {
       message_type: 'text',
     })
 
-    await runGeneration(originalPrompt, answers)
+    // After clarification, go straight to spec
+    await runSpec(originalPrompt, answers)
   }
 
-  // Attach onClarify handler to the pending clarification message
   const messagesWithHandlers = messages.map(m => {
     if (
       m.message_type === 'clarification' &&
@@ -182,6 +285,13 @@ export default function Workspace() {
       !isTyping
     ) {
       return { ...m, onClarify: handleClarification }
+    }
+    if (
+      m.message_type === 'spec' &&
+      m.id === pendingSpecMsgIdRef.current &&
+      !isTyping
+    ) {
+      return { ...m, onBuild: handleBuildApp }
     }
     return m
   })
@@ -205,7 +315,7 @@ export default function Workspace() {
         />
         {convId ? (
           <>
-            <ChatArea messages={messagesWithHandlers} isTyping={isTyping} />
+            <ChatArea messages={messagesWithHandlers} isTyping={isTyping} buildingLabel={buildingLabel} />
             <InputZone onSubmit={handleSubmit} disabled={isTyping} />
           </>
         ) : (
