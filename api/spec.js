@@ -9,7 +9,7 @@ const supabase = createClient(
 
 async function askClaude(prompt) {
   const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: 'claude-opus-4-7',
     max_tokens: 2048,
     system: 'You are a product designer and developer. Return only the requested JSON format, no explanation.',
     messages: [{ role: 'user', content: prompt }],
@@ -45,6 +45,7 @@ Generate a product specification with a distinctive, vibrant visual identity. Re
   "tagline": "One punchy line — what it does and why it matters",
   "purpose": "2-3 sentences: what it does, who uses it, the key value it delivers",
   "workflowType": "approval_workflow | intake_tracker | status_board",
+  "layoutType": "split | kanban | feed",
   "colorTheme": {
     "name": "a descriptive name like 'midnight indigo' or 'coral energy'",
     "primary": "A bold, saturated hex — not grey, not muted. Should feel premium and energetic.",
@@ -71,6 +72,11 @@ Color rules — pick the MOST vibrant, domain-appropriate color. Never pick a gr
 - Product/projects → sky #0284C7 (light #F0F9FF, text #0C4A6E)
 - Customer support/tickets → orange #EA580C (light #FFF7ED, text #7C2D12)
 - Everything else → pick the most fitting bold color from the list above
+
+Layout type rules — pick based on workflowType:
+- approval_workflow → "split" (form on left, submissions table on right)
+- status_board → "kanban" (horizontal columns, cards per item, FAB to add)
+- intake_tracker → "feed" (persistent side form panel, card feed on right)
 
 Status flow rules — make statuses specific and meaningful for this domain:
 - approval_workflow: 3 statuses (pending → approved/rejected)

@@ -15,7 +15,7 @@ function generateSlug(title) {
 
 async function askClaude(prompt) {
   const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: 'claude-opus-4-7',
     max_tokens: 2048,
     system: 'You are a helpful assistant. Return only the requested JSON, no explanation.',
     messages: [{ role: 'user', content: prompt }],
@@ -38,6 +38,7 @@ export default async function handler(req, res) {
   try {
     const context = clarificationAnswers ? `\nUser clarifications: ${clarificationAnswers}` : ''
     const workflowType = spec.workflowType
+    const layoutType = spec.layoutType || (workflowType === 'approval_workflow' ? 'split' : workflowType === 'status_board' ? 'kanban' : 'feed')
 
     // Generate full schema based on spec
     let schemaText = await askClaude(
@@ -53,6 +54,7 @@ Return JSON only:
 {
   "appTitle": "${spec.appTitle}",
   "workflowType": "${workflowType}",
+  "layoutType": "${layoutType}",
   "colorTheme": ${JSON.stringify(spec.colorTheme)},
   "fields": [
     {

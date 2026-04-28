@@ -9,7 +9,7 @@ const supabase = createClient(
 
 async function askClaude(prompt) {
   const msg = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5',
+    model: 'claude-opus-4-7',
     max_tokens: 800,
     system: 'You are a sharp product designer and developer at an AI startup. You are helpful, concise, and opinionated. Return only the requested JSON format, no explanation, no markdown.',
     messages: [{ role: 'user', content: prompt }],
