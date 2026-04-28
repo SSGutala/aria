@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
@@ -15,114 +15,133 @@ function Toast({ message }) {
   )
 }
 
-export default function Topbar({ conversation, app, onTitleChange }) {
+function EditableTitle({ value, placeholder, onSave, dim }) {
   const [editing, setEditing] = useState(false)
-  const [title, setTitle] = useState('')
+  const [draft, setDraft] = useState(value || '')
+  const inputRef = useRef(null)
+
+  // Sync if parent value changes (e.g. from sidebar rename)
+  useEffect(() => { if (!editing) setDraft(value || '') }, [value, editing])
+
+  function startEdit() { setDraft(value || ''); setEditing(true) }
+
+  function commit() {
+    setEditing(false)
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== value) onSave(trimmed)
+  }
+
+  useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setDraft(value || '') } }}
+        style={{
+          background: 'transparent', border: 'none',
+          borderBottom: '0.5px solid #3D3D3D',
+          outline: 'none',
+          color: '#F5F5F5', fontSize: 13, fontWeight: 500,
+          fontFamily: 'inherit', padding: '0 2px', minWidth: 60,
+          width: Math.max(120, draft.length * 8),
+        }}
+      />
+    )
+  }
+
+  return (
+    <span
+      onDoubleClick={startEdit}
+      title="Double-click to rename"
+      style={{
+        color: dim ? '#525252' : '#F5F5F5',
+        fontSize: 13, fontWeight: 500,
+        cursor: 'default', userSelect: 'none',
+      }}
+    >
+      {value || placeholder}
+    </span>
+  )
+}
+
+export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange }) {
   const [toast, setToast] = useState('')
 
-  function showToast(msg) {
-    setToast(msg)
-    setTimeout(() => setToast(''), 2000)
+  function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2000) }
+
+  async function saveConvTitle(title) {
+    if (!conversation) return
+    await supabase.from('conversations').update({ title }).eq('id', conversation.id)
+    onTitleChange(title)
   }
 
-  function startEdit() {
-    setTitle(conversation?.title || '')
-    setEditing(true)
-  }
-
-  async function saveTitle() {
-    setEditing(false)
-    if (!title.trim() || title === conversation?.title) return
-    await supabase.from('conversations').update({ title: title.trim() }).eq('id', conversation.id)
-    onTitleChange(title.trim())
+  async function saveAppTitle(title) {
+    if (!app) return
+    await supabase.from('generated_apps').update({ title }).eq('id', app.id)
+    onAppTitleChange(title)
   }
 
   function copyShareLink() {
     if (!app) return
     const url = `${window.location.origin}/app/${app.slug}`
-    navigator.clipboard.writeText(url).then(() => showToast('Copied!'))
+    navigator.clipboard.writeText(url).then(() => showToast('Link copied!'))
   }
 
   return (
     <>
       {toast && <Toast message={toast} />}
       <div style={{
-        height: 46,
-        borderBottom: '0.5px solid #1A1A1A',
-        padding: '0 20px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        flexShrink: 0,
+        height: 46, borderBottom: '0.5px solid #1A1A1A',
+        padding: '0 20px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
       }}>
-        {editing ? (
-          <input
-            autoFocus
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            onBlur={saveTitle}
-            onKeyDown={e => e.key === 'Enter' && saveTitle()}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              color: '#F5F5F5',
-              fontSize: 13,
-              fontWeight: 500,
-            }}
-          />
-        ) : (
-          <span
-            onDoubleClick={startEdit}
-            style={{ flex: 1, color: '#F5F5F5', fontSize: 13, fontWeight: 500, cursor: 'default', userSelect: 'none' }}
-          >
-            {conversation?.title || 'New conversation'}
-          </span>
-        )}
+        {/* Conversation title — always shown */}
+        <EditableTitle
+          value={conversation?.title}
+          placeholder="New conversation"
+          onSave={saveConvTitle}
+          dim={false}
+        />
 
+        {/* App title separator + name */}
         {app && (
           <>
+            <span style={{ color: '#2A2A2A', fontSize: 14 }}>/</span>
+            <EditableTitle
+              value={app.title}
+              placeholder="Untitled app"
+              onSave={saveAppTitle}
+              dim={false}
+            />
             <span style={{
-              background: '#1F1F1F',
-              color: '#A3A3A3',
-              border: '0.5px solid #2E2E2E',
-              padding: '3px 10px',
-              borderRadius: 20,
-              fontSize: 10,
+              background: '#1F1F1F', color: '#A3A3A3', border: '0.5px solid #2E2E2E',
+              padding: '3px 10px', borderRadius: 20, fontSize: 10,
             }}>
               Deployed
             </span>
-            <button
-              onClick={copyShareLink}
-              style={{
-                background: '#1A1A1A',
-                color: '#525252',
-                border: '0.5px solid #2A2A2A',
-                borderRadius: 6,
-                padding: '4px 10px',
-                fontSize: 11,
-                cursor: 'pointer',
-              }}
-            >
-              Share link
-            </button>
-            <button
-              onClick={() => window.open(`/app/${app.slug}`, '_blank')}
-              style={{
-                background: glareGradient,
-                color: '#111111',
-                border: '0.5px solid #484848',
-                borderRadius: 6,
-                padding: '4px 10px',
-                fontSize: 11,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              View app
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                onClick={copyShareLink}
+                style={{ background: '#1A1A1A', color: '#525252', border: '0.5px solid #2A2A2A', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Share link
+              </button>
+              <button
+                onClick={() => window.open(`/app/${app.slug}`, '_blank')}
+                style={{ background: glareGradient, color: '#111111', border: '0.5px solid #484848', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                View app
+              </button>
+            </div>
           </>
+        )}
+
+        {/* Hint when no app yet */}
+        {!app && conversation && (
+          <span style={{ fontSize: 11, color: '#2A2A2A', marginLeft: 4 }}>double-click to rename</span>
         )}
       </div>
     </>

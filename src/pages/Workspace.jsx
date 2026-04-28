@@ -60,6 +60,7 @@ export default function Workspace() {
       .from('generated_apps')
       .select('*')
       .eq('user_id', user.id)
+      .or('deleted.is.null,deleted.eq.false')
       .order('created_at', { ascending: false })
     setApps(data || [])
   }, [user])
@@ -338,13 +339,29 @@ export default function Workspace() {
           conversations={conversations}
           apps={apps}
           onConversationsChange={loadConversations}
+          onAppsChange={loadApps}
+          onConversationRename={(id, title) => {
+            setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
+            if (currentConv?.id === id) setCurrentConv(prev => prev ? { ...prev, title } : prev)
+          }}
+          onAppRename={(id, title) => {
+            setApps(prev => prev.map(a => a.id === id ? { ...a, title } : a))
+            if (currentApp?.id === id) setCurrentApp(prev => prev ? { ...prev, title } : prev)
+          }}
         />
       )}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', minWidth: 0 }}>
         <Topbar
           conversation={currentConv}
           app={currentApp}
-          onTitleChange={(t) => setCurrentConv(prev => prev ? { ...prev, title: t } : prev)}
+          onTitleChange={(t) => {
+            setCurrentConv(prev => prev ? { ...prev, title: t } : prev)
+            setConversations(prev => prev.map(c => c.id === currentConv?.id ? { ...c, title: t } : c))
+          }}
+          onAppTitleChange={(t) => {
+            setCurrentApp(prev => prev ? { ...prev, title: t } : prev)
+            setApps(prev => prev.map(a => a.id === currentApp?.id ? { ...a, title: t } : a))
+          }}
         />
         {convId ? (
           <>
