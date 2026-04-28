@@ -325,7 +325,11 @@ export default function Workspace() {
       m.id === pendingSpecMsgIdRef.current &&
       !isTyping
     ) {
-      return { ...m, onBuild: handleBuildApp }
+      return {
+        ...m,
+        onBuild: handleBuildApp,
+        onSpecChange: (updatedSpec) => { pendingSpecRef.current = updatedSpec },
+      }
     }
     return m
   })

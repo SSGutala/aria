@@ -3,100 +3,68 @@ import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { submitForm, updateStatus } from '../lib/claude'
 
-const THEME_ICONS = {
-  ocean: '🌊', forest: '🌿', violet: '✦', rose: '◆', amber: '⬡', slate: '▣'
-}
-
+/* ─── Theme helpers ───────────────────────────────────────────────────── */
 function getTheme(schema) {
   const ct = schema?.colorTheme
   return {
-    primary: ct?.primary || '#8B5CF6',
-    light: ct?.light || '#F5F3FF',
-    text: ct?.text || '#1E1B4B',
-    name: ct?.name || 'violet',
+    primary:  ct?.primary  || '#7C3AED',
+    light:    ct?.light    || '#F5F3FF',
+    text:     ct?.text     || '#2E1065',
+    name:     ct?.name     || 'violet',
   }
 }
 
-function statusBadgeStyle(status, primary, light, text) {
-  const s = (status || '').toLowerCase()
-  if (['pending review', 'new', 'active'].includes(s))
-    return { background: light, color: primary, border: `1px solid ${primary}33` }
-  if (['approved', 'resolved', 'complete'].includes(s))
-    return { background: '#F0FDF4', color: '#16A34A', border: '1px solid #86EFAC' }
-  if (['rejected', 'closed'].includes(s))
-    return { background: '#FFF1F2', color: '#E11D48', border: '1px solid #FDA4AF' }
-  if (['in progress'].includes(s))
-    return { background: '#FFF7ED', color: '#EA580C', border: '1px solid #FDBA74' }
-  if (['on hold'].includes(s))
-    return { background: '#F8FAFC', color: '#64748B', border: '1px solid #CBD5E1' }
-  return { background: light, color: text, border: `1px solid ${primary}22` }
+// Map status → semantic color set
+const STATUS_PALETTE = [
+  { bg: '#EFF6FF', text: '#1D4ED8', dot: '#3B82F6' }, // blue
+  { bg: '#F0FDF4', text: '#15803D', dot: '#22C55E' }, // green
+  { bg: '#FEF2F2', text: '#B91C1C', dot: '#EF4444' }, // red
+  { bg: '#FFF7ED', text: '#C2410C', dot: '#F97316' }, // orange
+  { bg: '#F5F3FF', text: '#6D28D9', dot: '#8B5CF6' }, // purple
+  { bg: '#ECFEFF', text: '#0E7490', dot: '#06B6D4' }, // cyan
+]
+
+function statusColors(index) {
+  return STATUS_PALETTE[index % STATUS_PALETTE.length]
 }
 
-function FieldInput({ field, value, onChange, primary, light }) {
+/* ─── Field input ─────────────────────────────────────────────────────── */
+function FieldInput({ field, value, onChange, primary }) {
   const base = {
-    width: '100%',
-    background: '#FFFFFF',
-    border: '1px solid #E5E7EB',
-    borderRadius: 8,
-    color: '#111827',
-    padding: '9px 12px',
-    fontSize: 13,
-    outline: 'none',
-    fontFamily: 'inherit',
-    boxSizing: 'border-box',
-    transition: 'border-color 0.15s',
+    width: '100%', boxSizing: 'border-box',
+    background: '#FAFAFA', border: '1.5px solid #E5E7EB',
+    borderRadius: 8, color: '#111827',
+    padding: '10px 13px', fontSize: 13, outline: 'none',
+    fontFamily: 'inherit', transition: 'border-color 0.15s, background 0.15s',
   }
+  const focusOn  = e => { e.target.style.borderColor = primary; e.target.style.background = '#fff' }
+  const focusOff = e => { e.target.style.borderColor = '#E5E7EB'; e.target.style.background = '#FAFAFA' }
 
   if (field.type === 'textarea') {
-    return (
-      <textarea
-        value={value || ''}
-        onChange={e => onChange(field.name, e.target.value)}
-        required={field.required}
-        placeholder={field.placeholder || field.label}
-        rows={3}
-        style={{ ...base, resize: 'vertical' }}
-        onFocus={e => e.target.style.borderColor = primary}
-        onBlur={e => e.target.style.borderColor = '#E5E7EB'}
-      />
-    )
+    return <textarea value={value || ''} onChange={e => onChange(field.name, e.target.value)}
+      required={field.required} placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+      rows={3} style={{ ...base, resize: 'vertical' }} onFocus={focusOn} onBlur={focusOff} />
   }
   if (field.type === 'select') {
     return (
-      <select
-        value={value || ''}
-        onChange={e => onChange(field.name, e.target.value)}
-        required={field.required}
-        style={{ ...base, cursor: 'pointer', appearance: 'none',
+      <select value={value || ''} onChange={e => onChange(field.name, e.target.value)}
+        required={field.required} onFocus={focusOn} onBlur={focusOff}
+        style={{ ...base, cursor: 'pointer', appearance: 'none', paddingRight: 36,
           backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2 4l4 4 4-4' stroke='%239CA3AF' strokeWidth='1.5' fill='none' strokeLinecap='round'/%3E%3C/svg%3E")`,
-          backgroundRepeat: 'no-repeat',
-          backgroundPosition: 'right 12px center',
-          paddingRight: 32,
-        }}
-        onFocus={e => e.target.style.borderColor = primary}
-        onBlur={e => e.target.style.borderColor = '#E5E7EB'}
-      >
-        <option value="">Select...</option>
-        {(field.options || []).map(opt => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
+          backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center',
+        }}>
+        <option value="">Select {field.label}...</option>
+        {(field.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
       </select>
     )
   }
-  return (
-    <input
-      type={field.type || 'text'}
-      value={value || ''}
-      onChange={e => onChange(field.name, e.target.value)}
-      required={field.required}
-      placeholder={field.placeholder || field.label}
-      style={base}
-      onFocus={e => e.target.style.borderColor = primary}
-      onBlur={e => e.target.style.borderColor = '#E5E7EB'}
-    />
-  )
+  return <input type={field.type || 'text'} value={value || ''}
+    onChange={e => onChange(field.name, e.target.value)} required={field.required}
+    placeholder={field.placeholder || `Enter ${field.label.toLowerCase()}...`}
+    style={base} onFocus={focusOn} onBlur={focusOff} />
 }
 
+/* ─── Main component ──────────────────────────────────────────────────── */
 export default function GeneratedApp() {
   const { slug } = useParams()
   const [app, setApp] = useState(null)
@@ -108,57 +76,32 @@ export default function GeneratedApp() {
   const [ticketId, setTicketId] = useState('')
   const [error, setError] = useState('')
   const [updatingId, setUpdatingId] = useState(null)
+  const [filterStatus, setFilterStatus] = useState('All')
 
   useEffect(() => {
     async function load() {
-      const { data: appData } = await supabase
-        .from('generated_apps')
-        .select('*')
-        .eq('slug', slug)
-        .single()
+      const { data: appData } = await supabase.from('generated_apps').select('*').eq('slug', slug).single()
       if (!appData) { setLoading(false); return }
       setApp(appData)
-
-      const { data: subs } = await supabase
-        .from('app_submissions')
-        .select('*')
-        .eq('app_id', appData.id)
-        .order('submitted_at', { ascending: false })
+      const { data: subs } = await supabase.from('app_submissions').select('*').eq('app_id', appData.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
       setLoading(false)
     }
     load()
   }, [slug])
 
-  function handleFieldChange(name, value) {
-    setFormData(prev => ({ ...prev, [name]: value }))
-  }
+  function handleFieldChange(name, value) { setFormData(prev => ({ ...prev, [name]: value }) )}
 
   async function handleSubmit(e) {
     e.preventDefault()
-    setSubmitting(true)
-    setError('')
+    setSubmitting(true); setError('')
     try {
       const result = await submitForm(app.id, formData)
-      setTicketId(result.ticketId)
-      setSubmitted(true)
-      const { data: subs } = await supabase
-        .from('app_submissions')
-        .select('*')
-        .eq('app_id', app.id)
-        .order('submitted_at', { ascending: false })
+      setTicketId(result.ticketId); setSubmitted(true)
+      const { data: subs } = await supabase.from('app_submissions').select('*').eq('app_id', app.id).order('submitted_at', { ascending: false })
       setSubmissions(subs || [])
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  function resetForm() {
-    setFormData({})
-    setSubmitted(false)
-    setTicketId('')
+    } catch (err) { setError(err.message) }
+    finally { setSubmitting(false) }
   }
 
   async function handleStatusChange(submissionId, newStatus) {
@@ -166,256 +109,251 @@ export default function GeneratedApp() {
     try {
       await updateStatus(submissionId, newStatus, app.id)
       setSubmissions(prev => prev.map(s => s.id === submissionId ? { ...s, status: newStatus } : s))
-    } catch (err) {
-      console.error('Status update failed', err)
-    } finally {
-      setUpdatingId(null)
-    }
+    } catch (err) { console.error(err) }
+    finally { setUpdatingId(null) }
   }
 
-  if (loading) {
-    return (
-      <div style={{ background: '#F9FAFB', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 13 }}>
-        Loading...
+  if (loading) return (
+    <div style={{ background: '#F8FAFC', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center', color: '#9CA3AF' }}>
+        <div style={{ width: 32, height: 32, border: '2px solid #E5E7EB', borderTopColor: '#6B7280', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ fontSize: 13 }}>Loading...</div>
       </div>
-    )
-  }
+    </div>
+  )
 
-  if (!app) {
-    return (
-      <div style={{ background: '#F9FAFB', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 13 }}>
-        App not found
-      </div>
-    )
-  }
+  if (!app) return (
+    <div style={{ background: '#F8FAFC', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: 13 }}>
+      App not found
+    </div>
+  )
 
-  const schema = app.schema || {}
-  const fields = schema.fields || []
-  const statusOptions = schema.statusOptions || ['Pending', 'Complete']
+  const schema       = app.schema || {}
+  const fields       = schema.fields || []
+  const statusOptions = schema.statusOptions || []
   const displayFields = fields.filter(f => f.name !== 'status')
-  const { primary, light, text: textColor, name: themeName } = getTheme(schema)
+  const { primary, light, text: textColor } = getTheme(schema)
+
+  // Status → index for color
+  const statusIndex = {}
+  statusOptions.forEach((s, i) => { statusIndex[s] = i })
+
+  // Stats per status
+  const stats = statusOptions.map((s, i) => ({
+    label: s,
+    count: submissions.filter(sub => sub.status === s).length,
+    colors: statusColors(i),
+  }))
+  const totalCount = submissions.length
+
+  // Filtered list
+  const visible = filterStatus === 'All' ? submissions : submissions.filter(s => s.status === filterStatus)
 
   return (
-    <div style={{ background: '#F9FAFB', minHeight: '100vh' }}>
-      {/* Top nav bar */}
-      <div style={{
-        background: '#FFFFFF',
-        borderBottom: '1px solid #E5E7EB',
-        padding: '0 32px',
-        height: 56,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        position: 'sticky',
-        top: 0,
-        zIndex: 10,
-      }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: 7,
-          background: primary,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14,
-        }}>
-          {THEME_ICONS[themeName] || '◆'}
+    <div style={{ background: '#F8FAFC', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .sub-row:hover { background: #FAFAFA !important; }
+      `}</style>
+
+      {/* ── Top nav ── */}
+      <div style={{ background: '#fff', borderBottom: '1px solid #F3F4F6', padding: '0 32px', height: 58, display: 'flex', alignItems: 'center', gap: 14, position: 'sticky', top: 0, zIndex: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ width: 34, height: 34, borderRadius: 9, background: primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+          {'✦'}
         </div>
-        <span style={{ fontWeight: 600, fontSize: 15, color: '#111827', letterSpacing: '-0.3px' }}>
-          {app.title}
-        </span>
-        <span style={{
-          background: light, color: primary,
-          border: `1px solid ${primary}33`,
-          padding: '2px 8px', borderRadius: 20, fontSize: 10, fontWeight: 500,
-          marginLeft: 4,
-        }}>
-          Live
-        </span>
-        <span style={{ color: '#9CA3AF', fontSize: 12, marginLeft: 4 }}>
-          {submissions.length} submission{submissions.length !== 1 ? 's' : ''}
-        </span>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#111827', letterSpacing: '-0.3px', lineHeight: 1.1 }}>{app.title}</div>
+          <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>{schema.workflowType?.replace('_', ' ')}</div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22C55E', display: 'inline-block' }} />
+          <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 500 }}>Live</span>
+        </div>
+        <span style={{ color: '#9CA3AF', fontSize: 12, marginLeft: 2 }}>{totalCount} submission{totalCount !== 1 ? 's' : ''}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <button
+            onClick={() => navigator.clipboard.writeText(window.location.href).then(() => {})}
+            style={{ background: '#F9FAFB', color: '#374151', border: '1px solid #E5E7EB', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}
+          >
+            Share link
+          </button>
+        </div>
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '32px auto', padding: '0 24px' }}>
-        <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
-
-          {/* Form panel */}
-          <div style={{ width: 380, flexShrink: 0 }}>
-            <div style={{
-              background: '#FFFFFF',
-              border: '1px solid #E5E7EB',
-              borderRadius: 14,
-              overflow: 'hidden',
-              boxShadow: '0 1px 8px rgba(0,0,0,0.06)',
-            }}>
-              {/* Form header */}
-              <div style={{ background: primary, padding: '20px 24px' }}>
-                <h2 style={{ margin: 0, color: '#fff', fontSize: 16, fontWeight: 600, letterSpacing: '-0.3px' }}>
-                  {schema.primaryActionLabel || 'New Request'}
-                </h2>
-                <p style={{ margin: '4px 0 0', color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
-                  Fill out the form below to submit
-                </p>
-              </div>
-
-              <div style={{ padding: 24 }}>
-                {submitted ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '24px 0', textAlign: 'center' }}>
-                    <div style={{
-                      width: 48, height: 48, borderRadius: '50%',
-                      background: light,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                        <path d="M4 11l5 5 9-9" stroke={primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    </div>
-                    <div>
-                      <p style={{ margin: 0, fontWeight: 600, fontSize: 15, color: '#111827' }}>Submitted!</p>
-                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#6B7280' }}>Your request has been received</p>
-                    </div>
-                    <div style={{
-                      background: light, border: `1px solid ${primary}33`,
-                      borderRadius: 8, padding: '6px 14px',
-                      color: primary, fontSize: 13, fontWeight: 600, fontFamily: 'monospace',
-                    }}>{ticketId}</div>
-                    <button
-                      onClick={resetForm}
-                      style={{
-                        background: '#F9FAFB', color: '#374151', border: '1px solid #E5E7EB',
-                        borderRadius: 8, padding: '8px 18px', fontSize: 13, cursor: 'pointer',
-                        fontFamily: 'inherit', fontWeight: 500, marginTop: 4,
-                      }}
-                    >
-                      Submit another
-                    </button>
-                  </div>
-                ) : (
-                  <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {displayFields.map(field => (
-                      <div key={field.name}>
-                        <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 5 }}>
-                          {field.label}
-                          {field.required && <span style={{ color: primary, marginLeft: 2 }}>*</span>}
-                        </label>
-                        <FieldInput field={field} value={formData[field.name]} onChange={handleFieldChange} primary={primary} light={light} />
-                      </div>
-                    ))}
-                    {error && <p style={{ color: '#EF4444', fontSize: 12, margin: 0 }}>{error}</p>}
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      style={{
-                        background: submitting ? '#E5E7EB' : primary,
-                        color: submitting ? '#9CA3AF' : '#fff',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '11px 20px',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: submitting ? 'default' : 'pointer',
-                        marginTop: 6,
-                        fontFamily: 'inherit',
-                        letterSpacing: '-0.2px',
-                      }}
-                    >
-                      {submitting ? 'Submitting...' : (schema.primaryActionLabel || 'Submit')}
-                    </button>
-                  </form>
-                )}
-              </div>
-            </div>
+      {/* ── Stats bar ── */}
+      <div style={{ background: '#fff', borderBottom: '1px solid #F3F4F6', padding: '14px 32px', display: 'flex', gap: 12 }}>
+        {/* Total */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: light, borderRadius: 9, border: `1px solid ${primary}22` }}>
+          <span style={{ fontSize: 20, fontWeight: 800, color: primary, lineHeight: 1 }}>{totalCount}</span>
+          <span style={{ fontSize: 11, color: textColor, fontWeight: 500, lineHeight: 1.2 }}>Total</span>
+        </div>
+        {stats.map(({ label, count, colors }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: colors.bg, borderRadius: 9, border: `1px solid ${colors.dot}22` }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: colors.dot, flexShrink: 0 }} />
+            <span style={{ fontSize: 20, fontWeight: 800, color: colors.text, lineHeight: 1 }}>{count}</span>
+            <span style={{ fontSize: 11, color: colors.text, fontWeight: 500, lineHeight: 1.2, maxWidth: 90, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
           </div>
+        ))}
+      </div>
 
-          {/* Submissions panel */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              background: '#FFFFFF',
-              border: '1px solid #E5E7EB',
-              borderRadius: 14,
-              overflow: 'hidden',
-              boxShadow: '0 1px 8px rgba(0,0,0,0.06)',
-            }}>
-              <div style={{ padding: '16px 24px', borderBottom: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#111827' }}>
-                  Submissions
-                </h2>
-                <span style={{ fontSize: 12, color: '#6B7280' }}>
-                  {submissions.length} total
-                </span>
-              </div>
+      {/* ── Main content ── */}
+      <div style={{ maxWidth: 1200, margin: '28px auto', padding: '0 24px', display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
-              {submissions.length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 13, padding: '48px 24px' }}>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>
-                  No submissions yet
+        {/* ── Form panel ── */}
+        <div style={{ width: 370, flexShrink: 0 }}>
+          <div style={{ background: '#fff', border: '1px solid #F3F4F6', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+            {/* Form header with colored top border */}
+            <div style={{ borderTop: `4px solid ${primary}`, padding: '20px 24px 16px' }}>
+              <h2 style={{ margin: '0 0 3px', fontSize: 16, fontWeight: 700, color: '#111827', letterSpacing: '-0.3px' }}>
+                {schema.primaryActionLabel || 'New Submission'}
+              </h2>
+              <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF' }}>Fill in the details below</p>
+            </div>
+
+            <div style={{ padding: '0 24px 24px' }}>
+              {submitted ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '28px 0', textAlign: 'center', animation: 'fadeIn 0.3s ease' }}>
+                  <div style={{ width: 52, height: 52, borderRadius: '50%', background: light, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                      <path d="M5 13l4 4L19 7" stroke={primary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p style={{ margin: '0 0 4px', fontWeight: 700, fontSize: 15, color: '#111827' }}>Submitted successfully</p>
+                    <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF' }}>Your entry has been recorded</p>
+                  </div>
+                  <div style={{ background: light, border: `1px solid ${primary}33`, borderRadius: 8, padding: '7px 18px', color: primary, fontSize: 13, fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.04em' }}>
+                    {ticketId}
+                  </div>
+                  <button onClick={() => { setFormData({}); setSubmitted(false); setTicketId('') }}
+                    style={{ background: '#F9FAFB', color: '#374151', border: '1px solid #E5E7EB', borderRadius: 8, padding: '9px 20px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, marginTop: 4 }}>
+                    Submit another
+                  </button>
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#F9FAFB' }}>
-                        <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          Ticket
-                        </th>
-                        {displayFields.slice(0, 4).map(f => (
-                          <th key={f.name} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                            {f.label}
-                          </th>
-                        ))}
-                        <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
-                          Status
-                        </th>
-                        <th style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
-                          Date
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {submissions.map((sub, idx) => (
-                        <tr key={sub.id} style={{ borderTop: '1px solid #F3F4F6', background: idx % 2 === 0 ? '#FFFFFF' : '#FAFAFA' }}>
-                          <td style={{ padding: '12px 16px', fontSize: 12, color: '#6B7280', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                            {sub.ticket_id}
-                          </td>
-                          {displayFields.slice(0, 4).map(f => (
-                            <td key={f.name} style={{ padding: '12px 16px', fontSize: 13, color: '#374151', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {sub.data?.[f.name] ?? ''}
-                            </td>
-                          ))}
-                          <td style={{ padding: '12px 16px' }}>
-                            <select
-                              value={sub.status || ''}
-                              onChange={e => handleStatusChange(sub.id, e.target.value)}
-                              disabled={updatingId === sub.id}
-                              style={{
-                                ...statusBadgeStyle(sub.status, primary, light, textColor),
-                                border: `1px solid ${primary}33`,
-                                borderRadius: 6,
-                                padding: '4px 10px',
-                                fontSize: 11,
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                                outline: 'none',
-                                opacity: updatingId === sub.id ? 0.5 : 1,
-                              }}
-                            >
-                              {statusOptions.map(opt => (
-                                <option key={opt} value={opt}>{opt}</option>
-                              ))}
-                            </select>
-                          </td>
-                          <td style={{ padding: '12px 16px', fontSize: 12, color: '#9CA3AF', whiteSpace: 'nowrap' }}>
-                            {new Date(sub.submitted_at).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {displayFields.map(field => (
+                    <div key={field.name}>
+                      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                        {field.label}
+                        {field.required && <span style={{ color: primary, marginLeft: 2 }}>*</span>}
+                      </label>
+                      <FieldInput field={field} value={formData[field.name]} onChange={handleFieldChange} primary={primary} />
+                    </div>
+                  ))}
+                  {error && <p style={{ color: '#EF4444', fontSize: 12, margin: 0, background: '#FEF2F2', padding: '8px 12px', borderRadius: 7 }}>{error}</p>}
+                  <button type="submit" disabled={submitting}
+                    style={{ background: submitting ? '#E5E7EB' : primary, color: submitting ? '#9CA3AF' : '#fff', border: 'none', borderRadius: 9, padding: '12px', fontSize: 13, fontWeight: 700, cursor: submitting ? 'default' : 'pointer', marginTop: 6, fontFamily: 'inherit', letterSpacing: '-0.2px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    {submitting ? (
+                      <><div style={{ width: 12, height: 12, border: '1.5px solid #9CA3AF', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />Submitting...</>
+                    ) : schema.primaryActionLabel || 'Submit'}
+                  </button>
+                </form>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* ── Submissions panel ── */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ background: '#fff', border: '1px solid #F3F4F6', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
+            {/* Panel header + filter tabs */}
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid #F9FAFB', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#111827' }}>Submissions</h2>
+              <div style={{ display: 'flex', gap: 4, marginLeft: 8, flexWrap: 'wrap' }}>
+                {['All', ...statusOptions].map(s => (
+                  <button key={s} onClick={() => setFilterStatus(s)}
+                    style={{
+                      background: filterStatus === s ? primary : '#F9FAFB',
+                      color: filterStatus === s ? '#fff' : '#6B7280',
+                      border: filterStatus === s ? 'none' : '1px solid #E5E7EB',
+                      borderRadius: 6, padding: '4px 12px', fontSize: 11, fontWeight: 500,
+                      cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.12s',
+                    }}>
+                    {s} {s !== 'All' && <span style={{ opacity: 0.75 }}>({stats.find(st => st.label === s)?.count ?? 0})</span>}
+                  </button>
+                ))}
+              </div>
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: '#9CA3AF' }}>{visible.length} shown</span>
+            </div>
+
+            {visible.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '56px 24px', color: '#9CA3AF' }}>
+                <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.4 }}>📋</div>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 500, color: '#374151' }}>No submissions yet</p>
+                <p style={{ margin: '6px 0 0', fontSize: 12 }}>Use the form to submit the first entry</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#FAFAFA', borderBottom: '1px solid #F3F4F6' }}>
+                      <th style={thStyle}>#</th>
+                      {displayFields.slice(0, 4).map(f => <th key={f.name} style={thStyle}>{f.label}</th>)}
+                      <th style={thStyle}>Status</th>
+                      <th style={thStyle}>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((sub, idx) => {
+                      const sIdx = statusIndex[sub.status] ?? 0
+                      const sc   = statusColors(sIdx)
+                      return (
+                        <tr key={sub.id} className="sub-row" style={{ borderBottom: '1px solid #F9FAFB', transition: 'background 0.1s' }}>
+                          <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 11, color: '#9CA3AF' }}>{sub.ticket_id}</td>
+                          {displayFields.slice(0, 4).map(f => (
+                            <td key={f.name} style={{ ...tdStyle, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {String(sub.data?.[f.name] ?? '')}
+                            </td>
+                          ))}
+                          <td style={tdStyle}>
+                            <div style={{ position: 'relative', display: 'inline-block' }}>
+                              <select
+                                value={sub.status || ''}
+                                onChange={e => handleStatusChange(sub.id, e.target.value)}
+                                disabled={updatingId === sub.id}
+                                style={{
+                                  background: sc.bg, color: sc.text,
+                                  border: `1px solid ${sc.dot}44`,
+                                  borderRadius: 6, padding: '4px 24px 4px 9px',
+                                  fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                                  fontFamily: 'inherit', outline: 'none',
+                                  appearance: 'none',
+                                  opacity: updatingId === sub.id ? 0.5 : 1,
+                                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' stroke='%23${sc.text.slice(1)}' strokeWidth='1.2' fill='none' strokeLinecap='round'/%3E%3C/svg%3E")`,
+                                  backgroundRepeat: 'no-repeat',
+                                  backgroundPosition: 'right 6px center',
+                                }}
+                              >
+                                {statusOptions.map(opt => <option key={opt} value={opt} style={{ background: '#fff', color: '#111' }}>{opt}</option>)}
+                              </select>
+                            </div>
+                          </td>
+                          <td style={{ ...tdStyle, color: '#9CA3AF', fontSize: 11, whiteSpace: 'nowrap' }}>
+                            {new Date(sub.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+const thStyle = {
+  padding: '10px 16px', textAlign: 'left',
+  fontSize: 11, color: '#9CA3AF',
+  fontWeight: 600, textTransform: 'uppercase',
+  letterSpacing: '0.05em', whiteSpace: 'nowrap',
+}
+const tdStyle = {
+  padding: '13px 16px', fontSize: 13, color: '#374151',
 }

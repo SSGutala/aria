@@ -67,7 +67,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
         {message.onBuild ? (
-          <SpecCard spec={spec} onBuild={message.onBuild} />
+          <SpecCard spec={spec} onBuild={message.onBuild} onSpecChange={message.onSpecChange} />
         ) : (
           <div style={{
             background: '#1A1A1A', border: '0.5px solid #222', borderRadius: 10,
