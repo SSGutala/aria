@@ -26,14 +26,17 @@ function extractJSON(text) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, conversationId, clarificationAnswers } = req.body
+  const { prompt, conversationId, clarificationAnswers, conversationHistory } = req.body
   if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing fields' })
 
   try {
     const context = clarificationAnswers ? `\nUser clarifications: ${clarificationAnswers}` : ''
+    const historyContext = conversationHistory && conversationHistory.length > 0
+      ? `\nConversation history: ${conversationHistory.map(m => `${m.role === 'user' ? 'User' : 'Aria'}: ${m.content}`).filter(l => !l.endsWith(': ')).join(' | ')}`
+      : ''
 
     const specText = await askClaude(
-      `You are designing an internal business tool. Given this description: "${prompt}"${context}
+      `You are designing an internal business tool. Given this description: "${prompt}"${context}${historyContext}
 
 Generate a product specification. Return JSON only:
 

@@ -26,14 +26,19 @@ function extractJSON(text) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, conversationId, clarificationAnswers } = req.body
+  const { prompt, conversationId, clarificationAnswers, conversationHistory } = req.body
   if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing required fields' })
 
   try {
+    // Build conversation context summary for memory
+    const historyContext = conversationHistory && conversationHistory.length > 0
+      ? `\n\nConversation history so far:\n${conversationHistory.map(m => `${m.role === 'user' ? 'User' : 'Aria'}: ${m.content}`).filter(l => !l.endsWith(': ')).join('\n')}\n\nGiven this history, the user's latest message is: "${prompt}"\nInterpret it in context — if they say "recreate", "redo", "change", "make it X instead", treat it as a follow-up to what was already discussed, not a new standalone request.`
+      : ''
+
     // Only check for clarification if no answers provided yet
     if (!clarificationAnswers) {
       const response = await askClaude(
-        `A user wants to build this internal business tool: "${prompt}"
+        `A user wants to build this internal business tool: "${prompt}"${historyContext}
 
 You are a sharp AI product designer. First, write a 1-2 sentence response that:
 - Confirms you understand what they want to build

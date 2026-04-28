@@ -2,6 +2,13 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateApp, generateSpec, buildApp } from '../lib/claude'
+
+// Helper: extract plain text messages for memory context
+function toHistoryMessages(msgs) {
+  return msgs
+    .filter(m => m.content && m.message_type === 'text')
+    .map(m => ({ role: m.role, content: m.content }))
+}
 import Sidebar from '../components/Sidebar'
 import Topbar from '../components/Topbar'
 import ChatArea from '../components/ChatArea'
@@ -42,6 +49,7 @@ export default function Workspace() {
       .from('conversations')
       .select('*')
       .eq('user_id', user.id)
+      .or('deleted.is.null,deleted.eq.false')
       .order('updated_at', { ascending: false })
     setConversations(data || [])
   }, [user])
@@ -82,7 +90,7 @@ export default function Workspace() {
     setBuildingLabel('Analyzing your prompt...')
     setIsTyping(true)
     try {
-      const result = await generateSpec(prompt, convId, clarificationAnswers)
+      const result = await generateSpec(prompt, convId, clarificationAnswers, toHistoryMessages(messages))
       setIsTyping(false)
       setBuildingLabel(null)
 
@@ -175,7 +183,7 @@ export default function Workspace() {
     setIsTyping(true)
     setBuildingLabel('Thinking...')
     try {
-      const result = await generateApp(prompt, convId, [], clarificationAnswers)
+      const result = await generateApp(prompt, convId, toHistoryMessages(messages), clarificationAnswers)
       setIsTyping(false)
       setBuildingLabel(null)
 

@@ -173,10 +173,16 @@ async function mockUpdateStatus(submissionId, newStatus, appId) {
 export async function generateApp(prompt, conversationId, messages, clarificationAnswers = null) {
   if (MOCK_MODE) return mockGenerate(prompt, conversationId)
 
+  // Pass last 10 messages as conversation history for memory
+  const conversationHistory = (messages || []).slice(-10).map(m => ({
+    role: m.role,
+    content: m.content || '',
+  }))
+
   const response = await fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, messages, clarificationAnswers }),
+    body: JSON.stringify({ prompt, conversationId, messages, clarificationAnswers, conversationHistory }),
   })
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Request failed' }))
@@ -185,7 +191,7 @@ export async function generateApp(prompt, conversationId, messages, clarificatio
   return response.json()
 }
 
-export async function generateSpec(prompt, conversationId, clarificationAnswers = null) {
+export async function generateSpec(prompt, conversationId, clarificationAnswers = null, conversationHistory = []) {
   if (MOCK_MODE) {
     // Mock spec for testing
     await new Promise(r => setTimeout(r, 1500))
@@ -241,7 +247,7 @@ export async function generateSpec(prompt, conversationId, clarificationAnswers 
   const response = await fetch('/api/spec', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, clarificationAnswers }),
+    body: JSON.stringify({ prompt, conversationId, clarificationAnswers, conversationHistory }),
   })
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Request failed' }))
