@@ -182,19 +182,44 @@ export default function Workspace() {
       if (result.type === 'clarification') {
         pendingPromptRef.current = prompt
         pendingClarAnswersRef.current = clarificationAnswers
+
+        const newMsgs = []
+
+        // Show the intro as a regular text bubble first
+        if (result.intro) {
+          newMsgs.push({
+            id: Date.now().toString() + '_intro',
+            role: 'assistant',
+            content: result.intro,
+            message_type: 'text',
+            metadata: {},
+          })
+        }
+
+        // Then show the clarification card
         const clarId = Date.now().toString() + '_c'
         pendingClarMsgIdRef.current = clarId
-        const clarMsg = {
+        newMsgs.push({
           id: clarId,
           role: 'assistant',
           content: '',
           message_type: 'clarification',
           metadata: { questions: result.questions },
-        }
-        setMessages(prev => [...prev, clarMsg])
+        })
+
+        setMessages(prev => [...prev, ...newMsgs])
 
       } else if (result.needsClarification === false || !result.type) {
-        // No clarification needed, proceed to spec
+        // Show intro if present, then proceed to spec
+        if (result.intro) {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString() + '_intro',
+            role: 'assistant',
+            content: result.intro,
+            message_type: 'text',
+            metadata: {},
+          }])
+        }
         await runSpec(prompt, clarificationAnswers)
 
       } else if (result.type === 'app_card') {

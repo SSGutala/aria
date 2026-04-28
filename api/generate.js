@@ -10,8 +10,8 @@ const supabase = createClient(
 async function askClaude(prompt) {
   const msg = await anthropic.messages.create({
     model: 'claude-sonnet-4-5',
-    max_tokens: 512,
-    system: 'You are a helpful assistant. Return only the requested JSON format, no explanation.',
+    max_tokens: 800,
+    system: 'You are a sharp product designer and developer at an AI startup. You are helpful, concise, and opinionated. Return only the requested JSON format, no explanation, no markdown.',
     messages: [{ role: 'user', content: prompt }],
   })
   return msg.content[0].text
@@ -32,31 +32,67 @@ export default async function handler(req, res) {
   try {
     // Only check for clarification if no answers provided yet
     if (!clarificationAnswers) {
-      const vagueCheck = await askClaude(
-        `Given this user prompt: "${prompt}"
+      const response = await askClaude(
+        `A user wants to build this internal business tool: "${prompt}"
 
-Assess how clear it is for building an internal business tool.
-Only ask for clarification if the prompt is genuinely ambiguous. If it mentions specific fields, users, or workflows, proceed without questions.
+You are a sharp AI product designer. First, write a 1-2 sentence response that:
+- Confirms you understand what they want to build
+- Shows you have a clear creative vision for it (mention the type of tool, the UX direction, or an analogy to a known product if apt)
+- Ends by saying you have a couple of quick decisions to lock in first (only if questions are needed)
 
-If clarification is needed, identify up to 3 (fewer is better) of the most important gaps. For each, provide 3-5 short answer options.
+Then, decide if you need 1-3 clarifying questions. Only ask if the answers would meaningfully change the UI, the data model, or the key workflow of what you build. Do NOT ask generic questions. Questions must be specific to this exact product.
+
+Good question topics (pick only what actually matters for THIS product):
+- Who are the primary users and what actions do they take
+- The most important piece of information to capture in the form
+- How items should be prioritized, sorted, or routed
+- Whether there are multiple user roles with different access
+- Key workflow decision (e.g. does the manager approve or just view)
+- What the most important status states are
+
+Bad questions to avoid:
+- "What color theme?" (we decide this)
+- "What is this tool for?" (already told us)
+- Generic scope questions that don't affect the UI
+
+If the prompt is already detailed enough to build without questions, do NOT ask any.
 
 Return JSON only:
 {
+  "intro": "1-2 sentence message (no em-dashes, use plain dashes if needed)",
   "needsClarification": true,
   "questions": [
     {
-      "question": "short question text",
+      "question": "Specific question directly tied to this product",
       "options": ["Option A", "Option B", "Option C"]
     }
   ]
 }
-OR if clear enough:
-{ "needsClarification": false }`
+OR if clear enough to build:
+{
+  "intro": "1-2 sentence message acknowledging the request and your vision",
+  "needsClarification": false
+}`
       )
 
-      const vague = extractJSON(vagueCheck)
-      if (vague.needsClarification && vague.questions?.length > 0) {
-        const questions = vague.questions.slice(0, 3)
+      const parsed = extractJSON(response)
+      const intro = parsed.intro || ''
+
+      if (parsed.needsClarification && parsed.questions?.length > 0) {
+        const questions = parsed.questions.slice(0, 3)
+
+        // Save the intro as a text message
+        if (intro) {
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: intro,
+            message_type: 'text',
+            metadata: {},
+          })
+        }
+
+        // Save the clarification card
         await supabase.from('messages').insert({
           conversation_id: conversationId,
           role: 'assistant',
@@ -64,11 +100,15 @@ OR if clear enough:
           message_type: 'clarification',
           metadata: { questions },
         })
-        return res.json({ type: 'clarification', questions })
+
+        return res.json({ type: 'clarification', intro, questions })
       }
+
+      // No clarification needed - return intro and proceed to spec
+      return res.json({ needsClarification: false, intro })
     }
 
-    // No clarification needed — frontend will call /api/spec next
+    // Answers provided - proceed to spec
     return res.json({ needsClarification: false })
 
   } catch (err) {
