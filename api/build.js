@@ -20,7 +20,7 @@ function extractJSON(text) {
 }
 
 // ─── Generate the full custom HTML app ───────────────────────────────────────
-async function generateAppHTML(spec, appId) {
+async function generateAppHTML(spec, appId, simplified = false) {
   const { primary, light, text: textColor } = spec.colorTheme || {}
   const p = primary || '#7C3AED'
   const l = light || '#F5F3FF'
@@ -123,6 +123,17 @@ body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'I
 </head>
 <body>
 <div id="root"></div>
+<div id="error-overlay" style="display:none;position:fixed;inset:0;background:#FEF2F2;padding:40px;font-family:monospace;font-size:13px;color:#991B1B;white-space:pre-wrap;overflow:auto;z-index:9999"></div>
+<script>
+window.onerror = function(msg, src, line, col, err) {
+  var el = document.getElementById('error-overlay')
+  if (el) { el.style.display = 'block'; el.textContent = 'JS Error: ' + msg + '\nLine: ' + line + '\n\n' + (err && err.stack ? err.stack : '') }
+}
+window.addEventListener('unhandledrejection', function(e) {
+  var el = document.getElementById('error-overlay')
+  if (el) { el.style.display = 'block'; el.textContent = 'Promise Error: ' + (e.reason && e.reason.stack ? e.reason.stack : e.reason) }
+})
+</script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef, Fragment } = React
 
@@ -161,9 +172,24 @@ const statusColor = (status) => {
 // 8. Animations: cards fadeIn on load, modal scales in, status updates flash briefly
 // 9. All colors use PRIMARY (${p}), LIGHT (${l}), TEXT_COLOR (${t}) variables — no hardcoded colors for brand elements
 
-// YOUR APP CODE HERE:
+// ─── YOUR COMPLETE APP CODE GOES HERE ────────────────────────────────────────
+// CRITICAL RULES TO AVOID BLANK PAGE:
+// 1. Define ALL components BEFORE the ReactDOM.createRoot call
+// 2. The LAST line of this script must be: ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+// 3. Never use import/export — everything is in one script
+// 4. Use React.Fragment or <> </> not import Fragment
+// 5. All variables (API, APP_ID, PRIMARY, etc.) are already defined above — use them directly
+// 6. Keep code concise — avoid deeply nested components
+// 7. Always wrap ReactDOM.createRoot in try/catch
 
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App))
+// Define your App component and any sub-components here, then render at the bottom:
+
+try {
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+} catch(e) {
+  document.getElementById('error-overlay').style.display = 'block'
+  document.getElementById('error-overlay').textContent = 'Render error: ' + e.message + '\n' + e.stack
+}
 </script>
 </body>
 </html>
@@ -182,11 +208,43 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 
 Return ONLY the complete HTML. Must end with </html>. No markdown, no explanation.`
 
+  // On retry, use a much simpler prompt that produces less code
+  const finalPrompt = simplified ? `Generate a simple but complete working React web app for: "${spec.appTitle}"
+Purpose: ${spec.purpose}
+Fields: ${spec.fields.map(f => f.label).join(', ')}
+Statuses: ${spec.statusFlow.join(', ')}
+Color: ${p}
+API base: ${apiBase}, App ID: ${appId}
+
+Use this exact shell:
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>${spec.appTitle}</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>*{box-sizing:border-box}body{margin:0;font-family:sans-serif;background:#f8fafc}</style>
+</head><body><div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect}=React
+const API='${apiBase}',APP_ID='${appId}',PRIMARY='${p}'
+
+function App(){
+  // WRITE A SIMPLE WORKING APP HERE
+  // Load submissions: GET API+'/api/submissions?appId='+APP_ID
+  // Submit form: POST API+'/api/submit' body:{appId:APP_ID,formData:{...}}
+  // Update status: POST API+'/api/update-status' body:{submissionId,status,appId:APP_ID}
+  return <div>Loading...</div>
+}
+
+try{ReactDOM.createRoot(document.getElementById('root')).render(<App/>)}catch(e){document.body.innerHTML='<pre style="color:red">'+e.message+'</pre>'}
+</script></body></html>
+
+Keep it under 200 lines. Return ONLY the HTML.` : prompt
+
   const msg = await anthropic.messages.create({
     model: 'claude-opus-4-7',
     max_tokens: 16000,
     system: 'You are an expert React/HTML engineer. Return only the complete HTML document, nothing else. No markdown fences, no explanation. The HTML MUST end with </html>.',
-    messages: [{ role: 'user', content: prompt }],
+    messages: [{ role: 'user', content: finalPrompt }],
   })
 
   // Extract text content only
@@ -199,13 +257,11 @@ Return ONLY the complete HTML. Must end with </html>. No markdown, no explanatio
   // Strip any accidental markdown fences
   let html = raw.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim()
 
-  // Safety check: if truncated, close it out so the browser doesn't get broken HTML
-  if (!html.includes('</html>')) {
-    console.warn('Generated HTML appears truncated — attempting to close it')
-    // Close any open script/body/html tags
-    if (!html.includes('</script>')) html += '\n</script>'
-    if (!html.includes('</body>')) html += '\n</body>'
-    html += '\n</html>'
+  // Validate completeness
+  const isComplete = html.includes('</html>') && html.includes('ReactDOM.createRoot') && html.includes('function App')
+  if (!isComplete) {
+    console.warn('Generated HTML incomplete — retrying with simplified prompt')
+    return generateAppHTML(spec, appId, true) // retry flag
   }
 
   return html
