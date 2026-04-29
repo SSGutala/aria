@@ -5,6 +5,7 @@ import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Workspace from './pages/Workspace'
 import GeneratedApp from './pages/GeneratedApp'
+import Settings from './pages/Settings'
 
 function ProtectedRoute({ children, session }) {
   if (session === undefined) return null
@@ -47,6 +48,14 @@ export default function App() {
           }
         />
         <Route path="/app/:slug" element={<GeneratedApp />} />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute session={session}>
+              <Settings />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   )

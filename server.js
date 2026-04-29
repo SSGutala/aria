@@ -58,6 +58,44 @@ app.post('/api/update-status', async (req, res) => {
   return handler(req, res)
 })
 
+// ─── M365 routes ─────────────────────────────────────────────────────────────
+app.get('/api/m365/auth', async (req, res) => {
+  const { default: h } = await import('./api/m365/auth.js')
+  return h(req, res)
+})
+app.get('/api/m365/callback', async (req, res) => {
+  const { default: h } = await import('./api/m365/callback.js')
+  return h(req, res)
+})
+app.get('/api/m365/status', async (req, res) => {
+  const { default: h } = await import('./api/m365/status.js')
+  return h(req, res)
+})
+app.post('/api/m365/disconnect', async (req, res) => {
+  const { default: h } = await import('./api/m365/disconnect.js')
+  return h(req, res)
+})
+app.get('/api/m365/sharepoint-sites', async (req, res) => {
+  const { default: h } = await import('./api/m365/sharepoint-sites.js')
+  return h(req, res)
+})
+app.get('/api/m365/teams-channels', async (req, res) => {
+  const { default: h } = await import('./api/m365/teams-channels.js')
+  return h(req, res)
+})
+
+// ─── Document generation ─────────────────────────────────────────────────────
+app.post('/api/documents/generate', async (req, res) => {
+  const { default: h } = await import('./api/documents/generate.js')
+  return h(req, res)
+})
+
+// ─── Integration execution ───────────────────────────────────────────────────
+app.post('/api/integrations/execute', async (req, res) => {
+  const { default: h } = await import('./api/integrations/execute.js')
+  return h(req, res)
+})
+
 const PORT = 3001
 app.listen(PORT, () => {
   console.log(`API server running on http://localhost:${PORT}`)

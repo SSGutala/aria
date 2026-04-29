@@ -392,6 +392,22 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
           )}
         </div>
 
+        {/* Settings link */}
+        <div style={{ padding: '0 8px 6px' }}>
+          <button
+            onClick={() => window.location.href = '/settings'}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: 'none', borderRadius: 7, padding: '7px 8px', cursor: 'pointer', color: '#525252', fontSize: 12, fontFamily: 'inherit', textAlign: 'left' }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#1A1A1A'; e.currentTarget.style.color = '#A3A3A3' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#525252' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <circle cx="6.5" cy="6.5" r="2" stroke="currentColor" strokeWidth="1.2"/>
+              <path d="M6.5 1v1.5M6.5 10.5V12M1 6.5h1.5M10.5 6.5H12M2.6 2.6l1.1 1.1M9.3 9.3l1.1 1.1M9.3 3.7L8.2 4.8M3.7 9.3L2.6 10.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            Settings & Integrations
+          </button>
+        </div>
+
         {/* Profile */}
         <div style={{ borderTop: '0.5px solid #1A1A1A', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg, #2A2A2A, #4A4A4A)', border: '0.5px solid #3D3D3D', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 10, fontWeight: 600, color: '#D4D4D4' }}>

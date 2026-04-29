@@ -57,7 +57,14 @@ Generate a product specification with a distinctive, vibrant visual identity. Re
     { "label": "Human readable name", "type": "text | number | email | date | select | textarea" }
   ],
   "statusFlow": ["Status names specific to this domain"],
-  "primaryActionLabel": "Action verb + noun (e.g. 'Submit Request', 'Log Issue', 'Add Task')"
+  "primaryActionLabel": "Action verb + noun (e.g. 'Submit Request', 'Log Issue', 'Add Task')",
+  "integrations": {
+    "sharepoint": { "enabled": false, "reason": "only true if user mentioned SharePoint/M365 storage" },
+    "outlook": { "enabled": false, "toField": null, "subject": null, "reason": "only true if user mentioned email delivery or notifications" },
+    "teams": { "enabled": false, "messageTemplate": null, "reason": "only true if user mentioned Teams notifications" },
+    "documentGeneration": { "enabled": false, "templateDescription": null, "deliveryField": null, "reason": "only true if user mentioned generating documents, reports, or certificates" }
+  },
+  "roles": []
 }
 
 Color rules — pick the MOST vibrant, domain-appropriate color. Never pick a grey or muted tone:
@@ -84,7 +91,21 @@ Status flow rules — make statuses specific and meaningful for this domain:
 - status_board: 4 statuses that reflect real project stages for this domain
 
 Features rules: exactly 4, each very specific to THIS tool (not generic)
-Fields rules: 4-7 fields tailored to the domain, always end with a status select field`
+Fields rules: 4-7 fields tailored to the domain, always end with a status select field
+
+Integration rules:
+- Only set enabled:true for integrations the user explicitly mentioned or implied
+- If user mentions "send email", "notify", "deliver to" → outlook.enabled = true, set toField to the email field name
+- If user mentions "SharePoint", "M365", "store in Microsoft" → sharepoint.enabled = true
+- If user mentions "Teams", "notify channel" → teams.enabled = true
+- If user mentions "generate document", "auto-fill template", "create report", "send certificate" → documentGeneration.enabled = true, set templateDescription to what the document should be
+- subject should be a natural email subject line with {field} placeholders
+- messageTemplate for Teams should include key field values
+
+Roles rules:
+- Only populate if user mentioned different access levels, roles, or "different views per person"
+- If roles needed: [{ "name": "Admin", "can": ["view_all", "change_status", "export"], "description": "Full access" }, { "name": "Submitter", "can": ["submit", "view_own"], "description": "Can submit and see own entries" }]
+- Keep roles to 2-4 maximum`
     )
 
     const spec = extractJSON(specText)

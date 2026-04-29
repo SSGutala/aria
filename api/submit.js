@@ -94,6 +94,17 @@ export default async function handler(req, res) {
       console.error('Notification email failed:', emailErr)
     }
 
+    // Fire M365 integration actions asynchronously (don't block response)
+    const integrations = schema.integrations || {}
+    const hasM365Integrations = Object.values(integrations).some(v => v?.enabled)
+    if (hasM365Integrations) {
+      fetch(`${process.env.API_BASE_URL || 'http://localhost:3001'}/api/integrations/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appId, submissionId: submission.id, formData, userId: app.user_id, ticketId }),
+      }).catch(e => console.error('Integration execution error:', e))
+    }
+
     return res.json({ success: true, ticketId, submission })
   } catch (err) {
     console.error('Submit error:', err)

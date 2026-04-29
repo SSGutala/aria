@@ -39,6 +39,8 @@ export default async function handler(req, res) {
     const context = clarificationAnswers ? `\nUser clarifications: ${clarificationAnswers}` : ''
     const workflowType = spec.workflowType
     const layoutType = spec.layoutType || (workflowType === 'approval_workflow' ? 'split' : workflowType === 'status_board' ? 'kanban' : 'feed')
+    const integrations = spec.integrations || {}
+    const roles = spec.roles || []
 
     // Generate full schema based on spec
     let schemaText = await askClaude(
@@ -55,6 +57,8 @@ Return JSON only:
   "appTitle": "${spec.appTitle}",
   "workflowType": "${workflowType}",
   "layoutType": "${layoutType}",
+  "integrations": ${JSON.stringify(integrations)},
+  "roles": ${JSON.stringify(roles)},
   "colorTheme": ${JSON.stringify(spec.colorTheme)},
   "fields": [
     {
