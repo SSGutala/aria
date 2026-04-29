@@ -169,36 +169,46 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 </html>
 
 ═══ DESIGN RULES ═══
-1. This is an ENTERPRISE tool — clean, professional, high information density
-2. Domain authenticity: labels/placeholders must feel real for ${spec.appTitle} users
-3. Status badges use STATUS_COLORS array — each status gets a distinct color
-4. Primary button always uses PRIMARY color with white text
-5. Form fields: subtle background (#F8FAFC), border on focus turns PRIMARY color
-6. Empty states: icon + headline + subtext + CTA button — never just "No data"
-7. Loading: centered spinner using PRIMARY color border
-8. Error: red-tinted card with retry button
-9. Ticket IDs displayed in monospace font with subtle styling
-10. Dates formatted as "May 12" style (short month + day)
+- Enterprise tool: clean, professional, high information density
+- Every label/placeholder must feel authentic to ${spec.appTitle}
+- Status badges use STATUS_COLORS — distinct color per status
+- Primary button: PRIMARY color, white text
+- Form fields: #F8FAFC bg, border turns PRIMARY on focus
+- Empty states: icon + headline + subtext + CTA
+- Loading: spinner with PRIMARY border color
+- Ticket IDs in monospace. Dates as "May 12" format.
+- Write CONCISE, efficient React — avoid unnecessary verbosity
+- IMPORTANT: The complete HTML must fit in one response. Keep components lean.
 
-Return ONLY the complete HTML document. Start with <!DOCTYPE html>. No markdown, no code blocks, no explanation.`
+Return ONLY the complete HTML. Must end with </html>. No markdown, no explanation.`
 
   const msg = await anthropic.messages.create({
     model: 'claude-opus-4-7',
-    max_tokens: 8000,
-    thinking: { type: 'adaptive' },
-    system: 'You are an expert React/HTML engineer. Return only the complete HTML document, nothing else. No markdown fences, no explanation.',
+    max_tokens: 16000,
+    system: 'You are an expert React/HTML engineer. Return only the complete HTML document, nothing else. No markdown fences, no explanation. The HTML MUST end with </html>.',
     messages: [{ role: 'user', content: prompt }],
   })
 
-  // Extract text content (skip thinking blocks)
-  const html = msg.content
+  // Extract text content only
+  const raw = msg.content
     .filter(b => b.type === 'text')
     .map(b => b.text)
     .join('')
     .trim()
 
   // Strip any accidental markdown fences
-  return html.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim()
+  let html = raw.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim()
+
+  // Safety check: if truncated, close it out so the browser doesn't get broken HTML
+  if (!html.includes('</html>')) {
+    console.warn('Generated HTML appears truncated — attempting to close it')
+    // Close any open script/body/html tags
+    if (!html.includes('</script>')) html += '\n</script>'
+    if (!html.includes('</body>')) html += '\n</body>'
+    html += '\n</html>'
+  }
+
+  return html
 }
 
 // ─── Generate lean metadata schema ───────────────────────────────────────────
