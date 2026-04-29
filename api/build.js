@@ -275,7 +275,7 @@ export default async function handler(req, res) {
         schema,
         table_name: tableName,
         notification_config: schema.notificationConfig || {},
-        status: 'building',
+        status: 'deployed',
         slug,
       })
       .select()

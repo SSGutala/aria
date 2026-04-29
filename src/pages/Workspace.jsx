@@ -169,14 +169,55 @@ export default function Workspace() {
       clearInterval(labelInterval)
       setIsTyping(false)
       setBuildingLabel(null)
+
+      // Auto-retry once on constraint/server errors before surfacing to user
+      const isRetryable = err.message && (
+        err.message.includes('constraint') ||
+        err.message.includes('violates') ||
+        err.message.includes('500') ||
+        err.message.includes('fetch')
+      )
+
+      if (isRetryable && !handleBuildApp._retried) {
+        handleBuildApp._retried = true
+        setMessages(prev => [...prev, {
+          id: Date.now().toString() + '_retry',
+          role: 'assistant',
+          content: 'Ran into a snag — retrying automatically...',
+          message_type: 'text',
+          metadata: {},
+        }])
+        setTimeout(() => {
+          handleBuildApp._retried = false
+          handleBuildApp()
+        }, 1500)
+        return
+      }
+
+      handleBuildApp._retried = false
       setMessages(prev => [...prev, {
         id: Date.now().toString() + '_err',
         role: 'assistant',
-        content: err.message || 'Build failed. Please try again.',
+        content: err.message?.includes('constraint')
+          ? 'There was a configuration issue on our end. The spec is still saved — click "Build this app" again to retry.'
+          : err.message || 'Build failed. Please try again.',
         message_type: 'text',
         isError: true,
         metadata: {},
       }])
+
+      // Re-attach the build button to the spec so user can retry
+      if (pendingSpecRef.current) {
+        const retryId = Date.now().toString() + '_spec_retry'
+        pendingSpecMsgIdRef.current = retryId
+        setMessages(prev => [...prev, {
+          id: retryId,
+          role: 'assistant',
+          content: '',
+          message_type: 'spec',
+          metadata: { spec: pendingSpecRef.current },
+        }])
+      }
     }
   }
 
