@@ -13,22 +13,238 @@ function generateSlug(title) {
   return `${base}-${rand}`
 }
 
-async function askClaude(prompt) {
-  const msg = await anthropic.messages.create({
-    model: 'claude-opus-4-7',
-    max_tokens: 2048,
-    system: 'You are a helpful assistant. Return only the requested JSON, no explanation.',
-    messages: [{ role: 'user', content: prompt }],
-  })
-  return msg.content[0].text
-}
-
 function extractJSON(text) {
   const match = text.match(/\{[\s\S]*\}/)
   if (!match) throw new Error('No JSON found')
   return JSON.parse(match[0])
 }
 
+// ─── Generate the full custom HTML app ───────────────────────────────────────
+async function generateAppHTML(spec, appId) {
+  const { primary, light, text: textColor } = spec.colorTheme || {}
+  const p = primary || '#7C3AED'
+  const l = light || '#F5F3FF'
+  const t = textColor || '#2E1065'
+  const apiBase = process.env.API_BASE_URL || 'http://localhost:3001'
+  const layoutType = spec.layoutType || 'split'
+
+  const layoutInstructions = {
+    kanban: `
+LAYOUT — KANBAN BOARD:
+- Full-width horizontal columns, one per status
+- Each column has a header with status name + card count badge
+- Cards inside each column show key submission info at a glance
+- A prominent "+ ${spec.primaryActionLabel || 'Add Item'}" button in the top nav opens a MODAL FORM
+- Clicking a card could expand it to show all details
+- Drag feel (visual only, no actual DnD needed) — cards should look like they belong in columns
+- Empty columns show a dashed placeholder with encouraging text
+- The board should scroll horizontally if there are many columns`,
+
+    feed: `
+LAYOUT — INTAKE FEED:
+- Fixed left sidebar (320px) contains the form — always visible, never scrolls away
+- Right side is a scrollable feed of submission cards
+- Each card shows: primary field value (bold headline), secondary fields as metadata chips, status badge (colored), ticket ID, date
+- Filter pills above the feed to filter by status
+- Cards animate in with a subtle fade
+- The form sidebar has a colored accent top border using PRIMARY color
+- Empty feed shows a friendly illustration-style empty state`,
+
+    split: `
+LAYOUT — SPLIT VIEW:
+- Left panel (380px fixed): the submission form with a gradient header using PRIMARY color
+- Right panel (flex): tabbed or filtered data table/list
+- Stats bar below the top nav: total count + per-status counts as colored chips
+- Table has: ticket ID, key fields (first 3-4), status dropdown (inline, colored), date
+- Filter tabs across the top of the right panel
+- Rows have subtle hover state
+- The form should feel like a polished SaaS intake form`,
+  }
+
+  const prompt = `You are a senior product engineer at a world-class SaaS company (think Linear, Notion, Vercel). Your job is to generate a COMPLETE, production-quality web application as a single self-contained HTML file.
+
+This app must feel like it was purpose-built for this exact use case — NOT a generic form template. Every label, placeholder, empty state, color choice, and layout decision should reflect the specific domain.
+
+═══ APP SPECIFICATION ═══
+Title: "${spec.appTitle}"
+Tagline: "${spec.tagline || ''}"
+Purpose: "${spec.purpose}"
+Workflow type: ${spec.workflowType}
+Primary action: "${spec.primaryActionLabel || 'Submit'}"
+Fields: ${JSON.stringify(spec.fields, null, 2)}
+Status flow: ${JSON.stringify(spec.statusFlow)}
+Primary color: ${p}
+Light color: ${l}
+Text color: ${t}
+
+═══ LAYOUT TO BUILD ═══
+${layoutInstructions[layoutType] || layoutInstructions.split}
+
+═══ API ENDPOINTS (fetch, CORS enabled) ═══
+const API = '${apiBase}'
+const APP_ID = '${appId}'
+
+// Load submissions on mount and after actions
+GET \`\${API}/api/submissions?appId=\${APP_ID}\`
+→ { submissions: [{ id, ticket_id, data: {field_name: value}, status, submitted_at }] }
+
+// Submit form
+POST \`\${API}/api/submit\`
+body: JSON.stringify({ appId: APP_ID, formData: { field_name: value } })
+headers: { 'Content-Type': 'application/json' }
+→ { ticketId: "XXX-001", submission: { id, ... } }
+
+// Update status inline
+POST \`\${API}/api/update-status\`
+body: JSON.stringify({ submissionId: "uuid", status: "New Status", appId: APP_ID })
+headers: { 'Content-Type': 'application/json' }
+
+═══ HTML STRUCTURE (use exactly this shell) ═══
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${spec.appTitle}</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif; background: #F8FAFC; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes modalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: none; } }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, Fragment } = React
+
+const API = '${apiBase}'
+const APP_ID = '${appId}'
+const PRIMARY = '${p}'
+const LIGHT = '${l}'
+const TEXT_COLOR = '${t}'
+const STATUS_OPTIONS = ${JSON.stringify(spec.statusFlow)}
+const FIELDS = ${JSON.stringify(spec.fields)}
+const PRIMARY_ACTION = '${spec.primaryActionLabel || 'Submit'}'
+
+// Status colors — cycle through these per status index
+const STATUS_COLORS = [
+  { bg: '#EFF6FF', text: '#1D4ED8', dot: '#3B82F6', border: '#BFDBFE' },
+  { bg: '#F0FDF4', text: '#15803D', dot: '#22C55E', border: '#BBF7D0' },
+  { bg: '#FEF2F2', text: '#B91C1C', dot: '#EF4444', border: '#FECACA' },
+  { bg: '#FFF7ED', text: '#C2410C', dot: '#F97316', border: '#FED7AA' },
+  { bg: '#F5F3FF', text: '#6D28D9', dot: '#8B5CF6', border: '#DDD6FE' },
+  { bg: '#ECFEFF', text: '#0E7490', dot: '#06B6D4', border: '#A5F3FC' },
+]
+const statusColor = (status) => {
+  const idx = STATUS_OPTIONS.indexOf(status)
+  return STATUS_COLORS[idx >= 0 ? idx % STATUS_COLORS.length : 0]
+}
+
+// ─── Write your complete React app below ─────────────────────────────────────
+// Requirements:
+// 1. UNIQUE to "${spec.appTitle}" — not a generic template. Every detail matters.
+// 2. Load submissions on mount with useEffect → GET /api/submissions
+// 3. Handle all states: loading (spinner), error (friendly message), empty (encouraging CTA)
+// 4. Form submission: POST /api/submit → show success with ticket ID → refresh list
+// 5. Status updates: inline dropdown/selector → POST /api/update-status → optimistic update
+// 6. The nav/header must show app name, live status dot, entry count, and primary action button
+// 7. Domain-specific touches: use real-world labels, help text, placeholders for ${spec.appTitle}
+// 8. Animations: cards fadeIn on load, modal scales in, status updates flash briefly
+// 9. All colors use PRIMARY (${p}), LIGHT (${l}), TEXT_COLOR (${t}) variables — no hardcoded colors for brand elements
+
+// YOUR APP CODE HERE:
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App))
+</script>
+</body>
+</html>
+
+═══ DESIGN RULES ═══
+1. This is an ENTERPRISE tool — clean, professional, high information density
+2. Domain authenticity: labels/placeholders must feel real for ${spec.appTitle} users
+3. Status badges use STATUS_COLORS array — each status gets a distinct color
+4. Primary button always uses PRIMARY color with white text
+5. Form fields: subtle background (#F8FAFC), border on focus turns PRIMARY color
+6. Empty states: icon + headline + subtext + CTA button — never just "No data"
+7. Loading: centered spinner using PRIMARY color border
+8. Error: red-tinted card with retry button
+9. Ticket IDs displayed in monospace font with subtle styling
+10. Dates formatted as "May 12" style (short month + day)
+
+Return ONLY the complete HTML document. Start with <!DOCTYPE html>. No markdown, no code blocks, no explanation.`
+
+  const msg = await anthropic.messages.create({
+    model: 'claude-opus-4-7',
+    max_tokens: 8000,
+    thinking: { type: 'adaptive' },
+    system: 'You are an expert React/HTML engineer. Return only the complete HTML document, nothing else. No markdown fences, no explanation.',
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  // Extract text content (skip thinking blocks)
+  const html = msg.content
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('')
+    .trim()
+
+  // Strip any accidental markdown fences
+  return html.replace(/^```html?\n?/i, '').replace(/\n?```$/i, '').trim()
+}
+
+// ─── Generate lean metadata schema ───────────────────────────────────────────
+async function generateSchema(spec) {
+  const msg = await anthropic.messages.create({
+    model: 'claude-opus-4-7',
+    max_tokens: 1024,
+    system: 'Return only valid JSON, no explanation.',
+    messages: [{
+      role: 'user',
+      content: `Generate a metadata schema for this app spec. Return JSON only:
+{
+  "appTitle": "${spec.appTitle}",
+  "workflowType": "${spec.workflowType}",
+  "layoutType": "${spec.layoutType || 'split'}",
+  "colorTheme": ${JSON.stringify(spec.colorTheme)},
+  "fields": ${JSON.stringify(spec.fields)},
+  "statusOptions": ${JSON.stringify(spec.statusFlow)},
+  "defaultStatus": "${spec.statusFlow[0]}",
+  "primaryActionLabel": "${spec.primaryActionLabel || 'Submit'}",
+  "integrations": ${JSON.stringify(spec.integrations || {})},
+  "roles": ${JSON.stringify(spec.roles || [])}
+}`,
+    }],
+  })
+
+  try {
+    return extractJSON(msg.content[0].text)
+  } catch {
+    // Return a safe fallback schema
+    return {
+      appTitle: spec.appTitle,
+      workflowType: spec.workflowType,
+      layoutType: spec.layoutType || 'split',
+      colorTheme: spec.colorTheme,
+      fields: spec.fields,
+      statusOptions: spec.statusFlow,
+      defaultStatus: spec.statusFlow[0],
+      primaryActionLabel: spec.primaryActionLabel || 'Submit',
+      integrations: spec.integrations || {},
+      roles: spec.roles || [],
+    }
+  }
+}
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -36,86 +252,30 @@ export default async function handler(req, res) {
   if (!prompt || !conversationId || !spec) return res.status(400).json({ error: 'Missing fields' })
 
   try {
-    const context = clarificationAnswers ? `\nUser clarifications: ${clarificationAnswers}` : ''
-    const workflowType = spec.workflowType
-    const layoutType = spec.layoutType || (workflowType === 'approval_workflow' ? 'split' : workflowType === 'status_board' ? 'kanban' : 'feed')
-    const integrations = spec.integrations || {}
-    const roles = spec.roles || []
-
-    // Generate full schema based on spec
-    let schemaText = await askClaude(
-      `Build a complete app schema based on this approved spec:
-App Title: ${spec.appTitle}
-Purpose: ${spec.purpose}
-Workflow Type: ${workflowType}
-Fields: ${spec.fields.map(f => `${f.label} (${f.type})`).join(', ')}
-Status Flow: ${spec.statusFlow.join(', ')}
-Color Theme: ${JSON.stringify(spec.colorTheme)}${context}
-
-Return JSON only:
-{
-  "appTitle": "${spec.appTitle}",
-  "workflowType": "${workflowType}",
-  "layoutType": "${layoutType}",
-  "integrations": ${JSON.stringify(integrations)},
-  "roles": ${JSON.stringify(roles)},
-  "colorTheme": ${JSON.stringify(spec.colorTheme)},
-  "fields": [
-    {
-      "name": "snake_case_name",
-      "label": "Human Readable Label",
-      "type": "text | number | email | date | select | textarea",
-      "required": true,
-      "options": [],
-      "placeholder": "helpful placeholder text"
-    }
-  ],
-  "statusOptions": ${JSON.stringify(spec.statusFlow)},
-  "defaultStatus": "${spec.statusFlow[0]}",
-  "primaryActionLabel": "${spec.primaryActionLabel || 'Submit'}",
-  "notificationConfig": {
-    "sendConfirmationToSubmitter": true,
-    "submitterEmailField": null,
-    "notifyOnSubmission": false,
-    "notifyEmails": [],
-    "priorityRouting": false,
-    "priorityField": null,
-    "priorityRules": []
-  }
-}
-
-Rules:
-- Use EXACTLY the fields from the spec (in order), always add status as LAST field
-- Status field: type "select", options = statusOptions
-- Email fields: type "email". Dollar/number fields: type "number". Long text: type "textarea"
-- Set submitterEmailField to the email field name if one exists
-- Include helpful placeholder text for each field`
-    )
-
-    let schema
-    try {
-      schema = extractJSON(schemaText)
-    } catch {
-      schemaText = await askClaude(`Fix this JSON and return valid JSON only: ${schemaText}`)
-      schema = extractJSON(schemaText)
-    }
-
     const slug = generateSlug(spec.appTitle)
     const tableName = 'app_' + slug.replace(/-/g, '_')
 
-    const convData = await supabase.from('conversations').select('user_id').eq('id', conversationId).single()
+    const convData = await supabase
+      .from('conversations')
+      .select('user_id')
+      .eq('id', conversationId)
+      .single()
 
+    // Generate metadata schema
+    const schema = await generateSchema(spec)
+
+    // Insert the app record first to get the appId
     const { data: appData, error: appError } = await supabase
       .from('generated_apps')
       .insert({
         conversation_id: conversationId,
         user_id: convData.data?.user_id,
         title: spec.appTitle,
-        workflow_type: workflowType,
+        workflow_type: spec.workflowType,
         schema,
         table_name: tableName,
         notification_config: schema.notificationConfig || {},
-        status: 'deployed',
+        status: 'building',
         slug,
       })
       .select()
@@ -123,6 +283,19 @@ Rules:
 
     if (appError) throw new Error(appError.message)
 
+    // Now generate the full custom HTML with the real appId embedded
+    const generatedHtml = await generateAppHTML(spec, appData.id)
+
+    // Update the record with the generated HTML and mark as deployed
+    await supabase
+      .from('generated_apps')
+      .update({
+        generated_html: generatedHtml,
+        status: 'deployed',
+      })
+      .eq('id', appData.id)
+
+    // Save the app_card message
     await supabase.from('messages').insert({
       conversation_id: conversationId,
       role: 'assistant',

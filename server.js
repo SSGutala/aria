@@ -58,6 +58,11 @@ app.post('/api/update-status', async (req, res) => {
   return handler(req, res)
 })
 
+app.get('/api/submissions', async (req, res) => {
+  const handler = await loadHandler('submissions')
+  return handler(req, res)
+})
+
 // ─── M365 routes ─────────────────────────────────────────────────────────────
 app.get('/api/m365/auth', async (req, res) => {
   const { default: h } = await import('./api/m365/auth.js')
