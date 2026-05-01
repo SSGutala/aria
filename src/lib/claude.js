@@ -1,6 +1,8 @@
 const MOCK_MODE = !import.meta.env.VITE_SUPABASE_URL ||
   import.meta.env.VITE_SUPABASE_URL === 'https://placeholder.supabase.co'
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
 function slugify(title) {
   const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
   const rand = Math.random().toString(36).slice(2, 8)
@@ -191,6 +193,82 @@ export async function generateApp(prompt, conversationId, messages, clarificatio
   return response.json()
 }
 
+// Phase 1: analyze prompt, return build mode recommendation
+export async function analyzeBuildMode(prompt, conversationId, conversationHistory = []) {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 1000))
+    return { type: 'build_mode', intro: 'I can build that.', recommendedMode: 'guided', complexityReason: 'This workflow involves multiple roles and approval steps, so Guided Build will produce a better result.' }
+  }
+  const response = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, conversationId, conversationHistory }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(err.error || 'Analysis failed')
+  }
+  return response.json()
+}
+
+// Phase 2: with build mode selected, get clarification questions
+export async function getModeQuestions(prompt, conversationId, buildMode, conversationHistory = []) {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 800))
+    if (buildMode === 'quick') return { type: 'clarification', intro: 'Two quick questions:', questions: [{ type: 'multiple_choice', question: 'Who primarily uses this?', options: ['Single team', 'Multiple departments', 'External users'] }], buildMode: 'quick' }
+    return {
+      type: 'clarification_v2',
+      intro: 'Let me understand this more deeply.',
+      buildMode,
+      questions: [
+        { type: 'multiple_choice', question: 'Who submits requests?', options: ['Employees self-serve', 'Managers submit on behalf', 'Both'] },
+        { type: 'multi_select', question: 'What approval steps are needed?', options: ['Manager approval', 'Finance review', 'Legal sign-off', 'Executive sign-off'] },
+        { type: 'yes_no', question: 'Does this need email notifications?' },
+        { type: 'short_answer', question: 'What system stores the final records?', placeholder: 'e.g. SharePoint, SAP, internal database...' },
+      ],
+    }
+  }
+  const response = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, conversationId, buildMode, conversationHistory }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(err.error || 'Failed to get questions')
+  }
+  return response.json()
+}
+
+// Generate full enterprise brief (guided + docs modes)
+export async function generateBrief(prompt, conversationId, buildMode, clarificationAnswers = null, conversationHistory = []) {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 2000))
+    return {
+      buildMode,
+      brief: {
+        intakeSummary: { understood: 'Mock brief for testing.', businessProblem: 'Teams use email chains to track approvals.', primaryUsers: ['Requesters', 'Approvers'], secondaryUsers: ['Admins'], currentProcess: 'Email chains and spreadsheets', mainOutcome: 'Centralized, auditable approval workflow' },
+        productBrief: { objective: 'Eliminate email-based approval tracking.', userRoles: [{ role: 'Requester', access: 'Submit and track own requests', estimated: '50+' }, { role: 'Approver', access: 'Review and approve/reject', estimated: '5' }], coreWorkflows: ['Submit request → route to approver → approve/reject → notify'], businessRules: ['Only managers can approve', 'Auto-escalate after 48 hours'], successCriteria: ['90% of requests processed in <24 hours'], assumptions: ['Single approval level initially'], openQuestions: ['Do we need multi-level approval?'] },
+        workflowMap: { trigger: 'Employee submits request form', steps: [{ step: 'Submit', actor: 'Requester', action: 'Fill and submit request form', output: 'New request record', sla: null }, { step: 'Review', actor: 'Approver', action: 'Review request details', output: 'Decision', sla: '24 hours' }, { step: 'Notify', actor: 'System', action: 'Send email notification', output: 'Confirmation email', sla: null }], decisionPoints: ['Approved → send confirmation and close', 'Rejected → notify with reason'], exceptionPaths: ['No response after 48h → escalate to manager'] },
+        dataModel: { primaryEntity: 'Request', fields: [{ name: 'title', label: 'Request Title', type: 'text', required: true, options: [] }, { name: 'description', label: 'Description', type: 'textarea', required: true, options: [] }, { name: 'requester', label: 'Requester Name', type: 'text', required: true, options: [] }, { name: 'status', label: 'Status', type: 'select', required: true, options: ['Pending', 'Approved', 'Rejected'] }], statusFlow: ['Pending Review', 'Under Review', 'Approved', 'Rejected'], relationships: [], auditFields: ['created_at', 'created_by', 'updated_at'] },
+        automationModel: { triggers: [{ event: 'New request submitted', condition: 'Always', action: 'Notify assigned approver' }], notifications: [{ event: 'Request submitted', recipient: 'Approver', channel: 'Email', template: 'New request awaiting your review' }], escalations: [{ condition: 'No action after 48 hours', action: 'Escalate to manager', recipient: 'Department manager' }], documentGeneration: [], integrations: [] },
+        uxRecommendation: { layoutType: 'split_panel_review', navigationModel: 'Single page', primaryScreens: [{ screen: 'Request Queue', purpose: 'Review pending requests', keyActions: ['Approve', 'Reject', 'View details'] }], visualTheme: { mood: 'authoritative', primaryColor: '#4F46E5', colorName: 'deep indigo', rationale: 'Approval tools need to feel authoritative and trustworthy' }, rationale: 'Split panel is ideal for review queues — list on left, detail + actions on right' },
+        appSpec: { appTitle: 'Approval Hub', appType: 'Approval Queue', tagline: 'Streamline team approvals', purpose: 'Replaces email-based approval tracking with a structured workflow.', workflowType: 'approval_workflow', layoutType: 'split_panel_review', colorTheme: { name: 'deep indigo', primary: '#4F46E5', light: '#EEF2FF', text: '#312E81' }, features: ['Submit and track requests', 'One-click approve/reject', 'Email notifications', 'Audit trail'], fields: [{ name: 'title', label: 'Request Title', type: 'text', required: true, options: [] }, { name: 'description', label: 'Description', type: 'textarea', required: true, options: [] }, { name: 'status', label: 'Status', type: 'select', required: true, options: ['Pending Review', 'Under Review', 'Approved', 'Rejected'] }], statusFlow: ['Pending Review', 'Under Review', 'Approved', 'Rejected'], primaryActionLabel: 'Submit Request', integrations: { sharepoint: { enabled: false, reason: '' }, outlook: { enabled: false, toField: null, subject: null, reason: '' }, teams: { enabled: false, messageTemplate: null, reason: '' }, documentGeneration: { enabled: false, templateDescription: null, deliveryField: null, reason: '' } }, roles: [] },
+      },
+    }
+  }
+  const response = await fetch('/api/brief', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, conversationId, buildMode, clarificationAnswers, conversationHistory }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(err.error || 'Brief generation failed')
+  }
+  return response.json()
+}
+
 export async function generateSpec(prompt, conversationId, clarificationAnswers = null, conversationHistory = []) {
   if (MOCK_MODE) {
     // Mock spec for testing
@@ -271,6 +349,19 @@ export async function buildApp(prompt, conversationId, spec, clarificationAnswer
   return response.json()
 }
 
+export async function editApp(appId, editRequest, conversationId) {
+  const response = await fetch('/api/edit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ appId, editRequest, conversationId }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Edit failed' }))
+    throw new Error(err.error || 'Edit failed')
+  }
+  return response.json()
+}
+
 export async function submitForm(appId, formData) {
   if (MOCK_MODE) return mockSubmit(appId, formData)
 
@@ -297,6 +388,43 @@ export async function updateStatus(submissionId, newStatus, appId) {
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Update failed' }))
     throw new Error(err.error || 'Update failed')
+  }
+  return response.json()
+}
+
+
+// ─── Artifact API helpers ──────────────────────────────────────────────────────
+export async function listArtifacts(conversationId) {
+  const response = await fetch(`${API_URL}/api/artifacts?conversationId=${conversationId}`)
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Failed to load artifacts' }))
+    throw new Error(err.error || 'Failed to load artifacts')
+  }
+  return response.json()
+}
+
+export async function updateArtifact(artifactId, updates) {
+  const response = await fetch(`${API_URL}/api/artifacts/${artifactId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Update failed' }))
+    throw new Error(err.error || 'Update failed')
+  }
+  return response.json()
+}
+
+export async function aiEditArtifact(artifactId, instruction) {
+  const response = await fetch(`${API_URL}/api/artifacts/ai-edit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ artifactId, instruction }),
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'AI edit failed' }))
+    throw new Error(err.error || 'AI edit failed')
   }
   return response.json()
 }

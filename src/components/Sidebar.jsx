@@ -100,6 +100,7 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
   const [trashedItems, setTrashedItems]           = useState([]) // { id, title, type, deleted_at }
   const [confirmClearTrash, setConfirmClearTrash] = useState(false)
   const [confirmPermDelete, setConfirmPermDelete] = useState(null)
+  const [confirmClearAll, setConfirmClearAll]     = useState(null) // 'chats' | 'apps' | 'all'
 
   useEffect(() => { if (showTrash && user) loadTrash() }, [showTrash, user])
 
@@ -156,6 +157,25 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
     await loadTrash()
   }
 
+  async function clearAll(type) {
+    if (type === 'chats' || type === 'all') {
+      const ids = conversations.map(c => c.id)
+      if (ids.length) {
+        await supabase.from('conversations').update({ deleted: true, deleted_at: new Date().toISOString() }).in('id', ids)
+      }
+      navigate('/workspace')
+      onConversationsChange()
+    }
+    if (type === 'apps' || type === 'all') {
+      const ids = apps.map(a => a.id)
+      if (ids.length) {
+        await supabase.from('generated_apps').update({ deleted: true, deleted_at: new Date().toISOString() }).in('id', ids)
+      }
+      onAppsChange()
+    }
+    setConfirmClearAll(null)
+  }
+
   async function clearTrash() {
     const chatIds = trashedItems.filter(i => i.type === 'chat').map(i => i.id)
     const appIds  = trashedItems.filter(i => i.type === 'app').map(i => i.id)
@@ -209,6 +229,18 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
           onCancel={() => setConfirmPermDelete(null)}
         />
       )}
+      {confirmClearAll && (
+        <ConfirmDialog
+          title={confirmClearAll === 'chats' ? 'Clear all chats?' : confirmClearAll === 'apps' ? 'Clear all apps?' : 'Clear everything?'}
+          message={
+            confirmClearAll === 'chats' ? `All ${conversations.length} chat${conversations.length !== 1 ? 's' : ''} will be moved to Trash. You can recover them within 30 days.`
+            : confirmClearAll === 'apps' ? `All ${apps.length} app${apps.length !== 1 ? 's' : ''} will be moved to Trash. You can recover them within 30 days.`
+            : `All ${conversations.length} chat${conversations.length !== 1 ? 's' : ''} and ${apps.length} app${apps.length !== 1 ? 's' : ''} will be moved to Trash. You can recover them within 30 days.`
+          }
+          onConfirm={() => clearAll(confirmClearAll)}
+          onCancel={() => setConfirmClearAll(null)}
+        />
+      )}
 
       <div style={{ width: 220, flexShrink: 0, background: '#0A0A0A', borderRight: '0.5px solid #1A1A1A', display: 'flex', flexDirection: 'column', height: '100vh' }}>
 
@@ -232,7 +264,16 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
           {/* Chats */}
           {conversations.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ padding: '6px 8px', fontSize: 10, color: '#3D3D3D', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Chats</div>
+              <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 10, color: '#3D3D3D', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Chats</span>
+                <button
+                  onClick={() => setConfirmClearAll('chats')}
+                  style={{ background: 'none', border: 'none', fontSize: 9, color: '#3D3D3D', cursor: 'pointer', padding: '1px 4px', borderRadius: 3, fontFamily: 'inherit', letterSpacing: '0.03em' }}
+                  onMouseEnter={e => e.currentTarget.style.color = '#F87171'}
+                  onMouseLeave={e => e.currentTarget.style.color = '#3D3D3D'}
+                  title="Clear all chats"
+                >Clear all</button>
+              </div>
               {conversations.map(conv => {
                 const isActive  = conv.id === convId
                 const isHovered = hoveredId === conv.id
@@ -285,7 +326,16 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
           {/* Apps */}
           {apps.length > 0 && (
             <div>
-              <div style={{ padding: '6px 8px', fontSize: 10, color: '#3D3D3D', letterSpacing: '0.06em', textTransform: 'uppercase' }}>My Apps</div>
+              <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 10, color: '#3D3D3D', letterSpacing: '0.06em', textTransform: 'uppercase' }}>My Apps</span>
+                <button
+                  onClick={() => setConfirmClearAll('apps')}
+                  style={{ background: 'none', border: 'none', fontSize: 9, color: '#3D3D3D', cursor: 'pointer', padding: '1px 4px', borderRadius: 3, fontFamily: 'inherit', letterSpacing: '0.03em' }}
+                  onMouseEnter={e => e.currentTarget.style.color = '#F87171'}
+                  onMouseLeave={e => e.currentTarget.style.color = '#3D3D3D'}
+                  title="Clear all apps"
+                >Clear all</button>
+              </div>
               {apps.map(app => {
                 const isHovered  = hoveredId === `app-${app.id}`
                 const isRenaming = renamingId === `app-${app.id}`

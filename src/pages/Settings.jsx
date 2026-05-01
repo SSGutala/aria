@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { API_URL } from '../lib/api'
 
-const API = 'http://localhost:3001'
+const API = API_URL
 
 export default function Settings() {
   const navigate = useNavigate()

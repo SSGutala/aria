@@ -7,114 +7,228 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
 
-async function askClaude(prompt) {
-  const msg = await anthropic.messages.create({
-    model: 'claude-opus-4-7',
-    max_tokens: 800,
-    system: 'You are a sharp product designer and developer at an AI startup. You are helpful, concise, and opinionated. Return only the requested JSON format, no explanation, no markdown.',
-    messages: [{ role: 'user', content: prompt }],
-  })
-  return msg.content[0].text
-}
-
 function extractJSON(text) {
   const match = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/)
   if (!match) throw new Error('No JSON found in response')
   return JSON.parse(match[0])
 }
 
+const ARIA_SYSTEM = `You are Aria — an AI enterprise app builder and workflow consultant.
+
+You build internal tools, workflow systems, approval portals, case management consoles, document automation, and any enterprise-grade internal application.
+
+You are talking to a business user who wants to build an internal tool. Your tone is:
+- Sharp and confident — you immediately understand the business problem
+- Concise — no fluff, no filler
+- Specific — you reference the actual domain, not generic concepts
+- Product-minded — you think like a PM who has built these systems before`
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, conversationId, clarificationAnswers, conversationHistory } = req.body
+  const { prompt, conversationId, buildMode, clarificationAnswers, conversationHistory } = req.body
   if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing required fields' })
 
+  const historyContext = conversationHistory?.length > 0
+    ? `\n\nConversation context:\n${conversationHistory.map(m => `${m.role === 'user' ? 'User' : 'Aria'}: ${m.content}`).filter(l => !l.endsWith(': ')).slice(-6).join('\n')}`
+    : ''
+
   try {
-    // Build conversation context summary for memory
-    const historyContext = conversationHistory && conversationHistory.length > 0
-      ? `\n\nConversation history so far:\n${conversationHistory.map(m => `${m.role === 'user' ? 'User' : 'Aria'}: ${m.content}`).filter(l => !l.endsWith(': ')).join('\n')}\n\nGiven this history, the user's latest message is: "${prompt}"\nInterpret it in context — if they say "recreate", "redo", "change", "make it X instead", treat it as a follow-up to what was already discussed, not a new standalone request.`
-      : ''
+    // ─── PHASE 1: No buildMode yet → analyze and recommend a build mode ─────────
+    if (!buildMode) {
+      const msg = await anthropic.messages.create({
+        model: 'claude-opus-4-7',
+        max_tokens: 600,
+        system: ARIA_SYSTEM,
+        messages: [{
+          role: 'user',
+          content: `A user wants to build this enterprise tool: "${prompt}"${historyContext}
 
-    // Only check for clarification if no answers provided yet
-    if (!clarificationAnswers) {
-      const response = await askClaude(
-        `A user wants to build this internal business tool: "${prompt}"${historyContext}
+Analyze the request and write a 1-2 sentence response that:
+- Confirms you understand the specific business problem (use their domain language)
+- Shows you have a clear vision for this tool
+- Is direct and confident — no hedging, no "Great idea!"
 
-You are a sharp AI product designer. First, write a 1-2 sentence response that:
-- Confirms you understand what they want to build
-- Shows you have a clear creative vision for it (mention the type of tool, the UX direction, or an analogy to a known product if apt)
-- Ends by saying you have a couple of quick decisions to lock in first (only if questions are needed)
-
-Then, decide if you need 1-3 clarifying questions. Only ask if the answers would meaningfully change the UI, the data model, or the key workflow of what you build. Do NOT ask generic questions. Questions must be specific to this exact product.
-
-Good question topics (pick only what actually matters for THIS product):
-- Who are the primary users and what actions do they take
-- The most important piece of information to capture in the form
-- How items should be prioritized, sorted, or routed
-- Whether there are multiple user roles with different access
-- Key workflow decision (e.g. does the manager approve or just view)
-- What the most important status states are
-
-Bad questions to avoid:
-- "What color theme?" (we decide this)
-- "What is this tool for?" (already told us)
-- Generic scope questions that don't affect the UI
-
-If the prompt is already detailed enough to build without questions, do NOT ask any.
+Then recommend a build mode based on complexity:
+- "quick": Simple, clear requirements, straightforward workflow, 1-2 user roles — can build fast
+- "guided": Multi-role workflow, approvals, automation, or integrations involved — benefits from scoping
+- "docs": Complex enterprise process, compliance/audit needs, multiple stakeholders, needs approval before build
 
 Return JSON only:
 {
-  "intro": "1-2 sentence message (no em-dashes, use plain dashes if needed)",
-  "needsClarification": true,
-  "questions": [
-    {
-      "question": "Specific question directly tied to this product",
-      "options": ["Option A", "Option B", "Option C"]
+  "intro": "1-2 sentence message — sharp, domain-specific, no em-dashes",
+  "recommendedMode": "quick | guided | docs",
+  "complexityReason": "One sentence explaining why you recommend this mode"
+}`
+        }]
+      })
+
+      const parsed = extractJSON(msg.content[0].text)
+
+      await supabase.from('messages').insert({
+        conversation_id: conversationId,
+        role: 'assistant',
+        content: parsed.intro || '',
+        message_type: 'text',
+        metadata: {},
+      })
+
+      return res.json({
+        type: 'build_mode',
+        intro: parsed.intro || '',
+        recommendedMode: parsed.recommendedMode || 'guided',
+        complexityReason: parsed.complexityReason || '',
+      })
     }
+
+    // ─── PHASE 2: buildMode selected → return clarification questions ────────────
+    if (buildMode === 'quick') {
+      // Quick build: 2-3 targeted multiple-choice questions or skip entirely
+      const msg = await anthropic.messages.create({
+        model: 'claude-opus-4-7',
+        max_tokens: 800,
+        system: ARIA_SYSTEM,
+        messages: [{
+          role: 'user',
+          content: `A user wants to build this enterprise tool: "${prompt}"${historyContext}
+${clarificationAnswers ? `\nUser already answered: ${clarificationAnswers}` : ''}
+
+Quick Build mode — they want to move fast.
+
+Are there 1-2 critical clarifying questions that would MEANINGFULLY change the core data model or workflow?
+
+Ask ONLY if:
+- There are two genuinely different workflows this could be
+- The approval chain could go multiple ways
+- You need to know primary user role to design the right experience
+
+Do NOT ask about colors, layout, or things you can reasonably infer.
+
+If the prompt is clear enough to build without questions, skip entirely.
+
+Return JSON only:
+{
+  "needsClarification": true,
+  "intro": "One sentence — show you're ready to build",
+  "questions": [
+    { "type": "multiple_choice", "question": "...", "options": ["A", "B", "C"] }
   ]
 }
-OR if clear enough to build:
+OR if clear:
 {
-  "intro": "1-2 sentence message acknowledging the request and your vision",
-  "needsClarification": false
+  "needsClarification": false,
+  "intro": "One sentence confirming you're ready to generate the spec"
 }`
-      )
+        }]
+      })
 
-      const parsed = extractJSON(response)
-      const intro = parsed.intro || ''
+      const parsed = extractJSON(msg.content[0].text)
 
       if (parsed.needsClarification && parsed.questions?.length > 0) {
-        const questions = parsed.questions.slice(0, 3)
+        const questions = parsed.questions.slice(0, 2)
 
-        // Save the intro as a text message
-        if (intro) {
+        if (parsed.intro) {
           await supabase.from('messages').insert({
             conversation_id: conversationId,
             role: 'assistant',
-            content: intro,
+            content: parsed.intro,
             message_type: 'text',
             metadata: {},
           })
         }
 
-        // Save the clarification card
         await supabase.from('messages').insert({
           conversation_id: conversationId,
           role: 'assistant',
           content: '',
           message_type: 'clarification',
-          metadata: { questions },
+          metadata: { questions, buildMode: 'quick' },
         })
 
-        return res.json({ type: 'clarification', intro, questions })
+        return res.json({ type: 'clarification', intro: parsed.intro, questions, buildMode: 'quick' })
       }
 
-      // No clarification needed - return intro and proceed to spec
-      return res.json({ needsClarification: false, intro })
+      return res.json({ needsClarification: false, intro: parsed.intro || '', buildMode: 'quick' })
     }
 
-    // Answers provided - proceed to spec
-    return res.json({ needsClarification: false })
+    if (buildMode === 'guided' || buildMode === 'docs') {
+      // Guided / Docs: deeper questions with mixed types
+      const docsNote = buildMode === 'docs'
+        ? 'Documentation First mode — focus on stakeholders, approval chain, compliance, and document outputs.'
+        : 'Guided Build mode — focus on workflow depth, user roles, automation, and integration needs.'
+
+      const msg = await anthropic.messages.create({
+        model: 'claude-opus-4-7',
+        max_tokens: 1400,
+        system: ARIA_SYSTEM,
+        messages: [{
+          role: 'user',
+          content: `A user wants to build this enterprise tool: "${prompt}"${historyContext}
+
+${docsNote}
+
+Generate 4-7 targeted clarifying questions that will help produce a thorough enterprise product brief.
+
+Focus on questions that reveal:
+- Who are the primary and secondary users / roles
+- What the current manual process looks like (spreadsheet, email chain, SharePoint form)
+- What the approval chain / review process is
+- What automation or notifications are needed
+- What integrations exist (M365, email, Teams, existing systems)
+- What documents or reports are generated
+- What compliance, audit, or SLA requirements exist
+- What data objects and relationships are involved
+
+Use the right question type for each:
+- "multiple_choice": when there are 2-4 distinct options
+- "multi_select": when multiple answers can apply simultaneously
+- "yes_no": for binary decisions
+- "short_answer": for open-ended specifics (names, counts, timelines)
+
+Do NOT ask about colors or layout preferences.
+Do NOT ask redundant questions.
+Ask only what materially changes the product or workflow design.
+
+Return JSON only:
+{
+  "intro": "1-2 sentences — show you're entering a deeper discovery process, be specific about what you're figuring out",
+  "questions": [
+    {
+      "type": "multiple_choice | multi_select | yes_no | short_answer",
+      "question": "Specific question",
+      "options": ["Option A", "Option B"],
+      "placeholder": "for short_answer only — hint text"
+    }
+  ]
+}`
+        }]
+      })
+
+      const parsed = extractJSON(msg.content[0].text)
+      const questions = (parsed.questions || []).slice(0, 7)
+
+      if (parsed.intro) {
+        await supabase.from('messages').insert({
+          conversation_id: conversationId,
+          role: 'assistant',
+          content: parsed.intro,
+          message_type: 'text',
+          metadata: {},
+        })
+      }
+
+      await supabase.from('messages').insert({
+        conversation_id: conversationId,
+        role: 'assistant',
+        content: '',
+        message_type: 'clarification_v2',
+        metadata: { questions, buildMode },
+      })
+
+      return res.json({ type: 'clarification_v2', intro: parsed.intro || '', questions, buildMode })
+    }
+
+    return res.status(400).json({ error: 'Unknown buildMode' })
 
   } catch (err) {
     console.error('Generate error:', err)

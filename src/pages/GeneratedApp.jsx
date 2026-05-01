@@ -102,7 +102,8 @@ function LegacyRenderer({ app }) {
     e.preventDefault()
     setSubmitting(true)
     try {
-      const res = await fetch('http://localhost:3001/api/submit', {
+      const _api = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+      const res = await fetch(`${_api}/api/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appId: app.id, formData }),
@@ -119,7 +120,8 @@ function LegacyRenderer({ app }) {
   async function handleStatusChange(subId, newStatus) {
     setUpdatingId(subId)
     try {
-      await fetch('http://localhost:3001/api/update-status', {
+      const _api2 = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+      await fetch(`${_api2}/api/update-status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ submissionId: subId, status: newStatus, appId: app.id }),

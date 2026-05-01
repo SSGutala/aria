@@ -68,7 +68,7 @@ function EditableTitle({ value, placeholder, onSave, dim }) {
   )
 }
 
-export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange }) {
+export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel }) {
   const [toast, setToast] = useState('')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2000) }
@@ -142,6 +142,30 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
         {/* Hint when no app yet */}
         {!app && conversation && (
           <span style={{ fontSize: 11, color: '#2A2A2A', marginLeft: 4 }}>double-click to rename</span>
+        )}
+
+        {/* Artifacts toggle — shown when there are artifacts */}
+        {artifactCount > 0 && onToggleArtifacts && (
+          <button
+            onClick={onToggleArtifacts}
+            style={{
+              marginLeft: app ? 0 : 'auto',
+              background: showArtifactPanel ? '#1A2A1A' : '#1A1A1A',
+              color: showArtifactPanel ? '#34D399' : '#525252',
+              border: `0.5px solid ${showArtifactPanel ? '#34D39933' : '#2A2A2A'}`,
+              borderRadius: 6, padding: '4px 10px', fontSize: 11,
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', gap: 5,
+            }}
+          >
+            <span style={{ fontSize: 10 }}>📁</span>
+            Artifacts
+            <span style={{
+              background: showArtifactPanel ? '#34D39922' : '#222',
+              color: showArtifactPanel ? '#34D399' : '#737373',
+              borderRadius: 8, padding: '0 5px', fontSize: 9, fontWeight: 700,
+            }}>{artifactCount}</span>
+          </button>
         )}
       </div>
     </>

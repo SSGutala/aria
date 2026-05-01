@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 
-export default function ClarificationCard({ questions, onSubmit }) {
+export default function ClarificationCard({ questions, onSubmit, onRestart, answered: isAnswered }) {
   const [selected, setSelected] = useState({})
   const [extra, setExtra] = useState('')
 
@@ -108,44 +108,77 @@ export default function ClarificationCard({ questions, onSubmit }) {
         justifyContent: 'space-between',
         background: '#111',
       }}>
-        <span style={{ fontSize: 11, color: '#3D3D3D' }}>
-          {Object.values(selected).reduce((acc, s) => acc + s.size, 0)} selected
-        </span>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            onClick={() => onSubmit('No preference')}
-            style={{
-              background: 'transparent',
-              color: '#525252',
-              border: 'none',
-              fontSize: 11,
-              cursor: 'pointer',
-              padding: '5px 8px',
-              fontFamily: 'inherit',
-            }}
-          >
-            Skip
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!hasAnyAnswer}
-            style={{
-              background: hasAnyAnswer
-                ? 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
-                : '#1C1C1C',
-              color: hasAnyAnswer ? '#111111' : '#3D3D3D',
-              border: `0.5px solid ${hasAnyAnswer ? '#484848' : '#2A2A2A'}`,
-              borderRadius: 7,
-              padding: '6px 16px',
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: hasAnyAnswer ? 'pointer' : 'default',
-              fontFamily: 'inherit',
-            }}
-          >
-            Continue
-          </button>
-        </div>
+        {isAnswered ? (
+          <>
+            <span style={{ fontSize: 11, color: '#34D399', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M1.5 5l2.5 2.5 5-5" stroke="#34D399" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Answers submitted
+            </span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {onRestart && (
+                <button
+                  onClick={onRestart}
+                  style={{
+                    background: 'transparent', color: '#525252', border: '0.5px solid #2A2A2A',
+                    borderRadius: 6, fontSize: 11, cursor: 'pointer', padding: '5px 10px', fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#A3A3A3'; e.currentTarget.style.borderColor = '#3D3D3D' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#525252'; e.currentTarget.style.borderColor = '#2A2A2A' }}
+                >
+                  ↩ Restart from here
+                </button>
+              )}
+              {onSubmit && (
+                <button
+                  onClick={handleSubmit}
+                  style={{
+                    background: '#1C1C1C', color: '#737373', border: '0.5px solid #2A2A2A',
+                    borderRadius: 6, fontSize: 11, cursor: 'pointer', padding: '5px 10px', fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#A3A3A3' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#737373' }}
+                >
+                  Change answers
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 11, color: '#3D3D3D' }}>
+              {Object.values(selected).reduce((acc, s) => acc + s.size, 0)} selected
+            </span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                onClick={() => onSubmit('No preference')}
+                style={{
+                  background: 'transparent', color: '#525252', border: 'none',
+                  fontSize: 11, cursor: 'pointer', padding: '5px 8px', fontFamily: 'inherit',
+                }}
+              >
+                Skip
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!hasAnyAnswer}
+                style={{
+                  background: hasAnyAnswer
+                    ? 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
+                    : '#1C1C1C',
+                  color: hasAnyAnswer ? '#111111' : '#3D3D3D',
+                  border: `0.5px solid ${hasAnyAnswer ? '#484848' : '#2A2A2A'}`,
+                  borderRadius: 7, padding: '6px 16px',
+                  fontSize: 12, fontWeight: 500, cursor: hasAnyAnswer ? 'pointer' : 'default',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

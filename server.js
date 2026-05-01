@@ -24,7 +24,21 @@ import express from 'express'
 import cors from 'cors'
 
 const app = express()
-app.use(cors())
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174',
+  process.env.FRONTEND_URL,
+].filter(Boolean)
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (curl, Postman, same-origin server calls)
+    if (!origin) return cb(null, true)
+    if (allowedOrigins.some(o => origin.startsWith(o))) return cb(null, true)
+    cb(new Error(`CORS: origin ${origin} not allowed`))
+  },
+  credentials: true,
+}))
 app.use(express.json())
 
 // Dynamically load each API handler
@@ -46,6 +60,47 @@ app.post('/api/spec', async (req, res) => {
 app.post('/api/build', async (req, res) => {
   const handler = await loadHandler('build')
   return handler(req, res)
+})
+
+app.post('/api/edit', async (req, res) => {
+  const handler = await loadHandler('edit')
+  return handler(req, res)
+})
+
+app.post('/api/brief', async (req, res) => {
+  const handler = await loadHandler('brief')
+  return handler(req, res)
+})
+
+// ─── Artifacts ────────────────────────────────────────────────────────────────
+app.get('/api/artifacts', async (req, res) => {
+  const handler = await loadHandler('artifacts')
+  return handler(req, res)
+})
+app.post('/api/artifacts', async (req, res) => {
+  const handler = await loadHandler('artifacts')
+  return handler(req, res)
+})
+app.patch('/api/artifacts/:id', async (req, res) => {
+  const handler = await loadHandler('artifacts')
+  return handler(req, res)
+})
+app.post('/api/artifacts/ai-edit', async (req, res) => {
+  const { default: h } = await import('./api/artifacts-ai-edit.js')
+  return h(req, res)
+})
+app.post('/api/artifacts/:id/files', async (req, res) => {
+  const { default: h } = await import('./api/artifacts-generate-files.js')
+  return h(req, res)
+})
+// Serve a file inline for preview / direct download
+app.get('/api/artifacts/:id/download/:format', async (req, res) => {
+  const { createClient: cc } = await import('@supabase/supabase-js')
+  const sb = cc(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY)
+  const { data: artifact } = await sb.from('artifacts').select('file_urls,title').eq('id', req.params.id).single()
+  if (!artifact?.file_urls?.[req.params.format]) return res.status(404).json({ error: 'File not found — generate files first' })
+  // Redirect to Supabase public URL
+  return res.redirect(artifact.file_urls[req.params.format])
 })
 
 app.post('/api/submit', async (req, res) => {
