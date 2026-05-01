@@ -65,19 +65,32 @@ Return JSON only:
 
       const parsed = extractJSON(msg.content[0].text)
 
-      await supabase.from('messages').insert({
-        conversation_id: conversationId,
-        role: 'assistant',
-        content: parsed.intro || '',
-        message_type: 'text',
-        metadata: {},
-      })
+      const recommendedMode = parsed.recommendedMode || 'guided'
+      const complexityReason = parsed.complexityReason || ''
+
+      // Persist intro text and build_mode card separately so both survive refresh
+      await supabase.from('messages').insert([
+        {
+          conversation_id: conversationId,
+          role: 'assistant',
+          content: parsed.intro || '',
+          message_type: 'text',
+          metadata: {},
+        },
+        {
+          conversation_id: conversationId,
+          role: 'assistant',
+          content: '',
+          message_type: 'build_mode',
+          metadata: { recommendedMode, complexityReason },
+        },
+      ])
 
       return res.json({
         type: 'build_mode',
         intro: parsed.intro || '',
-        recommendedMode: parsed.recommendedMode || 'guided',
-        complexityReason: parsed.complexityReason || '',
+        recommendedMode,
+        complexityReason,
       })
     }
 

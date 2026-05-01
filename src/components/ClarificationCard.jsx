@@ -1,9 +1,11 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 export default function ClarificationCard({ questions, onSubmit, onRestart, answered: isAnswered }) {
   const [selected, setSelected] = useState({})
   const [extra, setExtra] = useState('')
-  const [collapsed, setCollapsed] = useState(false)
+  // Start collapsed if already answered; auto-collapse on submission
+  const [collapsed, setCollapsed] = useState(isAnswered)
+  useEffect(() => { if (isAnswered) setCollapsed(true) }, [isAnswered])
 
   function toggle(qIdx, option) {
     setSelected(prev => {

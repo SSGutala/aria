@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 const MODES = [
   {
@@ -55,9 +55,14 @@ const MODES = [
 
 export default function BuildModeCard({ recommendedMode, complexityReason, onSelect, selected }) {
   const [hovered, setHovered] = useState(null)
-  const [collapsed, setCollapsed] = useState(false)
   const isReadOnly = !onSelect
   const activeMode = selected || (isReadOnly ? recommendedMode : null)
+
+  // Start collapsed if already answered; auto-collapse when selection is made
+  const [collapsed, setCollapsed] = useState(() => isReadOnly && !!activeMode)
+  useEffect(() => {
+    if (isReadOnly && activeMode) setCollapsed(true)
+  }, [isReadOnly, activeMode])
   const activeModeData = MODES.find(m => m.id === activeMode)
 
   return (

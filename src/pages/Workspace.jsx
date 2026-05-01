@@ -301,10 +301,34 @@ export default function Workspace() {
 
   // ─── User picks build mode → get clarification questions ─────────────────
   async function handleBuildModeSelect(mode) {
-    pendingBuildModeMsgId.current = null  // collapse the mode card
     pendingBuildModeRef.current = mode
     const prompt = pendingPromptRef.current
     if (!prompt) return
+
+    // Mark the build_mode message as selected in DB so it persists correctly on refresh
+    if (pendingBuildModeMsgId.current) {
+      const bmId = pendingBuildModeMsgId.current
+      pendingBuildModeMsgId.current = null
+      // Update local state so card shows selected mode immediately
+      setMessages(prev => prev.map(m =>
+        m.id === bmId
+          ? { ...m, metadata: { ...m.metadata, selectedMode: mode }, onModeSelect: null }
+          : m
+      ))
+      // Persist selection to DB (update metadata on the build_mode DB row if it exists)
+      // We don't have the DB row ID, so we query by conversation + type + selecting the latest
+      supabase.from('messages')
+        .select('id')
+        .eq('conversation_id', convId)
+        .eq('message_type', 'build_mode')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .then(({ data }) => {
+          if (data?.[0]) {
+            supabase.from('messages').update({ metadata: { ...data[0].metadata, selectedMode: mode } }).eq('id', data[0].id)
+          }
+        })
+    }
 
     setIsTyping(true)
     setBuildingLabel('Preparing questions...')

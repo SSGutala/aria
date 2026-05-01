@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 
 function MultipleChoice({ question, options, value, onChange }) {
   return (
@@ -128,7 +128,9 @@ const TYPE_LABEL = {
 export default function ClarificationCardV2({ questions, buildMode, onSubmit, onRestart, answered: isAnswered }) {
   const [answers, setAnswers] = useState({})
   const [extra, setExtra] = useState('')
-  const [collapsed, setCollapsed] = useState(false)
+  // Start collapsed if already answered; auto-collapse on submission
+  const [collapsed, setCollapsed] = useState(isAnswered)
+  useEffect(() => { if (isAnswered) setCollapsed(true) }, [isAnswered])
 
   function setAnswer(idx, val) {
     setAnswers(prev => ({ ...prev, [idx]: val }))
