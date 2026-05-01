@@ -594,6 +594,7 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
   const [approved, setApproved] = useState({})
   const [building, setBuilding] = useState(false)
   const [exportingAll, setExportingAll] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
   if (!brief) return null
 
@@ -640,7 +641,10 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
       width: '100%',
     }}>
       {/* Header */}
-      <div style={{ padding: '14px 18px', borderBottom: '0.5px solid #1E1E1E', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div
+        onClick={() => setCollapsed(v => !v)}
+        style={{ padding: '14px 18px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+      >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#D4D4D4' }}>
@@ -650,24 +654,28 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
               {modeLabel}
             </span>
           </div>
-          <p style={{ margin: '3px 0 0', fontSize: 11, color: '#525252' }}>
-            {approvedCount}/{STAGES.length} stages approved
+          <p style={{ margin: '3px 0 0', fontSize: 11, color: allApproved ? '#34D399' : '#525252' }}>
+            {allApproved ? '✓ All stages approved' : `${approvedCount}/${STAGES.length} stages approved`}
           </p>
         </div>
-        {/* Progress pills */}
-        <div style={{ display: 'flex', gap: 3 }}>
-          {STAGES.map(s => (
-            <div key={s.id} style={{
-              width: 20, height: 4, borderRadius: 2,
-              background: approved[s.id] ? '#34D399' : '#1E1E1E',
-              transition: 'background 0.2s',
-            }} />
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Progress pills */}
+          <div style={{ display: 'flex', gap: 3 }}>
+            {STAGES.map(s => (
+              <div key={s.id} style={{
+                width: 20, height: 4, borderRadius: 2,
+                background: approved[s.id] ? '#34D399' : '#1E1E1E',
+                transition: 'background 0.2s',
+              }} />
+            ))}
+          </div>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: '#525252', transition: 'transform 0.2s', transform: collapsed ? 'rotate(-90deg)' : 'none' }}>
+            <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
         </div>
       </div>
 
-      {/* Stages */}
-      {STAGES.map((stage, i) => {
+      {!collapsed && STAGES.map((stage, i) => {
         const data = brief[stage.id]
         const artifact = getArtifact(stage.id)
         const artifactId = artifact?.id
@@ -688,7 +696,8 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
         )
       })}
 
-      {/* Build footer */}
+      {/* Build footer — always visible even when collapsed */}
+      {collapsed && <div style={{ height: 1 }} />}
       <div style={{ padding: '14px 16px', borderTop: '0.5px solid #1E1E1E', background: '#0D0D0D', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', flex: 1, flexDirection: 'column', gap: 4 }}>
           {!allApproved && (
@@ -712,19 +721,20 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
             </button>
           )}
 
-          {/* Build button (non-docs mode) */}
-          {buildMode !== 'docs' && (
+          {/* Build button — show for all modes, require all approved for docs */}
+          {onBuild && (
             <button
               onClick={handleBuild}
-              disabled={building || !specApproved}
+              disabled={building || (buildMode === 'docs' ? !allApproved : !specApproved)}
               style={{
-                background: building || !specApproved
+                background: building || (buildMode === 'docs' ? !allApproved : !specApproved)
                   ? '#1C1C1C'
                   : 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)',
-                color: building || !specApproved ? '#3D3D3D' : '#111111',
-                border: `0.5px solid ${building || !specApproved ? '#222' : '#484848'}`,
+                color: building || (buildMode === 'docs' ? !allApproved : !specApproved) ? '#3D3D3D' : '#111111',
+                border: `0.5px solid ${building || (buildMode === 'docs' ? !allApproved : !specApproved) ? '#222' : '#484848'}`,
                 borderRadius: 8, padding: '8px 20px',
-                fontSize: 12, fontWeight: 600, cursor: building || !specApproved ? 'default' : 'pointer',
+                fontSize: 12, fontWeight: 600,
+                cursor: building || (buildMode === 'docs' ? !allApproved : !specApproved) ? 'default' : 'pointer',
                 fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 7,
               }}
             >
@@ -739,7 +749,9 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
                     <path d="M2 6h8M6 2l4 4-4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
-                  {specApproved ? 'Build this app' : 'Approve App Spec to build'}
+                  {buildMode === 'docs'
+                    ? (allApproved ? 'Build this app' : 'Approve all stages to build')
+                    : (specApproved ? 'Build this app' : 'Approve App Spec to build')}
                 </>
               )}
             </button>
