@@ -181,7 +181,7 @@ export async function generateApp(prompt, conversationId, messages, clarificatio
     content: m.content || '',
   }))
 
-  const response = await fetch('/api/generate', {
+  const response = await fetch(`${API_URL}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, conversationId, messages, clarificationAnswers, conversationHistory }),
@@ -199,7 +199,7 @@ export async function analyzeBuildMode(prompt, conversationId, conversationHisto
     await new Promise(r => setTimeout(r, 1000))
     return { type: 'build_mode', intro: 'I can build that.', recommendedMode: 'guided', complexityReason: 'This workflow involves multiple roles and approval steps, so Guided Build will produce a better result.' }
   }
-  const response = await fetch('/api/generate', {
+  const response = await fetch(`${API_URL}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, conversationId, conversationHistory }),
@@ -228,7 +228,7 @@ export async function getModeQuestions(prompt, conversationId, buildMode, conver
       ],
     }
   }
-  const response = await fetch('/api/generate', {
+  const response = await fetch(`${API_URL}/api/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, conversationId, buildMode, conversationHistory }),
@@ -257,7 +257,7 @@ export async function generateBrief(prompt, conversationId, buildMode, clarifica
       },
     }
   }
-  const response = await fetch('/api/brief', {
+  const response = await fetch(`${API_URL}/api/brief`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, conversationId, buildMode, clarificationAnswers, conversationHistory }),
@@ -322,7 +322,7 @@ export async function generateSpec(prompt, conversationId, clarificationAnswers 
     return { spec }
   }
 
-  const response = await fetch('/api/spec', {
+  const response = await fetch(`${API_URL}/api/spec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, conversationId, clarificationAnswers, conversationHistory }),
@@ -337,7 +337,7 @@ export async function generateSpec(prompt, conversationId, clarificationAnswers 
 export async function buildApp(prompt, conversationId, spec, clarificationAnswers = null) {
   if (MOCK_MODE) return mockGenerate(prompt, conversationId)
 
-  const response = await fetch('/api/build', {
+  const response = await fetch(`${API_URL}/api/build`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt, conversationId, spec, clarificationAnswers }),
@@ -350,7 +350,7 @@ export async function buildApp(prompt, conversationId, spec, clarificationAnswer
 }
 
 export async function editApp(appId, editRequest, conversationId) {
-  const response = await fetch('/api/edit', {
+  const response = await fetch(`${API_URL}/api/edit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ appId, editRequest, conversationId }),
@@ -365,7 +365,7 @@ export async function editApp(appId, editRequest, conversationId) {
 export async function submitForm(appId, formData) {
   if (MOCK_MODE) return mockSubmit(appId, formData)
 
-  const response = await fetch('/api/submit', {
+  const response = await fetch(`${API_URL}/api/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ appId, formData }),
@@ -380,7 +380,7 @@ export async function submitForm(appId, formData) {
 export async function updateStatus(submissionId, newStatus, appId) {
   if (MOCK_MODE) return mockUpdateStatus(submissionId, newStatus, appId)
 
-  const response = await fetch('/api/update-status', {
+  const response = await fetch(`${API_URL}/api/update-status`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ submissionId, newStatus, appId }),
