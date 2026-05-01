@@ -76,8 +76,8 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
         <CopyBtn text={message.content} />
         <div style={{
           background: '#1F1F1F', border: '0.5px solid #2E2E2E', borderRadius: 10,
-          padding: '10px 13px', color: '#D4D4D4', fontSize: 12,
-          lineHeight: 1.6, maxWidth: '80%', whiteSpace: 'pre-wrap',
+          padding: '10px 13px', color: '#D4D4D4', fontSize: 'clamp(11px, 1.5vw, 13px)',
+          lineHeight: 1.6, maxWidth: 'min(80%, 560px)', whiteSpace: 'pre-wrap',
         }}>
           {message.content}
         </div>
@@ -175,12 +175,12 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
       <AIIcon />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: '88%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxWidth: 'min(88%, 680px)', minWidth: 0 }}>
         <div style={{
           background: '#1A1A1A', border: '0.5px solid #222', borderRadius: 10,
           padding: '10px 13px',
           color: isError ? '#F87171' : '#A3A3A3',
-          fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap',
+          fontSize: 'clamp(11px, 1.5vw, 13px)', lineHeight: 1.6, whiteSpace: 'pre-wrap',
         }}>
           {renderContent(message.content)}
         </div>

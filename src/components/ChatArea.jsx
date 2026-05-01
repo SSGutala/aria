@@ -35,7 +35,7 @@ export default function ChatArea({ messages, isTyping, buildingLabel }) {
     <div style={{
       flex: 1,
       overflowY: 'auto',
-      padding: '18px 22px',
+      padding: 'clamp(10px, 3vw, 22px) clamp(10px, 4vw, 28px)',
       display: 'flex',
       flexDirection: 'column',
       gap: 12,

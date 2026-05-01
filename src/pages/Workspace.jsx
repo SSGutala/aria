@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { analyzeBuildMode, getModeQuestions, generateSpec, generateBrief, buildApp, editApp } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
+import { useBreakpoint } from '../hooks/useBreakpoint'
 
 function toHistoryMessages(msgs) {
   return msgs
@@ -20,6 +21,7 @@ import OnboardingFlow from '../components/OnboardingFlow'
 export default function Workspace() {
   const { convId } = useParams()
   const navigate = useNavigate()
+  const { isMobile, isSmall } = useBreakpoint()
 
   const [user, setUser] = useState(null)
   const [conversations, setConversations] = useState([])
@@ -30,6 +32,7 @@ export default function Workspace() {
   const [isTyping, setIsTyping] = useState(false)
   const [buildingLabel, setBuildingLabel] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [showSidebar, setShowSidebar] = useState(false)
 
   // ─── Artifact system ──────────────────────────────────────────────────────────
   const [artifacts, setArtifacts] = useState([])
@@ -461,8 +464,22 @@ export default function Workspace() {
 
   const activeArtifacts = artifacts.filter(a => a.status !== 'superseded')
 
+  const sidebarProps = {
+    user, conversations, apps,
+    onConversationsChange: loadConversations, onAppsChange: loadApps,
+    onConversationRename: (id, title) => {
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
+      if (currentConv?.id === id) setCurrentConv(prev => prev ? { ...prev, title } : prev)
+    },
+    onAppRename: (id, title) => {
+      setApps(prev => prev.map(a => a.id === id ? { ...a, title } : a))
+      if (currentApp?.id === id) setCurrentApp(prev => prev ? { ...prev, title } : prev)
+    },
+    onClose: isSmall ? () => setShowSidebar(false) : undefined,
+  }
+
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#111111' }}>
+    <div style={{ display: 'flex', height: '100vh', background: '#111111', overflow: 'hidden' }}>
       {showOnboarding && <OnboardingFlow onComplete={() => setShowOnboarding(false)} />}
 
       {/* Artifact Viewer modal */}
@@ -475,20 +492,21 @@ export default function Workspace() {
         />
       )}
 
-      {user && (
-        <Sidebar
-          user={user} conversations={conversations} apps={apps}
-          onConversationsChange={loadConversations} onAppsChange={loadApps}
-          onConversationRename={(id, title) => {
-            setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
-            if (currentConv?.id === id) setCurrentConv(prev => prev ? { ...prev, title } : prev)
-          }}
-          onAppRename={(id, title) => {
-            setApps(prev => prev.map(a => a.id === id ? { ...a, title } : a))
-            if (currentApp?.id === id) setCurrentApp(prev => prev ? { ...prev, title } : prev)
-          }}
-        />
+      {/* Sidebar — always rendered on desktop, drawer on mobile/tablet */}
+      {user && !isSmall && <Sidebar {...sidebarProps} />}
+      {user && isSmall && showSidebar && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowSidebar(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 40 }}
+          />
+          <div style={{ position: 'fixed', left: 0, top: 0, bottom: 0, zIndex: 50, display: 'flex' }}>
+            <Sidebar {...sidebarProps} />
+          </div>
+        </>
       )}
+
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', minWidth: 0 }}>
         <Topbar
           conversation={currentConv} app={currentApp}
@@ -503,6 +521,8 @@ export default function Workspace() {
           artifactCount={activeArtifacts.length}
           onToggleArtifacts={() => setShowArtifactPanel(v => !v)}
           showArtifactPanel={showArtifactPanel}
+          onMenuToggle={isSmall ? () => setShowSidebar(v => !v) : undefined}
+          isMobile={isMobile}
         />
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
           {convId ? (
@@ -512,12 +532,27 @@ export default function Workspace() {
                 <InputZone onSubmit={handleSubmit} disabled={isTyping} />
               </div>
               {showArtifactPanel && (
-                <ArtifactPanel
-                  artifacts={activeArtifacts}
-                  onOpen={openArtifact}
-                  onClose={() => setShowArtifactPanel(false)}
-                  onArtifactUpdate={handleArtifactUpdate}
-                />
+                isSmall ? (
+                  /* On mobile/tablet: full-screen overlay */
+                  <>
+                    <div onClick={() => setShowArtifactPanel(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 40 }} />
+                    <div style={{ position: 'fixed', right: 0, top: 0, bottom: 0, zIndex: 50, width: Math.min(320, window.innerWidth - 40) }}>
+                      <ArtifactPanel
+                        artifacts={activeArtifacts}
+                        onOpen={openArtifact}
+                        onClose={() => setShowArtifactPanel(false)}
+                        onArtifactUpdate={handleArtifactUpdate}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <ArtifactPanel
+                    artifacts={activeArtifacts}
+                    onOpen={openArtifact}
+                    onClose={() => setShowArtifactPanel(false)}
+                    onArtifactUpdate={handleArtifactUpdate}
+                  />
+                )
               )}
             </>
           ) : (

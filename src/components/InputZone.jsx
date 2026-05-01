@@ -27,7 +27,7 @@ export default function InputZone({ onSubmit, disabled }) {
   }
 
   return (
-    <div style={{ padding: '10px 18px 13px', borderTop: '0.5px solid #1A1A1A' }}>
+    <div style={{ padding: 'clamp(8px, 2vw, 10px) clamp(10px, 4vw, 18px) clamp(10px, 2vw, 13px)', borderTop: '0.5px solid #1A1A1A' }}>
       <div style={{
         border: '0.5px solid #2A2A2A',
         borderRadius: 10,

@@ -89,7 +89,7 @@ function InlineRename({ value, onSave, onCancel }) {
   )
 }
 
-export default function Sidebar({ user, conversations, apps, onConversationsChange, onAppsChange, onConversationRename, onAppRename }) {
+export default function Sidebar({ user, conversations, apps, onConversationsChange, onAppsChange, onConversationRename, onAppRename, onClose }) {
   const navigate = useNavigate()
   const { convId } = useParams()
 
@@ -246,8 +246,13 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
 
         {/* Logo + New app */}
         <div style={{ padding: '18px 16px 12px' }}>
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 16, fontWeight: 500, letterSpacing: '-0.4px', background: glareGradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>aria.</span>
+            {onClose && (
+              <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#3D3D3D', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#A3A3A3'}
+                onMouseLeave={e => e.currentTarget.style.color = '#3D3D3D'}>✕</button>
+            )}
           </div>
           <button
             onClick={createConversation}

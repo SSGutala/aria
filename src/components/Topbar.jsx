@@ -68,7 +68,7 @@ function EditableTitle({ value, placeholder, onSave, dim }) {
   )
 }
 
-export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel }) {
+export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel, onMenuToggle, isMobile }) {
   const [toast, setToast] = useState('')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2000) }
@@ -96,8 +96,18 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
       {toast && <Toast message={toast} />}
       <div style={{
         height: 46, borderBottom: '0.5px solid #1A1A1A',
-        padding: '0 20px', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+        padding: '0 12px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
       }}>
+        {/* Hamburger — mobile/tablet only */}
+        {onMenuToggle && (
+          <button onClick={onMenuToggle} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#525252', padding: '4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+            onMouseEnter={e => e.currentTarget.style.color = '#A3A3A3'}
+            onMouseLeave={e => e.currentTarget.style.color = '#525252'}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        )}
         {/* Conversation title — always shown */}
         <EditableTitle
           value={conversation?.title}
@@ -139,8 +149,8 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
           </>
         )}
 
-        {/* Hint when no app yet */}
-        {!app && conversation && (
+        {/* Hint when no app yet — hide on mobile */}
+        {!app && conversation && !isMobile && (
           <span style={{ fontSize: 11, color: '#2A2A2A', marginLeft: 4 }}>double-click to rename</span>
         )}
 
