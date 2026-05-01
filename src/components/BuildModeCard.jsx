@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 
 const MODES = [
   {
@@ -57,12 +57,10 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
   const [hovered, setHovered] = useState(null)
   const isReadOnly = !onSelect
   const activeMode = selected || (isReadOnly ? recommendedMode : null)
+  const isAnswered = isReadOnly && !!activeMode
 
-  // Start collapsed if already answered; auto-collapse when selection is made
-  const [collapsed, setCollapsed] = useState(() => isReadOnly && !!activeMode)
-  useEffect(() => {
-    if (isReadOnly && activeMode) setCollapsed(true)
-  }, [isReadOnly, activeMode])
+  const [userCollapse, setUserCollapse] = useState(null)
+  const collapsed = userCollapse !== null ? userCollapse : isAnswered
   const activeModeData = MODES.find(m => m.id === activeMode)
 
   return (
@@ -75,7 +73,7 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
     }}>
       {/* Header — always visible, clickable to collapse */}
       <div
-        onClick={() => setCollapsed(v => !v)}
+        onClick={() => setUserCollapse(!collapsed)}
         style={{ padding: '14px 18px 12px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', cursor: 'pointer' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

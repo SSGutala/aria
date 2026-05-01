@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 
 export default function ClarificationCard({ questions, onSubmit, onRestart, answered: isAnswered }) {
   const [selected, setSelected] = useState({})
   const [extra, setExtra] = useState('')
-  // Start collapsed if already answered; auto-collapse on submission
-  const [collapsed, setCollapsed] = useState(isAnswered)
-  useEffect(() => { if (isAnswered) setCollapsed(true) }, [isAnswered])
+  const [userCollapse, setUserCollapse] = useState(null)
+  const collapsed = userCollapse !== null ? userCollapse : isAnswered
 
   function toggle(qIdx, option) {
     setSelected(prev => {
@@ -38,7 +37,7 @@ export default function ClarificationCard({ questions, onSubmit, onRestart, answ
     }}>
       {/* Header */}
       <div
-        onClick={() => setCollapsed(v => !v)}
+        onClick={() => setUserCollapse(!collapsed)}
         style={{ padding: '12px 16px 10px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', cursor: 'pointer' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 6 }}>

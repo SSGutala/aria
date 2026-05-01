@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 
 function MultipleChoice({ question, options, value, onChange }) {
   return (
@@ -128,9 +128,9 @@ const TYPE_LABEL = {
 export default function ClarificationCardV2({ questions, buildMode, onSubmit, onRestart, answered: isAnswered }) {
   const [answers, setAnswers] = useState({})
   const [extra, setExtra] = useState('')
-  // Start collapsed if already answered; auto-collapse on submission
-  const [collapsed, setCollapsed] = useState(isAnswered)
-  useEffect(() => { if (isAnswered) setCollapsed(true) }, [isAnswered])
+  // null = use smart default (collapse when answered); true/false = user's explicit toggle
+  const [userCollapse, setUserCollapse] = useState(null)
+  const collapsed = userCollapse !== null ? userCollapse : isAnswered
 
   function setAnswer(idx, val) {
     setAnswers(prev => ({ ...prev, [idx]: val }))
@@ -169,7 +169,7 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
     }}>
       {/* Header */}
       <div
-        onClick={() => setCollapsed(v => !v)}
+        onClick={() => setUserCollapse(v => !collapsed)}
         style={{ padding: '12px 16px 10px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', cursor: 'pointer' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 6 }}>

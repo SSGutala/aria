@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function ChevronIcon({ open }) {
@@ -594,9 +594,10 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
   const [approved, setApproved] = useState({})
   const [building, setBuilding] = useState(false)
   const [exportingAll, setExportingAll] = useState(false)
-  // Start collapsed if already built (no onBuild handler = read-only); auto-collapse when build starts
-  const [collapsed, setCollapsed] = useState(!onBuild)
-  useEffect(() => { if (building) setCollapsed(true) }, [building])
+  // Auto-collapse: no onBuild = already built; building started = collapse
+  const isAnswered = !onBuild || building
+  const [userCollapse, setUserCollapse] = useState(null)
+  const collapsed = userCollapse !== null ? userCollapse : isAnswered
 
   if (!brief) return null
 
@@ -644,7 +645,7 @@ export default function EnterpriseStagesCard({ brief, buildMode, onBuild, onOpen
     }}>
       {/* Header */}
       <div
-        onClick={() => setCollapsed(v => !v)}
+        onClick={() => setUserCollapse(!collapsed)}
         style={{ padding: '14px 18px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
       >
         <div>
