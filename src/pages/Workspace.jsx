@@ -306,15 +306,6 @@ export default function Workspace() {
     const prompt = pendingPromptRef.current
     if (!prompt) return
 
-    const modeLabels = { quick: 'Quick Build', guided: 'Guided Build', docs: 'Documentation First' }
-    const userModeMsg = {
-      id: Date.now().toString() + '_ua',
-      role: 'user', content: modeLabels[mode] || mode,
-      message_type: 'text', metadata: {},
-    }
-    setMessages(prev => [...prev, userModeMsg])
-    await supabase.from('messages').insert({ conversation_id: convId, role: 'user', content: modeLabels[mode] || mode, message_type: 'text' })
-
     setIsTyping(true)
     setBuildingLabel('Preparing questions...')
     try {
@@ -357,9 +348,7 @@ export default function Workspace() {
     const originalPrompt = pendingPromptRef.current
     if (!originalPrompt) return
     pendingClarMsgIdRef.current = null
-    const userAnswerMsg = { id: Date.now().toString() + '_ua', role: 'user', content: answers, message_type: 'text', metadata: {} }
-    setMessages(prev => [...prev, userAnswerMsg])
-    await supabase.from('messages').insert({ conversation_id: convId, role: 'user', content: answers, message_type: 'text' })
+    // Don't echo answers as text — they're already visible in the card
     await runSpec(originalPrompt, answers)
   }
 
@@ -389,9 +378,7 @@ export default function Workspace() {
     const mode = pendingBuildModeRef.current || 'guided'
     if (!originalPrompt) return
     pendingClarV2MsgIdRef.current = null
-    const userAnswerMsg = { id: Date.now().toString() + '_ua', role: 'user', content: answers, message_type: 'text', metadata: {} }
-    setMessages(prev => [...prev, userAnswerMsg])
-    await supabase.from('messages').insert({ conversation_id: convId, role: 'user', content: answers, message_type: 'text' })
+    // Don't echo answers as text — they're already visible in the card
     pendingClarAnswersRef.current = answers
     await runBrief(originalPrompt, mode, answers)
   }
