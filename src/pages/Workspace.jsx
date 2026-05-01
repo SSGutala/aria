@@ -171,8 +171,13 @@ export default function Workspace() {
       setIsTyping(false)
       setBuildingLabel(null)
 
+      // Fetch only the new app_card message the backend just saved — keep all existing local UI cards
       const { data: freshMsgs } = await supabase.from('messages').select('*').eq('conversation_id', convId).order('created_at')
-      setMessages(freshMsgs || [])
+      setMessages(prev => {
+        const existingIds = new Set(prev.map(m => m.id))
+        const newMsgs = (freshMsgs || []).filter(m => !existingIds.has(m.id))
+        return [...prev, ...newMsgs]
+      })
       setCurrentApp({ slug: result.slug, id: result.appId, title: result.schema?.appTitle })
       pendingSpecRef.current  = null
       pendingPromptRef.current = null
@@ -400,7 +405,11 @@ export default function Workspace() {
       setIsTyping(false)
       setBuildingLabel(null)
       const { data: freshMsgs } = await supabase.from('messages').select('*').eq('conversation_id', convId).order('created_at')
-      setMessages(freshMsgs || [])
+      setMessages(prev => {
+        const existingIds = new Set(prev.map(m => m.id))
+        const newMsgs = (freshMsgs || []).filter(m => !existingIds.has(m.id))
+        return [...prev, ...newMsgs]
+      })
     } catch (err) {
       setIsTyping(false)
       setBuildingLabel(null)
