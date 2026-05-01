@@ -128,6 +128,7 @@ const TYPE_LABEL = {
 export default function ClarificationCardV2({ questions, buildMode, onSubmit, onRestart, answered: isAnswered }) {
   const [answers, setAnswers] = useState({})
   const [extra, setExtra] = useState('')
+  const [collapsed, setCollapsed] = useState(false)
 
   function setAnswer(idx, val) {
     setAnswers(prev => ({ ...prev, [idx]: val }))
@@ -165,107 +166,120 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
       maxWidth: '92%',
     }}>
       {/* Header */}
-      <div style={{ padding: '12px 16px 10px', borderBottom: '0.5px solid #1E1E1E' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+      <div
+        onClick={() => setCollapsed(v => !v)}
+        style={{ padding: '12px 16px 10px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', cursor: 'pointer' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 6 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: '#737373', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {buildMode === 'docs' ? 'Documentation Discovery' : 'Guided Discovery'} · {total} questions
           </span>
-          <span style={{ fontSize: 10, color: '#3D3D3D' }}>{answered}/{total} answered</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isAnswered && <span style={{ fontSize: 10, color: '#34D399' }}>✓ Submitted</span>}
+            {!isAnswered && <span style={{ fontSize: 10, color: '#3D3D3D' }}>{answered}/{total} answered</span>}
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: '#525252', transition: 'transform 0.2s', transform: collapsed ? 'rotate(-90deg)' : 'none' }}>
+              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
         </div>
         {/* Progress bar */}
-        <div style={{ height: 2, background: '#1E1E1E', borderRadius: 1, overflow: 'hidden' }}>
-          <div style={{
-            height: '100%',
-            width: `${progress}%`,
-            background: 'linear-gradient(90deg, #34D399, #60A5FA)',
-            borderRadius: 1,
-            transition: 'width 0.3s ease',
-          }} />
-        </div>
-      </div>
-
-      {/* Questions */}
-      <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {questions.map((q, i) => (
-          <div key={i}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-              <div style={{
-                width: 18, height: 18, borderRadius: 5,
-                background: answers[i] !== null && answers[i] !== undefined && answers[i] !== '' && !(Array.isArray(answers[i]) && answers[i].length === 0)
-                  ? '#0D1F16' : '#1A1A1A',
-                border: `0.5px solid ${answers[i] !== null && answers[i] !== undefined && answers[i] !== '' ? '#34D39966' : '#2E2E2E'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                flexShrink: 0, marginTop: 1, fontSize: 9, color: '#34D399', fontWeight: 700,
-              }}>
-                {answers[i] !== null && answers[i] !== undefined && answers[i] !== '' && !(Array.isArray(answers[i]) && answers[i].length === 0)
-                  ? '✓' : <span style={{ color: '#3D3D3D' }}>{i + 1}</span>
-                }
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: '0 0 2px', fontSize: 12, color: '#C4C4C4', fontWeight: 500, lineHeight: 1.4 }}>
-                  {q.question}
-                </p>
-                <span style={{ fontSize: 9, color: '#3D3D3D', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {TYPE_LABEL[q.type] || 'Answer'}
-                </span>
-              </div>
-            </div>
-
-            <div style={{ paddingLeft: 26 }}>
-              {q.type === 'multiple_choice' && (
-                <MultipleChoice
-                  question={q.question}
-                  options={q.options || []}
-                  value={answers[i] ?? null}
-                  onChange={val => setAnswer(i, val)}
-                />
-              )}
-              {q.type === 'multi_select' && (
-                <MultiSelect
-                  question={q.question}
-                  options={q.options || []}
-                  value={answers[i] ?? []}
-                  onChange={val => setAnswer(i, val)}
-                />
-              )}
-              {q.type === 'yes_no' && (
-                <YesNo value={answers[i] ?? null} onChange={val => setAnswer(i, val)} />
-              )}
-              {q.type === 'short_answer' && (
-                <ShortAnswer
-                  placeholder={q.placeholder}
-                  value={answers[i] ?? ''}
-                  onChange={val => setAnswer(i, val)}
-                />
-              )}
-            </div>
+        {!collapsed && (
+          <div style={{ height: 2, background: '#1E1E1E', borderRadius: 1, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', width: `${progress}%`,
+              background: 'linear-gradient(90deg, #34D399, #60A5FA)',
+              borderRadius: 1, transition: 'width 0.3s ease',
+            }} />
           </div>
-        ))}
+        )}
       </div>
 
-      {/* Extra context */}
-      <div style={{ padding: '0 16px 14px' }}>
-        <textarea
-          value={extra}
-          onChange={e => setExtra(e.target.value)}
-          placeholder="Anything else Aria should know? (optional)"
-          rows={2}
-          style={{
-            width: '100%',
-            background: '#1A1A1A',
-            border: '0.5px solid #2A2A2A',
-            borderRadius: 8,
-            color: '#C4C4C4',
-            fontSize: 12,
-            padding: '8px 10px',
-            resize: 'none',
-            outline: 'none',
-            fontFamily: 'inherit',
-            lineHeight: 1.5,
-            boxSizing: 'border-box',
-          }}
-        />
-      </div>
+      {/* Questions + extra context — hidden when collapsed */}
+      {!collapsed && (
+        <>
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {questions.map((q, i) => (
+              <div key={i}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 5,
+                    background: answers[i] !== null && answers[i] !== undefined && answers[i] !== '' && !(Array.isArray(answers[i]) && answers[i].length === 0)
+                      ? '#0D1F16' : '#1A1A1A',
+                    border: `0.5px solid ${answers[i] !== null && answers[i] !== undefined && answers[i] !== '' ? '#34D39966' : '#2E2E2E'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0, marginTop: 1, fontSize: 9, color: '#34D399', fontWeight: 700,
+                  }}>
+                    {answers[i] !== null && answers[i] !== undefined && answers[i] !== '' && !(Array.isArray(answers[i]) && answers[i].length === 0)
+                      ? '✓' : <span style={{ color: '#3D3D3D' }}>{i + 1}</span>
+                    }
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ margin: '0 0 2px', fontSize: 12, color: '#C4C4C4', fontWeight: 500, lineHeight: 1.4 }}>
+                      {q.question}
+                    </p>
+                    <span style={{ fontSize: 9, color: '#3D3D3D', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {TYPE_LABEL[q.type] || 'Answer'}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ paddingLeft: 26 }}>
+                  {q.type === 'multiple_choice' && (
+                    <MultipleChoice
+                      question={q.question}
+                      options={q.options || []}
+                      value={answers[i] ?? null}
+                      onChange={val => setAnswer(i, val)}
+                    />
+                  )}
+                  {q.type === 'multi_select' && (
+                    <MultiSelect
+                      question={q.question}
+                      options={q.options || []}
+                      value={answers[i] ?? []}
+                      onChange={val => setAnswer(i, val)}
+                    />
+                  )}
+                  {q.type === 'yes_no' && (
+                    <YesNo value={answers[i] ?? null} onChange={val => setAnswer(i, val)} />
+                  )}
+                  {q.type === 'short_answer' && (
+                    <ShortAnswer
+                      placeholder={q.placeholder}
+                      value={answers[i] ?? ''}
+                      onChange={val => setAnswer(i, val)}
+                    />
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Extra context */}
+          <div style={{ padding: '0 16px 14px' }}>
+            <textarea
+              value={extra}
+              onChange={e => setExtra(e.target.value)}
+              placeholder="Anything else Aria should know? (optional)"
+              rows={2}
+              style={{
+                width: '100%',
+                background: '#1A1A1A',
+                border: '0.5px solid #2A2A2A',
+                borderRadius: 8,
+                color: '#C4C4C4',
+                fontSize: 12,
+                padding: '8px 10px',
+                resize: 'none',
+                outline: 'none',
+                fontFamily: 'inherit',
+                lineHeight: 1.5,
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+        </>
+      )}
 
       {/* Footer */}
       <div style={{
