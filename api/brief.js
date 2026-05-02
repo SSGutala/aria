@@ -309,8 +309,8 @@ QUALITY CHECKS:
       conversation_id: conversationId,
       role: 'assistant',
       content: '',
-      message_type: 'enterprise_brief',
-      metadata: { brief, buildMode, artifactIds },
+      message_type: 'confirmation',
+      metadata: { cardType: 'enterprise_brief', brief, buildMode, artifactIds },
     })
     if (briefInsertErr) console.error('DB insert error (enterprise_brief):', briefInsertErr)
 

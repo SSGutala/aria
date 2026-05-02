@@ -81,8 +81,8 @@ Return JSON only:
           conversation_id: conversationId,
           role: 'assistant',
           content: '',
-          message_type: 'build_mode',
-          metadata: { recommendedMode, complexityReason },
+          message_type: 'confirmation',
+          metadata: { cardType: 'build_mode', recommendedMode, complexityReason },
         },
       ])
       if (bmInsertErr) console.error('DB insert error (build_mode):', bmInsertErr)
@@ -235,8 +235,8 @@ Return JSON only:
         conversation_id: conversationId,
         role: 'assistant',
         content: '',
-        message_type: 'clarification_v2',
-        metadata: { questions, buildMode },
+        message_type: 'clarification',
+        metadata: { cardType: 'clarification_v2', questions, buildMode },
       })
       if (clarV2InsertErr) console.error('DB insert error (clarification_v2):', clarV2InsertErr)
 

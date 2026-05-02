@@ -191,8 +191,8 @@ SELF-CRITIQUE before returning:
       conversation_id: conversationId,
       role: 'assistant',
       content: '',
-      message_type: 'spec',
-      metadata: { spec },
+      message_type: 'confirmation',
+      metadata: { cardType: 'spec', spec },
     })
 
     return res.json({ spec })

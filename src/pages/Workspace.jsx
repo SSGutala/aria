@@ -88,7 +88,9 @@ export default function Workspace() {
         // Restore pending refs so interactive handlers re-attach on refresh
         // Only restore if there are no later messages that would have consumed the card
         // (i.e. the card is still the "last actionable" item of its type)
-        const lastOf = (type) => [...msgs].reverse().find(m => m.message_type === type)
+        // cardType helper — DB stores 'confirmation'/'clarification' but real type is in metadata.cardType
+        const ct = (m) => m.metadata?.cardType || m.message_type
+        const lastOf = (type) => [...msgs].reverse().find(m => ct(m) === type)
         const hasAppCard = msgs.some(m => m.message_type === 'app_card')
         if (!hasAppCard) {
           const bm = lastOf('build_mode')
@@ -358,7 +360,7 @@ export default function Workspace() {
       supabase.from('messages')
         .select('id')
         .eq('conversation_id', convId)
-        .eq('message_type', 'build_mode')
+        .eq('message_type', 'confirmation')
         .order('created_at', { ascending: false })
         .limit(1)
         .then(({ data }) => {
@@ -531,21 +533,22 @@ export default function Workspace() {
 
   // ─── Attach live handlers to messages ─────────────────────────────────────
   const messagesWithHandlers = messages.map(m => {
-    if (m.message_type === 'build_mode' && m.id === pendingBuildModeMsgId.current && !isTyping) {
+    const ct = m.metadata?.cardType || m.message_type
+    if (ct === 'build_mode' && m.id === pendingBuildModeMsgId.current && !isTyping) {
       return { ...m, onModeSelect: handleBuildModeSelect }
     }
-    if (m.message_type === 'clarification') {
+    if (ct === 'clarification') {
       const isActive = m.id === pendingClarMsgIdRef.current && !isTyping
       return { ...m, onClarify: isActive ? handleClarification : null, onRestart: handleRestartFromClarification }
     }
-    if (m.message_type === 'clarification_v2') {
+    if (ct === 'clarification_v2') {
       const isActive = m.id === pendingClarV2MsgIdRef.current && !isTyping
       return { ...m, onClarifyV2: isActive ? handleClarificationV2 : null, onRestart: handleRestartFromClarification }
     }
-    if (m.message_type === 'spec' && m.id === pendingSpecMsgIdRef.current && !isTyping) {
+    if (ct === 'spec' && m.id === pendingSpecMsgIdRef.current && !isTyping) {
       return { ...m, onBuild: handleBuildApp, onSpecChange: (updatedSpec) => { pendingSpecRef.current = updatedSpec } }
     }
-    if (m.message_type === 'enterprise_brief') {
+    if (ct === 'enterprise_brief') {
       const handlers = { onOpenArtifact: openArtifact, artifacts }
       if (m.id === pendingBriefMsgIdRef.current && !isTyping) handlers.onBuild = handleBuildApp
       return { ...m, ...handlers }

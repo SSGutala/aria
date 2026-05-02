@@ -68,6 +68,8 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   const isUser = message.role === 'user'
   const isError = message.isError
   const meta = message.metadata || {}
+  // cardType in metadata is the canonical type (DB stores 'confirmation'/'clarification' to satisfy constraint)
+  const cardType = meta.cardType || message.message_type
 
   // ── User bubble ──────────────────────────────────────────────────────────────
   if (isUser) {
@@ -96,7 +98,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   }
 
   // ── Build mode selection card — always shown as card ─────────────────────────
-  if (message.message_type === 'build_mode') {
+  if (cardType === 'build_mode') {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
@@ -111,7 +113,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   }
 
   // ── Clarification v1 — always shown as interactive card ───────────────────────
-  if (message.message_type === 'clarification' && meta.questions) {
+  if (cardType === 'clarification' && meta.questions) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
@@ -126,7 +128,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   }
 
   // ── Clarification v2 — always shown as interactive card ──────────────────────
-  if (message.message_type === 'clarification_v2' && meta.questions) {
+  if (cardType === 'clarification_v2' && meta.questions) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
@@ -142,7 +144,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   }
 
   // ── Enterprise stages brief ──────────────────────────────────────────────────
-  if (message.message_type === 'enterprise_brief') {
+  if (cardType === 'enterprise_brief') {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, width: '100%' }}>
         <AIIcon />
@@ -159,7 +161,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   }
 
   // ── Quick build spec card ────────────────────────────────────────────────────
-  if (message.message_type === 'spec') {
+  if (cardType === 'spec') {
     const spec = meta.spec
     if (!spec) return null
     return (
