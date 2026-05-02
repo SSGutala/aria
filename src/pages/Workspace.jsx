@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, MOCK_MODE } from '../lib/supabase'
 import { analyzeBuildMode, getModeQuestions, generateSpec, generateBrief, buildApp, editApp } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
@@ -82,7 +82,43 @@ export default function Workspace() {
     supabase.from('conversations').select('*').eq('id', convId).single()
       .then(({ data }) => setCurrentConv(data))
     supabase.from('messages').select('*').eq('conversation_id', convId).order('created_at')
-      .then(({ data }) => setMessages(data || []))
+      .then(({ data }) => {
+        const msgs = data || []
+        setMessages(msgs)
+        // Restore pending refs so interactive handlers re-attach on refresh
+        // Only restore if there are no later messages that would have consumed the card
+        // (i.e. the card is still the "last actionable" item of its type)
+        const lastOf = (type) => [...msgs].reverse().find(m => m.message_type === type)
+        const hasAppCard = msgs.some(m => m.message_type === 'app_card')
+        if (!hasAppCard) {
+          const bm = lastOf('build_mode')
+          if (bm && bm.metadata?.selectedMode == null) pendingBuildModeMsgId.current = bm.id
+          const clarV2 = lastOf('clarification_v2')
+          const clar = lastOf('clarification')
+          // Only restore if no brief/spec came after it (meaning it hasn't been answered)
+          const lastBrief = lastOf('enterprise_brief')
+          const lastSpec = lastOf('spec')
+          if (clarV2 && (!lastBrief || clarV2.created_at > (lastBrief?.created_at || ''))) {
+            pendingClarV2MsgIdRef.current = clarV2.id
+          }
+          if (clar && (!lastSpec || clar.created_at > (lastSpec?.created_at || ''))) {
+            pendingClarMsgIdRef.current = clar.id
+          }
+          if (lastBrief) {
+            pendingBriefMsgIdRef.current = lastBrief.id
+            pendingSpecRef.current = lastBrief.metadata?.brief?.appSpec || null
+          }
+          if (lastSpec) {
+            pendingSpecMsgIdRef.current = lastSpec.id
+            pendingSpecRef.current = lastSpec.metadata?.spec || null
+          }
+          // Restore prompt from last user message
+          const lastUser = [...msgs].reverse().find(m => m.role === 'user')
+          if (lastUser) pendingPromptRef.current = lastUser.content
+          // Restore build mode
+          if (bm?.metadata?.selectedMode) pendingBuildModeRef.current = bm.metadata.selectedMode
+        }
+      })
     supabase.from('generated_apps').select('*').eq('conversation_id', convId).single()
       .then(({ data }) => setCurrentApp(data || null))
     // Load artifacts for this conversation
@@ -224,10 +260,9 @@ export default function Workspace() {
       pendingPromptRef.current = prompt
       pendingClarAnswersRef.current = clarificationAnswers
 
-      setMessages(prev => [...prev, {
-        id: specId, role: 'assistant', content: '', message_type: 'spec',
-        metadata: { spec: result.spec },
-      }])
+      const specMsg = { id: specId, role: 'assistant', content: '', message_type: 'spec', metadata: { spec: result.spec } }
+      setMessages(prev => [...prev, specMsg])
+      await persistCardMessages([specMsg])
     } catch (err) {
       setIsTyping(false)
       setBuildingLabel(null)
@@ -255,10 +290,12 @@ export default function Workspace() {
       pendingPromptRef.current = prompt
       pendingClarAnswersRef.current = clarAnswers
 
-      setMessages(prev => [...prev, {
+      const briefMsg = {
         id: briefId, role: 'assistant', content: '', message_type: 'enterprise_brief',
         metadata: { brief: result.brief, buildMode: mode, artifactIds: result.artifactIds },
-      }])
+      }
+      setMessages(prev => [...prev, briefMsg])
+      await persistCardMessages([briefMsg])
       // Refresh artifacts from server
       if (convId) loadArtifacts(convId)
     } catch (err) {
@@ -292,6 +329,7 @@ export default function Workspace() {
         metadata: { recommendedMode: result.recommendedMode, complexityReason: result.complexityReason },
       })
       setMessages(prev => [...prev, ...newMsgs])
+      await persistCardMessages(newMsgs)
     } catch (err) {
       setIsTyping(false)
       setBuildingLabel(null)
@@ -360,6 +398,7 @@ export default function Workspace() {
       }
 
       setMessages(prev => [...prev, ...newMsgs])
+      await persistCardMessages(newMsgs)
     } catch (err) {
       setIsTyping(false)
       setBuildingLabel(null)
@@ -425,6 +464,38 @@ export default function Workspace() {
       setIsTyping(false)
       setBuildingLabel(null)
       addMsg(err.message || 'Edit failed. Please try again.', true)
+    }
+  }
+
+  // ─── Persist assistant card messages so they survive refresh ──────────────
+  // In mock mode: frontend saves to localStorage (backend saves to real Supabase which frontend can't read)
+  // In real mode: backend already saved; do a fresh DB fetch to sync real IDs into local state
+  async function persistCardMessages(newMsgs) {
+    if (MOCK_MODE) {
+      // Save each card message via frontend Supabase client → localStorage
+      for (const m of newMsgs) {
+        if (m.message_type !== 'text') {
+          await supabase.from('messages').insert({
+            id: m.id,
+            conversation_id: convId,
+            role: m.role || 'assistant',
+            content: m.content || '',
+            message_type: m.message_type,
+            metadata: m.metadata || {},
+          })
+        }
+      }
+    } else {
+      // Real Supabase: backend already saved with real UUIDs — fetch fresh and merge
+      const { data: dbMsgs } = await supabase.from('messages').select('*').eq('conversation_id', convId).order('created_at')
+      if (dbMsgs?.length) {
+        setMessages(prev => {
+          // Keep any local-only messages (pending refs, optimistic), merge with DB
+          const dbIds = new Set(dbMsgs.map(m => m.id))
+          const localOnly = prev.filter(m => !dbIds.has(m.id) && m.id.includes('_'))
+          return [...dbMsgs, ...localOnly]
+        })
+      }
     }
   }
 

@@ -148,3 +148,5 @@ const mockSupabase = {
 export const supabase = MOCK_MODE
   ? mockSupabase
   : createClient(supabaseUrl, supabaseAnonKey)
+
+export { MOCK_MODE }
