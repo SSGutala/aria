@@ -305,13 +305,14 @@ QUALITY CHECKS:
     }
 
     // ── Persist enterprise_brief message with artifact IDs ────────────────────
-    await supabase.from('messages').insert({
+    const { error: briefInsertErr } = await supabase.from('messages').insert({
       conversation_id: conversationId,
       role: 'assistant',
       content: '',
       message_type: 'enterprise_brief',
       metadata: { brief, buildMode, artifactIds },
     })
+    if (briefInsertErr) console.error('DB insert error (enterprise_brief):', briefInsertErr)
 
     // ── Fire-and-forget file generation for each artifact ─────────────────────
     // Do not await — return response immediately, files generate in background

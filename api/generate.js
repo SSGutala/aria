@@ -69,7 +69,7 @@ Return JSON only:
       const complexityReason = parsed.complexityReason || ''
 
       // Persist intro text and build_mode card separately so both survive refresh
-      await supabase.from('messages').insert([
+      const { error: bmInsertErr } = await supabase.from('messages').insert([
         {
           conversation_id: conversationId,
           role: 'assistant',
@@ -85,6 +85,7 @@ Return JSON only:
           metadata: { recommendedMode, complexityReason },
         },
       ])
+      if (bmInsertErr) console.error('DB insert error (build_mode):', bmInsertErr)
 
       return res.json({
         type: 'build_mode',
@@ -230,13 +231,14 @@ Return JSON only:
         })
       }
 
-      await supabase.from('messages').insert({
+      const { error: clarV2InsertErr } = await supabase.from('messages').insert({
         conversation_id: conversationId,
         role: 'assistant',
         content: '',
         message_type: 'clarification_v2',
         metadata: { questions, buildMode },
       })
+      if (clarV2InsertErr) console.error('DB insert error (clarification_v2):', clarV2InsertErr)
 
       return res.json({ type: 'clarification_v2', intro: parsed.intro || '', questions, buildMode })
     }
