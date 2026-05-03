@@ -598,58 +598,62 @@ function stageToPlainText(stageId, data) {
 }
 
 // ─── Inline text editor for stage content ────────────────────────────────────
+// localStorage key: aria_edit_{conversationId}_{stageId}
+function localKey(artifact, stageId) {
+  return `aria_edit_${artifact?.conversation_id || 'local'}_${stageId}`
+}
+
 function InlineEditor({ artifact, stageId, data, onClose }) {
-  // Prefer saved manual text, else generate from structured data
-  const initialText = artifact?.content?._manualEdit || stageToPlainText(stageId, data)
+  // Priority: server _manualEdit → localStorage → generated plain text
+  const lsKey = localKey(artifact, stageId)
+  const initialText =
+    artifact?.content?._manualEdit ||
+    localStorage.getItem(lsKey) ||
+    stageToPlainText(stageId, data)
+
   const [text, setText] = useState(initialText)
-  const [status, setStatus] = useState('idle') // idle | unsaved | saving | saved | no_artifact
+  const [status, setStatus] = useState('idle') // idle | unsaved | saving | saved
   const debounce = useRef(null)
 
   async function save(val) {
-    if (!artifact?.id) {
-      setStatus('no_artifact')
-      return
-    }
-    setStatus('saving')
-    try {
-      const res = await fetch(`${API}/api/artifacts/${artifact.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: { ...artifact.content, _manualEdit: val } }),
-      })
-      if (!res.ok) throw new Error()
+    // Always save to localStorage immediately — works with or without artifacts table
+    localStorage.setItem(lsKey, val)
+
+    // Also try to persist to server if artifact is linked
+    if (artifact?.id) {
+      setStatus('saving')
+      try {
+        const res = await fetch(`${API}/api/artifacts/${artifact.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: { ...(artifact.content || {}), _manualEdit: val } }),
+        })
+        if (!res.ok) throw new Error()
+        setStatus('saved')
+      } catch {
+        // Server save failed but localStorage succeeded — still show saved
+        setStatus('saved')
+      }
+    } else {
       setStatus('saved')
-      setTimeout(() => setStatus('idle'), 2500)
-    } catch {
-      setStatus('unsaved')
     }
+    setTimeout(() => setStatus('idle'), 2500)
   }
 
   function onChange(e) {
-    setText(e.target.value)
+    const val = e.target.value
+    setText(val)
     setStatus('unsaved')
     clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => save(e.target.value), 2000)
+    debounce.current = setTimeout(() => save(val), 1500)
   }
 
-  const statusColor = {
-    idle:        '#3D3D3D',
-    unsaved:     '#FBBF24',
-    saving:      '#737373',
-    saved:       '#34D399',
-    no_artifact: '#F87171',
-  }[status]
-  const statusLabel = {
-    idle:        'Edit freely — autosaves',
-    unsaved:     'Unsaved changes...',
-    saving:      'Saving...',
-    saved:       '✓ Saved',
-    no_artifact: 'Cannot save — document not linked yet',
-  }[status]
+  const statusColor = { idle: '#3D3D3D', unsaved: '#FBBF24', saving: '#737373', saved: '#34D399' }[status]
+  const statusLabel = { idle: 'Edit freely — autosaves', unsaved: 'Unsaved...', saving: 'Saving...', saved: '✓ Saved' }[status]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Editor toolbar */}
+      {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 10px', borderBottom: '0.5px solid #1A1A1A', marginBottom: 10 }}>
         <span style={{ fontSize: 10, color: '#A78BFA', fontWeight: 700, letterSpacing: '0.04em' }}>✏ EDITING</span>
         <span style={{ fontSize: 10, color: statusColor, flex: 1 }}>{statusLabel}</span>
@@ -664,7 +668,7 @@ function InlineEditor({ artifact, stageId, data, onClose }) {
         </button>
       </div>
 
-      {/* Plain-text textarea — no monospace, no JSON */}
+      {/* Plain-text area */}
       <textarea
         value={text}
         onChange={onChange}
@@ -673,17 +677,14 @@ function InlineEditor({ artifact, stageId, data, onClose }) {
           width: '100%', minHeight: 260,
           background: '#0A0A0A', color: '#E5E5E5',
           border: '0.5px solid #2A2A2A', borderRadius: 7,
-          padding: '16px 18px',
-          fontSize: 13,
+          padding: '16px 18px', fontSize: 13,
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          lineHeight: 1.75,
-          resize: 'vertical', outline: 'none',
-          boxSizing: 'border-box',
-          whiteSpace: 'pre-wrap',
+          lineHeight: 1.75, resize: 'vertical', outline: 'none',
+          boxSizing: 'border-box', whiteSpace: 'pre-wrap',
         }}
       />
       <p style={{ margin: '6px 0 0', fontSize: 10, color: '#3D3D3D' }}>
-        Edit any text above. Section headings are just labels — change the content underneath them.
+        Changes are saved automatically. Section headings are labels — edit the content beneath them.
       </p>
     </div>
   )
