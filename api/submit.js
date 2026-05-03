@@ -5,7 +5,7 @@ const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
-const resend = new Resend(process.env.RESEND_API_KEY)
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
 
     // send emails — failures must not block response
     try {
-      if (notif.sendConfirmationToSubmitter && notif.submitterEmailField && formData[notif.submitterEmailField]) {
+      if (resend && notif.sendConfirmationToSubmitter && notif.submitterEmailField && formData[notif.submitterEmailField]) {
         await resend.emails.send({
           from: 'aria@aria-app.com',
           to: formData[notif.submitterEmailField],
@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     }
 
     try {
-      if (notif.notifyOnSubmission && notif.notifyEmails?.length > 0) {
+      if (resend && notif.notifyOnSubmission && notif.notifyEmails?.length > 0) {
         const recipients = [...notif.notifyEmails]
 
         if (notif.priorityRouting && notif.priorityField && formData[notif.priorityField]) {
