@@ -1,7 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { createMessage } from './ai-client.js'
 import { createClient } from '@supabase/supabase-js'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
@@ -19,8 +18,7 @@ export default async function handler(req, res) {
   if (fetchErr || !artifact) return res.status(404).json({ error: 'Artifact not found' })
 
   try {
-    const msg = await anthropic.messages.create({
-      model: 'claude-opus-4-7',
+    const msg = await createMessage({
       max_tokens: 8000,
       system: `You are an expert enterprise product architect editing a structured JSON artifact.
 The artifact type is "${artifact.artifact_type}" and its title is "${artifact.title}".

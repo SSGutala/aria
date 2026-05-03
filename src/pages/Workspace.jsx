@@ -61,6 +61,7 @@ export default function Workspace() {
     if (!user) return
     const { data } = await supabase
       .from('conversations').select('*').eq('user_id', user.id)
+      .neq('deleted', true)
       .order('updated_at', { ascending: false })
     setConversations(data || [])
   }, [user])
@@ -69,6 +70,7 @@ export default function Workspace() {
     if (!user) return
     const { data } = await supabase
       .from('generated_apps').select('*').eq('user_id', user.id)
+      .neq('deleted', true)
       .order('created_at', { ascending: false })
     setApps(data || [])
   }, [user])

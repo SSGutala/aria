@@ -21,6 +21,7 @@
     "docxtemplater": "^3.68.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "groq-sdk": "^1.1.2",
     "mermaid": "^11.14.0",
     "multer": "^2.1.1",
     "node-fetch": "^3.3.2",

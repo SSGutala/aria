@@ -1,7 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { createMessage } from './ai-client.js'
 import { createClient } from '@supabase/supabase-js'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
@@ -36,8 +35,7 @@ export default async function handler(req, res) {
   try {
     // ─── PHASE 1: No buildMode yet → analyze and recommend a build mode ─────────
     if (!buildMode) {
-      const msg = await anthropic.messages.create({
-        model: 'claude-opus-4-7',
+      const msg = await createMessage({
         max_tokens: 600,
         system: ARIA_SYSTEM,
         messages: [{
@@ -98,8 +96,7 @@ Return JSON only:
     // ─── PHASE 2: buildMode selected → return clarification questions ────────────
     if (buildMode === 'quick') {
       // Quick build: 2-3 targeted multiple-choice questions or skip entirely
-      const msg = await anthropic.messages.create({
-        model: 'claude-opus-4-7',
+      const msg = await createMessage({
         max_tokens: 800,
         system: ARIA_SYSTEM,
         messages: [{
@@ -171,8 +168,7 @@ OR if clear:
         ? 'Documentation First mode — focus on stakeholders, approval chain, compliance, and document outputs.'
         : 'Guided Build mode — focus on workflow depth, user roles, automation, and integration needs.'
 
-      const msg = await anthropic.messages.create({
-        model: 'claude-opus-4-7',
+      const msg = await createMessage({
         max_tokens: 1400,
         system: ARIA_SYSTEM,
         messages: [{

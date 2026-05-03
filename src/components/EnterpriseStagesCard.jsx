@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
+import { API_URL as API } from '../lib/api'
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function ChevronIcon({ open }) {
@@ -446,20 +447,139 @@ const STAGE_FORMATS = {
   uxRecommendation: ['pdf', 'docx'],
   appSpec:          ['pdf', 'docx', 'xlsx'],
 }
-const FMT = { pdf: 'PDF', docx: 'Word', xlsx: 'Excel', csv: 'CSV', json: 'JSON', md: 'MD' }
+const FMT = { pdf: 'PDF', docx: 'Word', xlsx: 'Excel', csv: 'CSV', json: 'JSON', md: 'Markdown' }
+const FMT_ICON = { pdf: '📄', docx: '📝', xlsx: '📊', csv: '📋', json: '{ }', md: '#' }
+
+// ─── Export dropdown (single button) ─────────────────────────────────────────
+function ExportDropdown({ formats, fileUrls, artifactId, onClick }) {
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState({})
+  const ref = useRef(null)
+  useEffect(() => {
+    function h(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  async function doExport(fmt, e) {
+    e.stopPropagation()
+    const url = fileUrls[fmt]
+    if (url) { window.open(url, '_blank'); setOpen(false); return }
+    if (!artifactId) return
+    setLoading(l => ({ ...l, [fmt]: true }))
+    try {
+      const res = await fetch(`${API}/api/artifacts/${artifactId}/files`, { method: 'POST' })
+      const data = await res.json()
+      if (data.fileUrls?.[fmt]) window.open(data.fileUrls[fmt], '_blank')
+    } catch {}
+    finally { setLoading(l => ({ ...l, [fmt]: false })); setOpen(false) }
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(v => !v) }}
+        style={{ fontSize: 10, color: '#A3A3A3', background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}
+      >
+        ↓ Export
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: 4, background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 7, overflow: 'hidden', zIndex: 200, minWidth: 140, boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+          {formats.map(fmt => (
+            <button key={fmt} onClick={e => doExport(fmt, e)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', color: fileUrls[fmt] ? '#D4D4D4' : '#737373', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#1E1E1E'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span>{FMT_ICON[fmt]}</span>
+              <span>{FMT[fmt]}</span>
+              {loading[fmt] && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#525252' }}>...</span>}
+              {fileUrls[fmt] && !loading[fmt] && <span style={{ marginLeft: 'auto', fontSize: 9, color: '#34D399' }}>↓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Inline text editor for stage content ────────────────────────────────────
+function InlineEditor({ artifact, data, onClose }) {
+  const initialText = artifact?.content?._manualEdit ||
+    (data ? JSON.stringify(data, null, 2) : '')
+  const [text, setText] = useState(initialText)
+  const [status, setStatus] = useState('idle') // idle | unsaved | saving | saved
+
+  const debounce = useRef(null)
+
+  async function save(val) {
+    if (!artifact?.id) return
+    setStatus('saving')
+    try {
+      await fetch(`${API}/api/artifacts/${artifact.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: { ...artifact.content, _manualEdit: val } }),
+      })
+      setStatus('saved')
+      setTimeout(() => setStatus('idle'), 2000)
+    } catch { setStatus('unsaved') }
+  }
+
+  function onChange(e) {
+    setText(e.target.value)
+    setStatus('unsaved')
+    clearTimeout(debounce.current)
+    debounce.current = setTimeout(() => save(e.target.value), 1800)
+  }
+
+  const statusColor = { idle: '#525252', unsaved: '#FBBF24', saving: '#737373', saved: '#34D399' }[status]
+  const statusLabel = { idle: '', unsaved: 'Unsaved', saving: 'Saving...', saved: 'Saved ✓' }[status]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0 8px', borderBottom: '0.5px solid #1A1A1A', marginBottom: 8 }}>
+        <span style={{ fontSize: 10, color: '#A78BFA', fontWeight: 600 }}>✏ Editing</span>
+        <span style={{ fontSize: 10, color: statusColor, flex: 1 }}>{statusLabel}</span>
+        <button onClick={onClose}
+          style={{ fontSize: 10, color: '#525252', background: 'transparent', border: '0.5px solid #2A2A2A', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+          Done
+        </button>
+        <button onClick={() => { clearTimeout(debounce.current); save(text) }}
+          style={{ fontSize: 10, color: '#34D399', background: '#0D2A1A', border: '0.5px solid #34D39933', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+          Save
+        </button>
+      </div>
+      <textarea
+        value={text}
+        onChange={onChange}
+        style={{
+          width: '100%', minHeight: 220,
+          background: '#0D0D0D', color: '#D4D4D4',
+          border: '0.5px solid #2A2A2A', borderRadius: 6,
+          padding: '12px 14px', fontSize: 12,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          lineHeight: 1.65, resize: 'vertical', outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      />
+    </div>
+  )
+}
 
 // ─── Stage row ────────────────────────────────────────────────────────────────
 function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, onOpen, hasArtifact, artifact }) {
   const Component = stage.component
   const fileUrls = artifact?.file_urls || {}
   const formats = STAGE_FORMATS[stage.id] || ['pdf']
+  const [editing, setEditing] = useState(false)
 
   return (
     <div style={{ borderBottom: '0.5px solid #1A1A1A' }}>
-      {/* Header row — click label area to toggle, approve button inline */}
+      {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
 
-        {/* Approve button — clickable without opening */}
+        {/* Approve checkbox */}
         <button
           onClick={e => { e.stopPropagation(); onApprove() }}
           title={approved ? 'Click to unapprove' : 'Approve this stage'}
@@ -506,19 +626,6 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
                 APPROVED
               </span>
             )}
-            {/* Download buttons inline on row */}
-            {formats.map(fmt => {
-              const url = fileUrls[fmt]
-              return url ? (
-                <a key={fmt} href={url} download target="_blank" rel="noreferrer"
-                  onClick={e => e.stopPropagation()}
-                  style={{ fontSize: 9, color: '#525252', background: '#111', border: '0.5px solid #1E1E1E', borderRadius: 3, padding: '1px 6px', textDecoration: 'none', fontFamily: 'inherit' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = '#A3A3A3'; e.currentTarget.style.borderColor = '#2A2A2A' }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#525252'; e.currentTarget.style.borderColor = '#1E1E1E' }}>
-                  ↓{FMT[fmt]}
-                </a>
-              ) : null
-            })}
             <div style={{ color: '#3D3D3D' }}>
               <ChevronIcon open={isOpen} />
             </div>
@@ -529,59 +636,52 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
       {/* Expanded content */}
       {isOpen && (
         <div style={{ padding: '14px 16px', borderTop: '0.5px solid #1A1A1A', background: '#0D0D0D' }}>
-          <Component data={data} />
+          {editing
+            ? <InlineEditor artifact={artifact} data={data} onClose={() => setEditing(false)} />
+            : <Component data={data} />
+          }
 
           {/* Action bar */}
-          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, borderTop: '0.5px solid #1A1A1A', paddingTop: 10 }}>
-            <button
-              onClick={onApprove}
-              style={{
-                background: approved ? '#0D1F16' : '#161616',
-                color: approved ? '#34D399' : '#A3A3A3',
-                border: `0.5px solid ${approved ? '#34D39966' : '#2A2A2A'}`,
-                borderRadius: 6, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}
-            >
-              {approved && <CheckIcon />}
-              {approved ? 'Approved' : 'Approve'}
-            </button>
-            {hasArtifact && onOpen && (
-              <>
-                <button
-                  onClick={onOpen}
-                  style={{ background: 'transparent', color: '#525252', border: '0.5px solid #222', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}
-                >
-                  <EditIcon /> Edit document
-                </button>
+          {!editing && (
+            <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, borderTop: '0.5px solid #1A1A1A', paddingTop: 10 }}>
+              <button
+                onClick={onApprove}
+                style={{
+                  background: approved ? '#0D1F16' : '#161616',
+                  color: approved ? '#34D399' : '#A3A3A3',
+                  border: `0.5px solid ${approved ? '#34D39966' : '#2A2A2A'}`,
+                  borderRadius: 6, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                {approved && <CheckIcon />}
+                {approved ? 'Approved' : 'Approve'}
+              </button>
+
+              {/* ✏ Edit inline */}
+              <button
+                onClick={() => setEditing(true)}
+                style={{ background: '#1A1A2A', color: '#A78BFA', border: '0.5px solid #3A1E5F', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <EditIcon /> Edit
+              </button>
+
+              {/* Open full viewer */}
+              {hasArtifact && onOpen && (
                 <button
                   onClick={onOpen}
                   style={{ background: 'transparent', color: '#525252', border: '0.5px solid #222', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
                 >
                   ↗ Open
                 </button>
-              </>
-            )}
-            {/* Per-stage download buttons in expanded view */}
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-              {formats.map(fmt => {
-                const url = fileUrls[fmt]
-                return (
-                  <a key={fmt} href={url || undefined}
-                    onClick={!url ? e => e.preventDefault() : undefined}
-                    download={url ? true : undefined} target={url ? '_blank' : undefined} rel="noreferrer"
-                    style={{
-                      fontSize: 10, color: url ? '#A3A3A3' : '#3D3D3D', background: '#161616',
-                      border: `0.5px solid ${url ? '#2A2A2A' : '#1A1A1A'}`, borderRadius: 4,
-                      padding: '4px 9px', textDecoration: 'none', fontFamily: 'inherit',
-                      cursor: url ? 'pointer' : 'default', display: 'inline-flex', alignItems: 'center', gap: 3,
-                    }}>
-                    ↓ {FMT[fmt]}
-                  </a>
-                )
-              })}
+              )}
+
+              {/* Single export dropdown */}
+              <div style={{ marginLeft: 'auto' }}>
+                <ExportDropdown formats={formats} fileUrls={fileUrls} artifactId={artifact?.id} />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { createRequire } from 'module'
 import { sendOutlookEmail } from '../m365/graph.js'
-import Anthropic from '@anthropic-ai/sdk'
+import { createMessage } from '../ai-client.js'
 
 const require = createRequire(import.meta.url)
 const PizZip = require('pizzip')
@@ -16,7 +16,6 @@ const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 // ─── Generate a .docx from base64 template + data ───────────────────────────
 function fillDocxTemplate(base64Template, data) {
@@ -37,8 +36,7 @@ async function generateHTMLDocument(schema, formData, templateDescription) {
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n')
 
-  const msg = await anthropic.messages.create({
-    model: 'claude-opus-4-7',
+  const msg = await createMessage({
     max_tokens: 2048,
     system: 'You are a professional document writer. Return only clean HTML document content, no markdown, no explanation.',
     messages: [{

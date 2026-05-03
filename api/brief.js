@@ -1,7 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { createMessage } from './ai-client.js'
 import { createClient } from '@supabase/supabase-js'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
@@ -69,8 +68,7 @@ CRITICAL: Your entire response must be a single valid JSON object. Start your re
 
 async function generateMermaidDiagram(brief, conversationId) {
   try {
-    const msg = await anthropic.messages.create({
-      model: 'claude-opus-4-7',
+    const msg = await createMessage({
       max_tokens: 2000,
       messages: [{
         role: 'user',
@@ -122,8 +120,7 @@ export default async function handler(req, res) {
   const isDocsMode = buildMode === 'docs'
 
   try {
-    const msg = await anthropic.messages.create({
-      model: 'claude-opus-4-7',
+    const msg = await createMessage({
       max_tokens: 12000,
       system: SYSTEM,
       messages: [{
