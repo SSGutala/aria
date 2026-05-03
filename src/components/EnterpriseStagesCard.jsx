@@ -503,66 +503,188 @@ function ExportDropdown({ formats, fileUrls, artifactId, onClick }) {
   )
 }
 
-// ─── Inline text editor for stage content ────────────────────────────────────
-function InlineEditor({ artifact, data, onClose }) {
-  const initialText = artifact?.content?._manualEdit ||
-    (data ? JSON.stringify(data, null, 2) : '')
-  const [text, setText] = useState(initialText)
-  const [status, setStatus] = useState('idle') // idle | unsaved | saving | saved
+// ─── Convert stage data → human-readable plain text ──────────────────────────
+function stageToPlainText(stageId, data) {
+  if (!data) return ''
+  const list = (arr) => (arr || []).map(x => `  • ${x}`).join('\n')
 
+  switch (stageId) {
+    case 'intakeSummary':
+      return [
+        `Summary\n${data.understood || ''}`,
+        `\nBusiness Problem\n${data.businessProblem || ''}`,
+        `\nPrimary Users\n${list(data.primaryUsers)}`,
+        data.secondaryUsers?.length ? `\nSecondary Users\n${list(data.secondaryUsers)}` : '',
+        `\nProcess Being Replaced\n${data.currentProcess || ''}`,
+        `\nMain Outcome\n${data.mainOutcome || ''}`,
+      ].filter(Boolean).join('\n')
+
+    case 'productBrief':
+      return [
+        `Objective\n${data.objective || ''}`,
+        `\nUser Roles\n${(data.userRoles || []).map(r => `  • ${r.role} — ${r.access}${r.estimated ? ` (~${r.estimated})` : ''}`).join('\n')}`,
+        `\nCore Workflows\n${list(data.coreWorkflows)}`,
+        `\nBusiness Rules\n${list(data.businessRules)}`,
+        `\nSuccess Criteria\n${list(data.successCriteria)}`,
+        data.openQuestions?.length ? `\nOpen Questions\n${list(data.openQuestions)}` : '',
+        data.assumptions?.length ? `\nAssumptions\n${list(data.assumptions)}` : '',
+      ].filter(Boolean).join('\n')
+
+    case 'workflowMap':
+      return [
+        `Trigger\n${data.trigger || ''}`,
+        `\nProcess Steps\n${(data.steps || []).map((s, i) =>
+          `  ${i + 1}. ${s.step} — ${s.actor}\n     What happens: ${s.action}\n     Output: ${s.output || 'N/A'}${s.sla && s.sla !== 'None' ? `\n     SLA: ${s.sla}` : ''}`
+        ).join('\n\n')}`,
+        data.decisionPoints?.length ? `\nDecision Points\n${list(data.decisionPoints)}` : '',
+        data.exceptionPaths?.length ? `\nException Paths\n${list(data.exceptionPaths)}` : '',
+      ].filter(Boolean).join('\n')
+
+    case 'dataModel':
+      return [
+        `Primary Entity\n${data.primaryEntity || ''}`,
+        `\nStatus Flow\n  ${(data.statusFlow || []).join(' → ')}`,
+        `\nFields\n${(data.fields || []).map(f =>
+          `  • ${f.label} (${f.type})${f.required ? ' — required' : ''}${f.options?.length ? `\n    Options: ${f.options.join(', ')}` : ''}`
+        ).join('\n')}`,
+        data.relationships?.length ? `\nRelationships\n${list(data.relationships)}` : '',
+        data.auditFields?.length ? `\nAudit Fields\n  ${data.auditFields.join(', ')}` : '',
+      ].filter(Boolean).join('\n')
+
+    case 'automationModel':
+      return [
+        data.triggers?.length ? `Triggers\n${data.triggers.map(t =>
+          `  • When: ${t.event}\n    If: ${t.condition}\n    Then: ${t.action}`
+        ).join('\n\n')}` : '',
+        data.notifications?.length ? `\nNotifications\n${data.notifications.map(n =>
+          `  • ${n.event} → ${n.recipient} via ${n.channel}${n.template ? `\n    Message: "${n.template}"` : ''}`
+        ).join('\n')}` : '',
+        data.escalations?.length ? `\nEscalations\n${data.escalations.map(e =>
+          `  • If ${e.condition}: ${e.action} (notify ${e.recipient})`
+        ).join('\n')}` : '',
+        data.integrations?.length ? `\nIntegrations\n${data.integrations.map(i =>
+          `  • ${i.system} (${i.type}): ${i.purpose}`
+        ).join('\n')}` : '',
+      ].filter(Boolean).join('\n')
+
+    case 'uxRecommendation':
+      return [
+        `Layout Type\n${(data.layoutType || '').replace(/_/g, ' ')}`,
+        `\nNavigation\n${data.navigationModel || ''}`,
+        data.visualTheme ? `\nVisual Direction\n  Mood: ${data.visualTheme.mood}\n  Color: ${data.visualTheme.colorName} (${data.visualTheme.primaryColor})\n  Why: ${data.visualTheme.rationale}` : '',
+        data.primaryScreens?.length ? `\nScreens\n${data.primaryScreens.map(s =>
+          `  • ${s.screen}: ${s.purpose}\n    Actions: ${(s.keyActions || []).join(', ')}`
+        ).join('\n')}` : '',
+        data.rationale ? `\nDesign Rationale\n${data.rationale}` : '',
+      ].filter(Boolean).join('\n')
+
+    case 'appSpec':
+      return [
+        `App Name\n${data.appTitle || ''}`,
+        `\nTagline\n${data.tagline || ''}`,
+        `\nPurpose\n${data.purpose || ''}`,
+        `\nApp Type\n${data.appType || ''}`,
+        `\nPrimary Action\n${data.primaryActionLabel || ''}`,
+        `\nStatus Flow\n  ${(data.statusFlow || []).join(' → ')}`,
+        `\nFeatures\n${list(data.features)}`,
+        data.fields?.length ? `\nData Fields\n${data.fields.map(f =>
+          `  • ${f.label} (${f.type})${f.required ? ' — required' : ''}`
+        ).join('\n')}` : '',
+      ].filter(Boolean).join('\n')
+
+    default:
+      return JSON.stringify(data, null, 2)
+  }
+}
+
+// ─── Inline text editor for stage content ────────────────────────────────────
+function InlineEditor({ artifact, stageId, data, onClose }) {
+  // Prefer saved manual text, else generate from structured data
+  const initialText = artifact?.content?._manualEdit || stageToPlainText(stageId, data)
+  const [text, setText] = useState(initialText)
+  const [status, setStatus] = useState('idle') // idle | unsaved | saving | saved | no_artifact
   const debounce = useRef(null)
 
   async function save(val) {
-    if (!artifact?.id) return
+    if (!artifact?.id) {
+      setStatus('no_artifact')
+      return
+    }
     setStatus('saving')
     try {
-      await fetch(`${API}/api/artifacts/${artifact.id}`, {
+      const res = await fetch(`${API}/api/artifacts/${artifact.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: { ...artifact.content, _manualEdit: val } }),
       })
+      if (!res.ok) throw new Error()
       setStatus('saved')
-      setTimeout(() => setStatus('idle'), 2000)
-    } catch { setStatus('unsaved') }
+      setTimeout(() => setStatus('idle'), 2500)
+    } catch {
+      setStatus('unsaved')
+    }
   }
 
   function onChange(e) {
     setText(e.target.value)
     setStatus('unsaved')
     clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => save(e.target.value), 1800)
+    debounce.current = setTimeout(() => save(e.target.value), 2000)
   }
 
-  const statusColor = { idle: '#525252', unsaved: '#FBBF24', saving: '#737373', saved: '#34D399' }[status]
-  const statusLabel = { idle: '', unsaved: 'Unsaved', saving: 'Saving...', saved: 'Saved ✓' }[status]
+  const statusColor = {
+    idle:        '#3D3D3D',
+    unsaved:     '#FBBF24',
+    saving:      '#737373',
+    saved:       '#34D399',
+    no_artifact: '#F87171',
+  }[status]
+  const statusLabel = {
+    idle:        'Edit freely — autosaves',
+    unsaved:     'Unsaved changes...',
+    saving:      'Saving...',
+    saved:       '✓ Saved',
+    no_artifact: 'Cannot save — document not linked yet',
+  }[status]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0 8px', borderBottom: '0.5px solid #1A1A1A', marginBottom: 8 }}>
-        <span style={{ fontSize: 10, color: '#A78BFA', fontWeight: 600 }}>✏ Editing</span>
+      {/* Editor toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 10px', borderBottom: '0.5px solid #1A1A1A', marginBottom: 10 }}>
+        <span style={{ fontSize: 10, color: '#A78BFA', fontWeight: 700, letterSpacing: '0.04em' }}>✏ EDITING</span>
         <span style={{ fontSize: 10, color: statusColor, flex: 1 }}>{statusLabel}</span>
         <button onClick={onClose}
-          style={{ fontSize: 10, color: '#525252', background: 'transparent', border: '0.5px solid #2A2A2A', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
-          Done
+          style={{ fontSize: 11, color: '#737373', background: 'transparent', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+          Cancel
         </button>
         <button onClick={() => { clearTimeout(debounce.current); save(text) }}
-          style={{ fontSize: 10, color: '#34D399', background: '#0D2A1A', border: '0.5px solid #34D39933', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-          Save
+          disabled={status === 'saving'}
+          style={{ fontSize: 11, color: '#34D399', background: '#0D2A1A', border: '0.5px solid #34D39933', borderRadius: 5, padding: '4px 14px', cursor: status === 'saving' ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+          {status === 'saving' ? 'Saving...' : 'Save'}
         </button>
       </div>
+
+      {/* Plain-text textarea — no monospace, no JSON */}
       <textarea
         value={text}
         onChange={onChange}
+        autoFocus
         style={{
-          width: '100%', minHeight: 220,
-          background: '#0D0D0D', color: '#D4D4D4',
-          border: '0.5px solid #2A2A2A', borderRadius: 6,
-          padding: '12px 14px', fontSize: 12,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-          lineHeight: 1.65, resize: 'vertical', outline: 'none',
+          width: '100%', minHeight: 260,
+          background: '#0A0A0A', color: '#E5E5E5',
+          border: '0.5px solid #2A2A2A', borderRadius: 7,
+          padding: '16px 18px',
+          fontSize: 13,
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          lineHeight: 1.75,
+          resize: 'vertical', outline: 'none',
           boxSizing: 'border-box',
+          whiteSpace: 'pre-wrap',
         }}
       />
+      <p style={{ margin: '6px 0 0', fontSize: 10, color: '#3D3D3D' }}>
+        Edit any text above. Section headings are just labels — change the content underneath them.
+      </p>
     </div>
   )
 }
@@ -637,7 +759,7 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
       {isOpen && (
         <div style={{ padding: '14px 16px', borderTop: '0.5px solid #1A1A1A', background: '#0D0D0D' }}>
           {editing
-            ? <InlineEditor artifact={artifact} data={data} onClose={() => setEditing(false)} />
+            ? <InlineEditor artifact={artifact} stageId={stage.id} data={data} onClose={() => setEditing(false)} />
             : <Component data={data} />
           }
 
