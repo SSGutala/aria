@@ -29,7 +29,8 @@ export default async function handler(req, res) {
 
   try {
     const msg = await createMessage({
-      max_tokens: 32000,
+      max_tokens: 6000,
+      smart: true,
       system: `You are an expert at modifying React web apps embedded in HTML files.
 
 You will receive:

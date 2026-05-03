@@ -79,7 +79,8 @@ export default async function handler(req, res) {
       : ''
 
     const msg = await createMessage({
-      max_tokens: 4000,
+      max_tokens: 3500,
+      smart: true,
       system: ARIA_SYSTEM,
       messages: [{
         role: 'user',

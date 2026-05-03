@@ -69,7 +69,7 @@ CRITICAL: Your entire response must be a single valid JSON object. Start your re
 async function generateMermaidDiagram(brief, conversationId) {
   try {
     const msg = await createMessage({
-      max_tokens: 2000,
+      max_tokens: 1500,
       messages: [{
         role: 'user',
         content: `Based on this workflow brief, generate a Mermaid flowchart diagram.
@@ -121,7 +121,8 @@ export default async function handler(req, res) {
 
   try {
     const msg = await createMessage({
-      max_tokens: 12000,
+      max_tokens: 7500,
+      smart: true,
       system: SYSTEM,
       messages: [{
         role: 'user',

@@ -19,7 +19,8 @@ export default async function handler(req, res) {
 
   try {
     const msg = await createMessage({
-      max_tokens: 8000,
+      max_tokens: 5000,
+      smart: true,
       system: `You are an expert enterprise product architect editing a structured JSON artifact.
 The artifact type is "${artifact.artifact_type}" and its title is "${artifact.title}".
 Your job is to apply the user's requested change to the artifact's content and return only the updated JSON content object.
