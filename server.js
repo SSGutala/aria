@@ -30,10 +30,17 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
 ].filter(Boolean)
 
+// Public routes that generated apps call from any domain
+const publicRoutes = ['/api/submit', '/api/submissions', '/api/update-status']
+
 app.use(cors({
   origin: (origin, cb) => {
     // Allow requests with no origin (curl, Postman, same-origin server calls)
     if (!origin) return cb(null, true)
+    // Allow any netlify.app subdomain (generated apps are embedded there)
+    if (origin.includes('.netlify.app')) return cb(null, true)
+    // Allow any onrender.com (server-to-server calls)
+    if (origin.includes('.onrender.com')) return cb(null, true)
     if (allowedOrigins.some(o => origin.startsWith(o))) return cb(null, true)
     cb(new Error(`CORS: origin ${origin} not allowed`))
   },
