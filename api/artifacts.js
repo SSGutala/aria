@@ -23,7 +23,7 @@ export default async function handler(req, res) {
 
   // ── POST /api/artifacts — create or upsert artifact ──────────────────────
   if (req.method === 'POST') {
-    const { conversationId, userId, artifactType, title, content, sourcePrompt, relatedAppId } = req.body
+    const { conversationId, userId, artifactType, title, content, sourcePrompt, relatedAppId, source } = req.body
     if (!conversationId || !artifactType || !title) {
       return res.status(400).json({ error: 'Missing required fields' })
     }
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
         related_app_id: relatedAppId || null,
         artifact_type: artifactType,
         title,
-        content: content || {},
+        content: source === 'blank' ? {} : (content || {}),
         source_prompt: sourcePrompt || null,
         version: 1,
         status: 'draft',
@@ -48,10 +48,24 @@ export default async function handler(req, res) {
     return res.json({ artifact: data })
   }
 
+  // ── DELETE /api/artifacts/:id — hard delete ──────────────────────────────
+  if (req.method === 'DELETE') {
+    const id = req.params?.id || req.url.split('/').filter(Boolean).pop()
+    if (!id) return res.status(400).json({ error: 'Artifact ID required' })
+
+    const { error } = await supabase
+      .from('artifacts')
+      .delete()
+      .eq('id', id)
+
+    if (error) return res.status(500).json({ error: error.message })
+    return res.json({ success: true })
+  }
+
   // ── PATCH /api/artifacts/:id — update content, status, or create new version
   if (req.method === 'PATCH') {
     const id = req.params?.id || req.url.split('/').pop()
-    const { content, status, title, createVersion } = req.body
+    const { content, status, title, createVersion, raw_content, mermaid_source } = req.body
 
     if (!id) return res.status(400).json({ error: 'Artifact ID required' })
 
@@ -97,6 +111,8 @@ export default async function handler(req, res) {
     if (content !== undefined) updates.content = content
     if (status !== undefined) updates.status = status
     if (title !== undefined) updates.title = title
+    if (raw_content !== undefined) updates.raw_content = raw_content
+    if (mermaid_source !== undefined) updates.mermaid_source = mermaid_source
 
     const { data, error } = await supabase
       .from('artifacts')

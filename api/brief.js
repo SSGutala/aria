@@ -67,6 +67,48 @@ Use domain-specific language throughout. Name actual roles, business statuses, f
 
 CRITICAL: Your entire response must be a single valid JSON object. Start your response with { and end with }. No markdown, no code fences, no explanation before or after the JSON.`
 
+async function generateMermaidDiagram(brief, conversationId) {
+  try {
+    const msg = await anthropic.messages.create({
+      model: 'claude-opus-4-7',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: `Based on this workflow brief, generate a Mermaid flowchart diagram.
+
+Brief: ${JSON.stringify(brief?.workflowMap || brief?.productBrief || {}, null, 2)}
+
+Return ONLY valid Mermaid flowchart syntax. Start with "flowchart TD" or "flowchart LR".
+Include all key steps, decision points, and actors.
+Use clear, short node labels.
+Example format:
+flowchart TD
+  A[Start] --> B{Decision?}
+  B -->|Yes| C[Action 1]
+  B -->|No| D[Action 2]
+  C --> E[End]
+  D --> E`
+      }]
+    })
+    const mermaidSource = msg.content[0].text.trim()
+      .replace(/^```mermaid\n?/, '').replace(/```$/, '').trim()
+
+    const { data: artifact } = await supabase.from('artifacts').insert({
+      conversation_id: conversationId,
+      artifact_type: 'workflow_diagram',
+      title: 'Workflow Diagram',
+      content: { mermaid_source: mermaidSource, diagram_type: 'flowchart' },
+      version: 1,
+      status: 'draft',
+    }).select().single()
+
+    return artifact
+  } catch (e) {
+    console.error('Mermaid generation failed:', e)
+    return null
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -313,6 +355,18 @@ QUALITY CHECKS:
       metadata: { cardType: 'enterprise_brief', brief, buildMode, artifactIds },
     })
     if (briefInsertErr) console.error('DB insert error (enterprise_brief):', briefInsertErr)
+
+    // ── Generate Mermaid workflow diagram ────────────────────────────────────
+    let diagramArtifact = null
+    try {
+      diagramArtifact = await generateMermaidDiagram(brief, conversationId)
+      if (diagramArtifact) {
+        artifactIds['workflow_diagram'] = diagramArtifact.id
+        createdArtifacts.push(diagramArtifact)
+      }
+    } catch (e) {
+      console.error('Mermaid diagram generation failed:', e)
+    }
 
     // ── Fire-and-forget file generation for each artifact ─────────────────────
     // Do not await — return response immediately, files generate in background

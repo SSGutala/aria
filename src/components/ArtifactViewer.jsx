@@ -24,6 +24,39 @@ const FORMAT_MAP = {
 const FORMAT_LABELS = { pdf: 'PDF', docx: 'Word', xlsx: 'Excel', csv: 'CSV', json: 'JSON', md: 'Markdown' }
 const FORMAT_ICONS  = { pdf: '📄', docx: '📝', xlsx: '📊', csv: '📋', json: '{ }', md: '#' }
 
+// ─── contentToMarkdown helper ────────────────────────────────────────────────
+function contentToMarkdown(artifact) {
+  const lines = [`# ${artifact.title}\n`]
+  function walk(obj, depth = 0) {
+    if (!obj || typeof obj !== 'object') return
+    for (const [key, val] of Object.entries(obj)) {
+      if (key === '_manualEdit') continue
+      const label = key.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())
+      if (typeof val === 'string' && val) {
+        lines.push(`${'#'.repeat(Math.min(depth+2,4))} ${label}\n${val}\n`)
+      } else if (Array.isArray(val)) {
+        if (val.length === 0) continue
+        lines.push(`${'#'.repeat(Math.min(depth+2,4))} ${label}\n`)
+        val.forEach((item, i) => {
+          if (typeof item === 'string') lines.push(`- ${item}`)
+          else if (typeof item === 'object') {
+            lines.push(`\n**${i+1}.**`)
+            Object.entries(item).forEach(([k,v]) => {
+              if (v) lines.push(`  - **${k}**: ${v}`)
+            })
+          }
+        })
+        lines.push('')
+      } else if (typeof val === 'object' && val) {
+        lines.push(`${'#'.repeat(Math.min(depth+2,4))} ${label}\n`)
+        walk(val, depth+1)
+      }
+    }
+  }
+  walk(artifact.content || {})
+  return lines.join('\n')
+}
+
 // ─── Document renderer (read-only, document-style) ───────────────────────────
 
 function DocSection({ title, color, children }) {
@@ -350,157 +383,6 @@ function DocumentView({ artifact }) {
   }
 }
 
-// ─── Inline editor — pure manual, no AI, no tokens ──────────────────────────
-// Walks the content and renders every leaf as an editable field.
-
-function pathGet(obj, path) {
-  return path.reduce((o, k) => (o == null ? o : o[k]), obj)
-}
-function pathSet(obj, path, val) {
-  const clone = JSON.parse(JSON.stringify(obj))
-  let cur = clone
-  for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]]
-  cur[path[path.length - 1]] = val
-  return clone
-}
-
-function EditableField({ label, value, onChange, multiline }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-  const ref = useRef(null)
-
-  useEffect(() => { if (editing) ref.current?.focus() }, [editing])
-  useEffect(() => { if (!editing) setDraft(value) }, [value, editing])
-
-  function commit() {
-    setEditing(false)
-    if (draft !== value) onChange(draft)
-  }
-
-  return (
-    <div style={{ marginBottom: 14, cursor: 'text' }} onClick={() => setEditing(true)}>
-      <div style={{ fontSize: 10, color: '#525252', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-      {editing ? (
-        multiline ? (
-          <textarea ref={ref} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit}
-            style={{ width: '100%', minHeight: 80, background: '#1A1A1A', border: '1px solid #3D3D3D', borderRadius: 5, color: '#E5E5E5', fontSize: 13, padding: '8px 10px', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', lineHeight: 1.6 }}
-          />
-        ) : (
-          <input ref={ref} value={draft} onChange={e => setDraft(e.target.value)} onBlur={commit}
-            onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setEditing(false); setDraft(value) } }}
-            style={{ width: '100%', background: '#1A1A1A', border: '1px solid #3D3D3D', borderRadius: 5, color: '#E5E5E5', fontSize: 13, padding: '6px 10px', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }}
-          />
-        )
-      ) : (
-        <div style={{ fontSize: 13, color: draft ? '#D4D4D4' : '#3D3D3D', lineHeight: 1.65, padding: '2px 0', borderBottom: '1px dashed #2A2A2A', minHeight: 24 }}>
-          {draft || <span style={{ color: '#3D3D3D', fontStyle: 'italic' }}>Click to edit…</span>}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function EditableListItem({ value, onChange, onDelete }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-  const ref = useRef(null)
-  useEffect(() => { if (editing) ref.current?.focus() }, [editing])
-
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 6 }}>
-      <span style={{ color: '#525252', marginTop: 2, flexShrink: 0 }}>▸</span>
-      <div style={{ flex: 1 }} onClick={() => setEditing(true)}>
-        {editing ? (
-          <textarea ref={ref} value={draft} onChange={e => setDraft(e.target.value)}
-            onBlur={() => { setEditing(false); if (draft !== value) onChange(draft) }}
-            style={{ width: '100%', minHeight: 40, background: '#1A1A1A', border: '1px solid #3D3D3D', borderRadius: 4, color: '#E5E5E5', fontSize: 12, padding: '4px 8px', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }}
-          />
-        ) : (
-          <div style={{ fontSize: 13, color: '#C4C4C4', lineHeight: 1.6, borderBottom: '1px dashed #1E1E1E', padding: '1px 0', cursor: 'text' }}>{draft}</div>
-        )}
-      </div>
-      <button onClick={onDelete} style={{ background: 'none', border: 'none', color: '#3D3D3D', cursor: 'pointer', fontSize: 14, padding: '0 2px', flexShrink: 0, lineHeight: 1 }}
-        onMouseEnter={e => e.currentTarget.style.color = '#F87171'}
-        onMouseLeave={e => e.currentTarget.style.color = '#3D3D3D'}>×</button>
-    </div>
-  )
-}
-
-function EditableList({ label, items = [], onChange }) {
-  function updateItem(i, val) { const next = [...items]; next[i] = val; onChange(next) }
-  function deleteItem(i) { onChange(items.filter((_, j) => j !== i)) }
-  function addItem() { onChange([...items, '']) }
-
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 10, color: '#525252', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>
-      {items.map((item, i) =>
-        typeof item === 'string' ? (
-          <EditableListItem key={i} value={item} onChange={v => updateItem(i, v)} onDelete={() => deleteItem(i)} />
-        ) : null
-      )}
-      <button onClick={addItem}
-        style={{ fontSize: 11, color: '#525252', background: 'none', border: '0.5px dashed #2A2A2A', borderRadius: 4, padding: '3px 10px', cursor: 'pointer', marginTop: 4, fontFamily: 'inherit' }}>
-        + Add item
-      </button>
-    </div>
-  )
-}
-
-function InlineEditor({ artifact, onChange }) {
-  const c = artifact.content || {}
-
-  function setField(key, val) { onChange({ ...c, [key]: val }) }
-
-  const stringFields = Object.entries(c).filter(([, v]) => typeof v === 'string')
-  const listFields   = Object.entries(c).filter(([, v]) => Array.isArray(v) && (v.length === 0 || typeof v[0] === 'string'))
-  const objectFields = Object.entries(c).filter(([, v]) => v && typeof v === 'object' && !Array.isArray(v))
-
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: '#525252', marginBottom: 16, padding: '8px 12px', background: '#111', border: '0.5px solid #1E1E1E', borderRadius: 6 }}>
-        Click any field to edit directly. Changes are saved when you click away.
-      </div>
-
-      {stringFields.map(([key, val]) => (
-        <EditableField
-          key={key}
-          label={key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())}
-          value={val}
-          multiline={val.length > 60}
-          onChange={v => setField(key, v)}
-        />
-      ))}
-
-      {listFields.map(([key, items]) => (
-        <EditableList
-          key={key}
-          label={key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())}
-          items={items}
-          onChange={v => setField(key, v)}
-        />
-      ))}
-
-      {objectFields.map(([key, obj]) => (
-        <div key={key} style={{ marginBottom: 20, padding: '12px 14px', background: '#111', border: '0.5px solid #1E1E1E', borderRadius: 8 }}>
-          <div style={{ fontSize: 11, color: '#737373', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
-            {key.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())}
-          </div>
-          {Object.entries(obj).filter(([, v]) => typeof v === 'string').map(([k, v]) => (
-            <EditableField
-              key={k}
-              label={k.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())}
-              value={v}
-              multiline={v.length > 60}
-              onChange={val => setField(key, { ...obj, [k]: val })}
-            />
-          ))}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ─── AI Edit pane (secondary, opt-in) ────────────────────────────────────────
 function AIEditPane({ artifact, onDone }) {
   const [instruction, setInstruction] = useState('')
@@ -527,7 +409,7 @@ function AIEditPane({ artifact, onDone }) {
     <div style={{ padding: '14px 16px', borderTop: '0.5px solid #2A2A2A', background: '#0A0A0A' }}>
       <div style={{ fontSize: 10, color: '#525252', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>✦ Ask Aria to edit</div>
       <textarea value={instruction} onChange={e => setInstruction(e.target.value)}
-        placeholder='e.g. "Add a Finance Director approval step after manager approval" or "Add a field for contract value"'
+        placeholder='e.g. "Add a Finance Director approval step after manager approval"'
         onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit() }}
         style={{ width: '100%', minHeight: 72, background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#D4D4D4', fontSize: 12, padding: '8px 12px', resize: 'none', fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', lineHeight: 1.5 }}
       />
@@ -542,16 +424,155 @@ function AIEditPane({ artifact, onDone }) {
   )
 }
 
+// ─── Manual text editor ───────────────────────────────────────────────────────
+function ManualEditor({ artifact, onSaved, onCancel }) {
+  const initialText = artifact.content?._manualEdit || contentToMarkdown(artifact)
+  const [text, setText] = useState(initialText)
+  const [saveStatus, setSaveStatus] = useState('idle') // 'idle' | 'unsaved' | 'saving' | 'saved'
+  const debounceRef = useRef(null)
+
+  async function doSave(value) {
+    setSaveStatus('saving')
+    try {
+      const res = await fetch(`${API}/api/artifacts/${artifact.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: { ...artifact.content, _manualEdit: value } }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setSaveStatus('saved')
+      onSaved?.(data.artifact)
+      setTimeout(() => setSaveStatus('idle'), 2000)
+    } catch {
+      setSaveStatus('unsaved')
+    }
+  }
+
+  function handleChange(e) {
+    const val = e.target.value
+    setText(val)
+    setSaveStatus('unsaved')
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => doSave(val), 2000)
+  }
+
+  async function handleSave() {
+    clearTimeout(debounceRef.current)
+    await doSave(text)
+  }
+
+  const statusLabel = {
+    idle: '',
+    unsaved: 'Unsaved changes',
+    saving: 'Saving...',
+    saved: 'Saved ✓',
+  }[saveStatus]
+
+  const statusColor = {
+    idle: '#525252',
+    unsaved: '#FBBF24',
+    saving: '#737373',
+    saved: '#34D399',
+  }[saveStatus]
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Editor header bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 24px', borderBottom: '0.5px solid #1A1A1A', background: '#0D0D0D', flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: statusColor, flex: 1 }}>{statusLabel}</span>
+        <button onClick={onCancel}
+          style={{ background: 'transparent', color: '#737373', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+          Cancel
+        </button>
+        <button onClick={handleSave} disabled={saveStatus === 'saving'}
+          style={{ background: '#0D2A1A', color: saveStatus === 'saving' ? '#525252' : '#34D399', border: '0.5px solid #34D39933', borderRadius: 5, padding: '5px 14px', fontSize: 11, cursor: saveStatus === 'saving' ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+          Save
+        </button>
+      </div>
+      {/* Textarea */}
+      <textarea
+        value={text}
+        onChange={handleChange}
+        style={{
+          flex: 1,
+          background: '#0D0D0D',
+          color: '#D4D4D4',
+          border: 'none',
+          padding: '24px 32px',
+          fontSize: 13,
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          lineHeight: 1.7,
+          resize: 'none',
+          outline: 'none',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      />
+    </div>
+  )
+}
+
+// ─── Export dropdown ──────────────────────────────────────────────────────────
+function ExportDropdown({ artifact, formats, fileUrls, onRegenFiles, generatingFiles }) {
+  const [open, setOpen] = useState(false)
+  const [downloading, setDownloading] = useState({})
+  const ref = useRef(null)
+
+  useEffect(() => {
+    function handleClick(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  async function handleFormat(fmt) {
+    const url = fileUrls[fmt]
+    if (url) {
+      window.open(url, '_blank')
+      setOpen(false)
+      return
+    }
+    setDownloading(d => ({ ...d, [fmt]: true }))
+    try {
+      const res = await fetch(`${API}/api/artifacts/${artifact.id}/files`, { method: 'POST' })
+      const data = await res.json()
+      if (data.fileUrls?.[fmt]) window.open(data.fileUrls[fmt], '_blank')
+      else if (data.fileUrls) onRegenFiles?.(data.fileUrls)
+    } catch (e) { console.error(e) }
+    finally { setDownloading(d => ({ ...d, [fmt]: false })); setOpen(false) }
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button onClick={() => setOpen(v => !v)}
+        style={{ background: '#161616', color: '#A3A3A3', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 5 }}>
+        {generatingFiles ? <span style={{ display: 'inline-block', width: 8, height: 8, border: '1.5px solid #525252', borderTopColor: '#A3A3A3', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} /> : '↓'} Export
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 4, background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 7, overflow: 'hidden', zIndex: 100, minWidth: 130, boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+          {formats.map(fmt => (
+            <button key={fmt} onClick={() => handleFormat(fmt)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', color: fileUrls[fmt] ? '#D4D4D4' : '#737373', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#1E1E1E'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span>{FORMAT_ICONS[fmt]}</span>
+              <span>{FORMAT_LABELS[fmt]}</span>
+              {downloading[fmt] && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#525252' }}>...</span>}
+              {fileUrls[fmt] && <span style={{ marginLeft: 'auto', fontSize: 9, color: '#34D399' }}>↓</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main ArtifactViewer ──────────────────────────────────────────────────────
 export default function ArtifactViewer({ artifact: initial, onClose, onApprove, onUpdate }) {
   const [artifact, setArtifact] = useState(initial)
-  const [mode, setMode] = useState('view')      // 'view' | 'edit'
-  const [showAI, setShowAI] = useState(false)
-  const [editContent, setEditContent] = useState(null)
-  const [saving, setSaving] = useState(false)
-  const [generatingFiles, setGeneratingFiles] = useState(false)
+  const [mode, setMode] = useState('view')   // 'view' | 'manual' | 'ai'
   const [fileUrls, setFileUrls] = useState(initial?.file_urls || {})
-  const [saveMsg, setSaveMsg] = useState('')
+  const [generatingFiles, setGeneratingFiles] = useState(false)
 
   const meta = TYPE_META[artifact.artifact_type] || {}
   const color = meta.color || '#94A3B8'
@@ -561,8 +582,6 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
     setArtifact(initial)
     setFileUrls(initial?.file_urls || {})
     setMode('view')
-    setEditContent(null)
-    setShowAI(false)
   }, [initial?.id])
 
   // Auto-generate files if not yet generated
@@ -586,44 +605,16 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
     finally { setGeneratingFiles(false) }
   }
 
-  async function handleRegenFiles() {
-    await generateFiles(artifact.id)
+  function handleManualSaved(updated) {
+    setArtifact(updated)
+    onUpdate?.(updated)
   }
-
-  function startEdit() {
-    setEditContent(JSON.parse(JSON.stringify(artifact.content)))
-    setMode('edit')
-  }
-
-  async function saveEdit() {
-    setSaving(true)
-    try {
-      const res = await fetch(`${API}/api/artifacts/${artifact.id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: editContent }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setArtifact(data.artifact)
-      onUpdate?.(data.artifact)
-      setMode('view')
-      setEditContent(null)
-      setSaveMsg('Saved')
-      setTimeout(() => setSaveMsg(''), 2000)
-      // Regenerate files with updated content
-      generateFiles(data.artifact.id)
-    } catch (e) { alert('Save failed: ' + e.message) }
-    finally { setSaving(false) }
-  }
-
-  function cancelEdit() { setEditContent(null); setMode('view') }
 
   function handleAIDone(newArtifact) {
     setArtifact(newArtifact)
     setFileUrls(newArtifact.file_urls || {})
     onUpdate?.(newArtifact)
     setMode('view')
-    setShowAI(false)
     generateFiles(newArtifact.id)
   }
 
@@ -665,108 +656,86 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
                 <span style={{ fontSize: 10, color, background: '#1A1A1A', border: `0.5px solid ${color}44`, borderRadius: 4, padding: '2px 8px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{meta.label}</span>
                 <span style={{ fontSize: 11, color: '#3D3D3D' }}>Version {artifact.version}</span>
                 <span style={{ fontSize: 11, color: statusColors[artifact.status], fontWeight: 600, textTransform: 'capitalize' }}>{artifact.status}</span>
-                {saveMsg && <span style={{ fontSize: 11, color: '#34D399' }}>✓ {saveMsg}</span>}
               </div>
             </div>
-            <button onClick={onClose} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1, flexShrink: 0 }}>✕</button>
-          </div>
-        </div>
 
-        {/* Toolbar */}
-        <div style={{ padding: '8px 24px', borderBottom: '0.5px solid #1A1A1A', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, background: '#0D0D0D', flexWrap: 'wrap' }}>
-          {/* View / Edit tabs */}
-          <div style={{ display: 'flex', background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 6, overflow: 'hidden', marginRight: 4 }}>
-            {[['view', '👁 View'], ['edit', '✎ Edit']].map(([m, label]) => (
-              <button key={m} onClick={() => m === 'edit' ? startEdit() : cancelEdit()}
-                style={{ background: mode === m ? '#2A2A2A' : 'transparent', color: mode === m ? '#E5E5E5' : '#525252', border: 'none', padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-                {label}
-              </button>
-            ))}
-          </div>
+            {/* Header action buttons — view mode */}
+            {mode === 'view' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button onClick={() => setMode('ai')}
+                  style={{ background: '#1A0D2A', color: '#A78BFA', border: '0.5px solid #3A1E5F', borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ✦ Ask Aria
+                </button>
+                <button onClick={() => setMode('manual')}
+                  style={{ background: '#1A1A1A', color: '#D4D4D4', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ✏ Edit
+                </button>
+                {artifact.status !== 'approved' ? (
+                  <button onClick={handleApprove}
+                    style={{ background: '#0D1F16', color: '#34D399', border: '0.5px solid #34D39944', borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                    ✓ Approve
+                  </button>
+                ) : (
+                  <span style={{ fontSize: 11, color: '#34D399', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-4" stroke="#34D399" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                    Approved
+                  </span>
+                )}
+                <ExportDropdown
+                  artifact={artifact}
+                  formats={formats}
+                  fileUrls={fileUrls}
+                  onRegenFiles={urls => { setFileUrls(urls); setArtifact(prev => ({ ...prev, file_urls: urls })) }}
+                  generatingFiles={generatingFiles}
+                />
+                <button onClick={onClose} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
+              </div>
+            )}
 
-          {mode === 'edit' && (
-            <button onClick={() => setShowAI(v => !v)}
-              style={{ background: showAI ? '#1A0D2A' : 'transparent', color: showAI ? '#A78BFA' : '#525252', border: `0.5px solid ${showAI ? '#3A1E5F' : '#2A2A2A'}`, borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
-              ✦ Ask Aria
-            </button>
-          )}
+            {/* Header buttons — AI mode */}
+            {mode === 'ai' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button onClick={() => setMode('view')}
+                  style={{ background: 'transparent', color: '#737373', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ← Back
+                </button>
+                <button onClick={onClose} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
+              </div>
+            )}
 
-          <div style={{ flex: 1 }} />
-
-          {/* Download buttons */}
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-            {formats.map(fmt => {
-              const url = fileUrls[fmt]
-              return (
-                <a key={fmt} href={url || undefined}
-                  onClick={!url ? e => { e.preventDefault(); handleRegenFiles() } : undefined}
-                  download={url ? `${artifact.title}.${fmt}` : undefined}
-                  target={url ? '_blank' : undefined} rel="noreferrer"
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4,
-                    background: url ? '#161616' : '#111', color: url ? '#A3A3A3' : '#3D3D3D',
-                    border: `0.5px solid ${url ? '#2A2A2A' : '#1A1A1A'}`,
-                    borderRadius: 5, padding: '4px 10px', fontSize: 10, cursor: url ? 'pointer' : 'wait',
-                    textDecoration: 'none', fontFamily: 'inherit',
-                    opacity: generatingFiles && !url ? 0.5 : 1,
-                  }}>
-                  <span>{FORMAT_ICONS[fmt]}</span>
-                  {FORMAT_LABELS[fmt]}
-                </a>
-              )
-            })}
-            {generatingFiles && (
-              <span style={{ fontSize: 10, color: '#525252', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ display: 'inline-block', width: 8, height: 8, border: '1.5px solid #525252', borderTopColor: color, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
-                Generating files…
-              </span>
+            {/* Header buttons shown inside ManualEditor itself (close only here) */}
+            {mode === 'manual' && (
+              <button onClick={onClose} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
             )}
           </div>
-
-          {artifact.status !== 'approved' ? (
-            <button onClick={handleApprove}
-              style={{ background: '#0D1F16', color: '#34D399', border: '0.5px solid #34D39944', borderRadius: 5, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, marginLeft: 4 }}>
-              ✓ Approve
-            </button>
-          ) : (
-            <span style={{ fontSize: 11, color: '#34D399', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4 }}>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-4" stroke="#34D399" strokeWidth="1.5" strokeLinecap="round" /></svg>
-              Approved
-            </span>
-          )}
         </div>
 
         {/* Document body */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
-          {mode === 'view' && <DocumentView artifact={artifact} />}
-          {mode === 'edit' && editContent && (
-            <InlineEditor
-              artifact={{ ...artifact, content: editContent }}
-              onChange={setEditContent}
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          {mode === 'view' && (
+            <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
+              <DocumentView artifact={artifact} />
+            </div>
+          )}
+
+          {mode === 'manual' && (
+            <ManualEditor
+              artifact={artifact}
+              onSaved={handleManualSaved}
+              onCancel={() => setMode('view')}
             />
+          )}
+
+          {mode === 'ai' && (
+            <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
+              <DocumentView artifact={artifact} />
+            </div>
           )}
         </div>
 
-        {/* AI edit pane — slides in at bottom of edit mode */}
-        {mode === 'edit' && showAI && (
+        {/* AI Edit pane at bottom when in ai mode */}
+        {mode === 'ai' && (
           <AIEditPane artifact={artifact} onDone={handleAIDone} />
-        )}
-
-        {/* Edit action bar */}
-        {mode === 'edit' && (
-          <div style={{ padding: '10px 24px', borderTop: '0.5px solid #1A1A1A', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: '#0D0D0D' }}>
-            <span style={{ fontSize: 11, color: '#525252' }}>Click any field above to edit it directly — no AI, no tokens.</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={cancelEdit}
-                style={{ background: 'transparent', color: '#737373', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-                Discard
-              </button>
-              <button onClick={saveEdit} disabled={saving}
-                style={{ background: saving ? '#1A1A1A' : '#0D2A1A', color: saving ? '#525252' : '#34D399', border: '0.5px solid #34D39933', borderRadius: 5, padding: '6px 18px', fontSize: 12, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
-                {saving ? 'Saving…' : 'Save Document'}
-              </button>
-            </div>
-          </div>
         )}
       </div>
 
