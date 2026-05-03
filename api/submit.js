@@ -98,7 +98,7 @@ export default async function handler(req, res) {
     const integrations = schema.integrations || {}
     const hasM365Integrations = Object.values(integrations).some(v => v?.enabled)
     if (hasM365Integrations) {
-      fetch(`${process.env.API_BASE_URL || 'http://localhost:3001'}/api/integrations/execute`, {
+      fetch(`${process.env.API_BASE_URL || 'https://aria-api-de8c.onrender.com'}/api/integrations/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appId, submissionId: submission.id, formData, userId: app.user_id, ticketId }),

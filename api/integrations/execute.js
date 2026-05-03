@@ -139,7 +139,7 @@ export default async function handler(req, res) {
 
       if (deliveryEmail) {
         // Call the document generation endpoint internally
-        const docRes = await fetch(`${process.env.API_BASE_URL || 'http://localhost:3001'}/api/documents/generate`, {
+        const docRes = await fetch(`${process.env.API_BASE_URL || 'https://aria-api-de8c.onrender.com'}/api/documents/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

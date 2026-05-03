@@ -1503,7 +1503,7 @@ export default async function handler(req, res) {
 
   try {
     const slug = generateSlug(spec.appTitle)
-    const apiBase = process.env.API_BASE_URL || 'http://localhost:3001'
+    const apiBase = process.env.API_BASE_URL || 'https://aria-api-de8c.onrender.com'
 
     const convData = await supabase
       .from('conversations').select('user_id').eq('id', conversationId).single()
