@@ -73,66 +73,110 @@ function ArrowRow({ items, activeIdx = 0 }) {
 
 // ─── Stage content renderers ──────────────────────────────────────────────────
 
-// Shared doc styles
+// ── Shared business document styles ──────────────────────────────────────────
+// Outer canvas: light gray surround (like Google Docs), white page card inside
 const D = {
-  page: { background: '#FFFFFF', maxWidth: 720, margin: '0 auto', padding: '40px 48px', fontFamily: 'inherit', color: '#374151' },
-  title: { fontSize: 24, fontWeight: 700, color: '#111827', margin: '0 0 4px' },
-  subtitle: { fontSize: 13, color: '#6B7280', margin: 0 },
-  h2: { fontSize: 16, fontWeight: 700, color: '#111827', margin: '0 0 6px', paddingBottom: 6, borderBottom: '1px solid #E5E7EB' },
-  body: { fontSize: 14, color: '#374151', lineHeight: 1.7, margin: 0 },
-  hr: { border: 'none', borderTop: '1px solid #E5E7EB', margin: '20px 0' },
-  label: { fontSize: 11, color: '#6B7280', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' },
+  canvas: { background: '#E8EAED', padding: '28px 24px', minHeight: 400 },
+  page: {
+    background: '#FFFFFF',
+    maxWidth: 740,
+    margin: '0 auto',
+    padding: '56px 64px',
+    fontFamily: '"Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif',
+    color: '#374151',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 4px 20px rgba(0,0,0,0.10)',
+    borderRadius: 2,
+    lineHeight: 1.6,
+  },
+  title: { fontSize: 26, fontWeight: 700, color: '#111827', margin: '0 0 6px', letterSpacing: '-0.02em' },
+  subtitle: { fontSize: 14, color: '#6B7280', margin: 0, fontWeight: 400 },
+  h2: { fontSize: 15, fontWeight: 700, color: '#1E3A5F', margin: '0 0 10px', paddingBottom: 7, borderBottom: '2px solid #DBEAFE', textTransform: 'uppercase', letterSpacing: '0.04em' },
+  h3: { fontSize: 14, fontWeight: 600, color: '#374151', margin: '0 0 6px' },
+  body: { fontSize: 14, color: '#374151', lineHeight: 1.75, margin: 0 },
+  hr: { border: 'none', borderTop: '2px solid #E5E7EB', margin: '28px 0' },
+  label: { fontSize: 10, color: '#9CA3AF', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' },
+}
+
+// Company header block reused across all business docs
+function DocHeader({ title, subtitle }) {
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 44, height: 44, border: '1.5px dashed #D1D5DB', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, background: '#F9FAFB' }}>
+            <span style={{ fontSize: 8, color: '#9CA3AF', textAlign: 'center', lineHeight: 1.3 }}>LOGO</span>
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#374151' }}>[Company Name]</div>
+            <div style={{ fontSize: 11, color: '#9CA3AF' }}>Confidential — Internal Use</div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 12, color: '#6B7280' }}>{today}</div>
+          <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>Version 1.0 — Draft</div>
+        </div>
+      </div>
+      <div style={{ borderLeft: '4px solid #1D4ED8', paddingLeft: 16, marginBottom: 24 }}>
+        <h1 style={D.title}>{title}</h1>
+        {subtitle && <p style={D.subtitle}>{subtitle}</p>}
+      </div>
+      <hr style={D.hr}/>
+    </>
+  )
 }
 
 // ── 1. IntakeSummaryContent ────────────────────────────────────────────────────
 function IntakeSummaryContent({ data }) {
   if (!data) return null
-  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   return (
-    <div style={{ background: '#F3F4F6', padding: '16px 0' }}>
+    <div style={D.canvas}>
       <div style={D.page}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, border: '1.5px dashed #D1D5DB', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <span style={{ fontSize: 9, color: '#9CA3AF', textAlign: 'center', lineHeight: 1.2 }}>Logo</span>
-            </div>
-            <span style={{ fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' }}>[Company Name]</span>
-          </div>
-          <span style={{ fontSize: 12, color: '#6B7280' }}>{today}</span>
-        </div>
-        <h1 style={D.title}>Intake Summary</h1>
-        <hr style={D.hr} />
-
-        {/* Sections */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-          <div>
-            <h2 style={D.h2}>What We Understood</h2>
-            <p style={D.body}>{data.understood}</p>
-          </div>
-          <div>
+        <DocHeader title="Intake Summary" subtitle="Project intake and requirements capture document"/>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+          <section>
+            <h2 style={D.h2}>Executive Summary</h2>
+            <p style={{ ...D.body, fontSize: 15, color: '#1E293B', fontWeight: 400, lineHeight: 1.8 }}>{data.understood}</p>
+          </section>
+          <section>
             <h2 style={D.h2}>Business Problem</h2>
             <p style={D.body}>{data.businessProblem}</p>
-          </div>
-          <div>
-            <h2 style={D.h2}>Primary Users</h2>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-              {(data.primaryUsers || []).map((u, i) => (
-                <span key={i} style={{ fontSize: 13, color: '#1D4ED8', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 20, padding: '3px 12px', fontWeight: 500 }}>{u}</span>
-              ))}
-              {(data.secondaryUsers || []).map((u, i) => (
-                <span key={i} style={{ fontSize: 13, color: '#6B7280', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 20, padding: '3px 12px' }}>{u}</span>
-              ))}
+          </section>
+          <section>
+            <h2 style={D.h2}>Stakeholders</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 6 }}>
+              <div>
+                <div style={D.label}>Primary Users</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {(data.primaryUsers || []).map((u, i) => (
+                    <span key={i} style={{ fontSize: 13, color: '#1D4ED8', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 4, padding: '4px 12px', fontWeight: 500 }}>{u}</span>
+                  ))}
+                </div>
+              </div>
+              {(data.secondaryUsers || []).length > 0 && (
+                <div>
+                  <div style={D.label}>Secondary Users</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {data.secondaryUsers.map((u, i) => (
+                      <span key={i} style={{ fontSize: 13, color: '#6B7280', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 4, padding: '4px 12px' }}>{u}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-          <div>
-            <h2 style={D.h2}>Process Being Replaced</h2>
-            <p style={D.body}>{data.currentProcess}</p>
-          </div>
-          <div>
+          </section>
+          <section>
+            <h2 style={D.h2}>Current Process Being Replaced</h2>
+            <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 6, padding: '14px 18px' }}>
+              <p style={{ ...D.body, color: '#9A3412', margin: 0 }}>{data.currentProcess}</p>
+            </div>
+          </section>
+          <section>
             <h2 style={D.h2}>Expected Outcome</h2>
-            <p style={D.body}>{data.mainOutcome}</p>
-          </div>
+            <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 6, padding: '14px 18px' }}>
+              <p style={{ ...D.body, color: '#065F46', fontWeight: 500, margin: 0 }}>{data.mainOutcome}</p>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -142,22 +186,10 @@ function IntakeSummaryContent({ data }) {
 // ── 2. ProductBriefContent ─────────────────────────────────────────────────────
 function ProductBriefContent({ data }) {
   if (!data) return null
-  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   return (
-    <div style={{ background: '#F3F4F6', padding: '16px 0' }}>
+    <div style={D.canvas}>
       <div style={D.page}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, border: '1.5px dashed #D1D5DB', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontSize: 9, color: '#9CA3AF' }}>Logo</span>
-            </div>
-            <span style={{ fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' }}>[Company Name]</span>
-          </div>
-          <span style={{ fontSize: 12, color: '#6B7280' }}>{today}</span>
-        </div>
-        <h1 style={D.title}>Product Brief</h1>
-        <hr style={D.hr} />
+        <DocHeader title="Product Brief" subtitle="Objectives, roles, workflows, and business rules"/>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
           {/* Objective */}
@@ -256,106 +288,191 @@ function ProductBriefContent({ data }) {
   )
 }
 
-// ── 3. WorkflowMapContent ──────────────────────────────────────────────────────
-function sanitizeMermaidLabel(text) {
-  if (!text) return ''
-  return String(text).replace(/"/g, "'").replace(/[<>{}[\]]/g, ' ').replace(/\n/g, ' ').trim().slice(0, 60)
-}
-
-function generateMermaidSrc(data) {
-  if (!data) return 'flowchart TD\n  START([Start])'
-  const lines = ['flowchart TD']
-  const trigger = sanitizeMermaidLabel(data.trigger || 'Trigger')
-  lines.push(`  START(["▶ ${trigger}"])`)
-
-  const steps = data.steps || []
-  steps.forEach((step, i) => {
-    const label = sanitizeMermaidLabel(`${step.step}\\n${step.actor || ''}`)
-    lines.push(`  S${i}["${label}"]`)
-  })
-
-  // Connect steps
-  if (steps.length > 0) lines.push(`  START --> S0`)
-  for (let i = 0; i < steps.length - 1; i++) {
-    lines.push(`  S${i} --> S${i + 1}`)
-  }
-
-  // Decision points
-  const decisions = data.decisionPoints || []
-  const exceptions = data.exceptionPaths || []
-  decisions.forEach((d, i) => {
-    const label = sanitizeMermaidLabel(d)
-    lines.push(`  D${i}{"${label}"}`)
-    if (steps.length > 0) lines.push(`  S${steps.length - 1} --> D${i}`)
-    lines.push(`  D${i} -->|Yes| END`)
-    if (exceptions[i]) {
-      const exLabel = sanitizeMermaidLabel(exceptions[i])
-      lines.push(`  EX${i}["${exLabel}"]`)
-      lines.push(`  D${i} -->|No| EX${i}`)
-    }
-  })
-
-  if (decisions.length === 0 && steps.length > 0) {
-    lines.push(`  S${steps.length - 1} --> END`)
-  }
-  lines.push('  END(["⏹ Complete"])')
-  return lines.join('\n')
-}
+// ── 3. WorkflowMapContent — Custom SVG swimlane flowchart ─────────────────────
+const SWIMLANE_COLORS = ['#DBEAFE','#D1FAE5','#FEF3C7','#EDE9FE','#FCE7F3','#ECFDF5']
+const SWIMLANE_ACCENT = ['#2563EB','#059669','#D97706','#7C3AED','#DB2777','#10B981']
 
 function WorkflowMapContent({ data }) {
   if (!data) return null
-  const diagramRef = useRef(null)
-  const [showSource, setShowSource] = useState(false)
-  const [mermaidSrc, setMermaidSrc] = useState(() => generateMermaidSrc(data))
-  const [renderError, setRenderError] = useState(null)
+  const steps = data.steps || []
+  const decisions = data.decisionPoints || []
+  const exceptions = data.exceptionPaths || []
 
-  useEffect(() => {
-    setMermaidSrc(generateMermaidSrc(data))
-  }, [data])
+  // Collect unique actors for swimlanes
+  const actors = []
+  steps.forEach(s => { if (s.actor && !actors.includes(s.actor)) actors.push(s.actor) })
+  if (actors.length === 0) actors.push('Process')
 
-  useEffect(() => {
-    if (showSource || !diagramRef.current) return
-    setRenderError(null)
-    mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
-    const id = 'wf_' + Math.random().toString(36).slice(2)
-    diagramRef.current.innerHTML = '<div style="color:#9CA3AF;fontSize:12px;padding:20px">Rendering diagram…</div>'
-    mermaid.render(id, mermaidSrc)
-      .then(({ svg }) => {
-        if (diagramRef.current) {
-          diagramRef.current.innerHTML = svg
-          const svgEl = diagramRef.current.querySelector('svg')
-          if (svgEl) { svgEl.style.maxWidth = '100%'; svgEl.style.height = 'auto' }
-        }
-      })
-      .catch(err => {
-        setRenderError('Diagram render error: ' + err.message)
-        if (diagramRef.current) diagramRef.current.innerHTML = ''
-      })
-  }, [mermaidSrc, showSource])
+  // Layout constants
+  const LANE_W = 560
+  const LANE_H = 90
+  const BOX_W = 160
+  const BOX_H = 52
+  const DIAMOND = 48
+  const PAD_L = 130
+  const PAD_T = 40
+  const GAP = 40
+
+  // Place each step in its actor's lane
+  // We'll lay them out left-to-right across lanes
+  const nodesByActor = {}
+  actors.forEach(a => { nodesByActor[a] = [] })
+  steps.forEach((step, i) => {
+    const actor = step.actor || actors[0]
+    if (!nodesByActor[actor]) nodesByActor[actor] = []
+    nodesByActor[actor].push({ ...step, globalIdx: i })
+  })
+
+  // Total columns = max steps in any lane
+  const maxPerLane = Math.max(...actors.map(a => (nodesByActor[a] || []).length), 1)
+  const svgW = PAD_L + maxPerLane * (BOX_W + GAP) + GAP + 80
+  const svgH = PAD_T + actors.length * LANE_H + PAD_T
+
+  // Assign x position within each lane by index
+  const positioned = {} // globalIdx → {x, y, cx, cy}
+  actors.forEach((actor, ai) => {
+    const lane = nodesByActor[actor] || []
+    const cy = PAD_T + ai * LANE_H + LANE_H / 2
+    lane.forEach((node, li) => {
+      const cx = PAD_L + li * (BOX_W + GAP) + BOX_W / 2 + GAP / 2
+      positioned[node.globalIdx] = { cx, cy }
+    })
+  })
+
+  // Build arrows: connect sequential steps
+  const arrows = []
+  for (let i = 0; i < steps.length - 1; i++) {
+    const from = positioned[i]
+    const to = positioned[i + 1]
+    if (from && to) {
+      arrows.push({ x1: from.cx + BOX_W / 2, y1: from.cy, x2: to.cx - BOX_W / 2, y2: to.cy, label: '' })
+    }
+  }
 
   return (
-    <div style={{ background: '#fff', borderRadius: 8, overflow: 'hidden', border: '1px solid #E5E7EB' }}>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Workflow Diagram</span>
-        <button
-          onClick={() => setShowSource(v => !v)}
-          style={{ fontSize: 11, color: '#1D4ED8', background: 'transparent', border: '1px solid #BFDBFE', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}
-        >{showSource ? 'Show Diagram' : 'Edit Source'}</button>
+    <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '10px 16px', background: '#F8FAFC', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>Workflow Map</span>
+          <span style={{ fontSize: 11, color: '#6B7280', marginLeft: 10 }}>Swimlane diagram · {steps.length} steps · {actors.length} roles</span>
+        </div>
+        <span style={{ fontSize: 10, color: '#9CA3AF', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 8px' }}>Flowchart</span>
       </div>
 
-      {showSource ? (
-        <textarea
-          value={mermaidSrc}
-          onChange={e => setMermaidSrc(e.target.value)}
-          style={{ width: '100%', minHeight: 220, padding: 16, fontSize: 12, fontFamily: 'monospace', color: '#111827', border: 'none', resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: '#fff' }}
-        />
-      ) : (
-        <div style={{ padding: 20, minHeight: 200, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {renderError
-            ? <div style={{ color: '#DC2626', fontSize: 12, padding: 12, background: '#FEF2F2', borderRadius: 6 }}>{renderError}</div>
-            : <div ref={diagramRef} style={{ width: '100%' }} />
-          }
+      {/* Trigger banner */}
+      {data.trigger && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: '#F0FDF4', borderBottom: '1px solid #BBF7D0' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Trigger</span>
+          <span style={{ fontSize: 13, color: '#065F46', flex: 1 }}>{data.trigger}</span>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          </div>
+        </div>
+      )}
+
+      {/* Swimlanes */}
+      <div style={{ overflowX: 'auto', padding: '0 0 8px' }}>
+        <svg width={svgW} height={svgH} style={{ display: 'block', minWidth: 420 }}>
+          <defs>
+            <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#94A3B8"/>
+            </marker>
+          </defs>
+
+          {/* Lane backgrounds */}
+          {actors.map((actor, ai) => (
+            <g key={actor}>
+              <rect x={0} y={PAD_T + ai * LANE_H} width={svgW} height={LANE_H}
+                fill={SWIMLANE_COLORS[ai % SWIMLANE_COLORS.length]} opacity={0.45}
+                stroke="#E5E7EB" strokeWidth={1}/>
+              {/* Lane label */}
+              <rect x={0} y={PAD_T + ai * LANE_H} width={PAD_L - 4} height={LANE_H}
+                fill={SWIMLANE_ACCENT[ai % SWIMLANE_ACCENT.length]} opacity={0.12}/>
+              <text x={PAD_L / 2 - 2} y={PAD_T + ai * LANE_H + LANE_H / 2}
+                textAnchor="middle" dominantBaseline="middle"
+                fontSize="12" fontWeight="600" fill={SWIMLANE_ACCENT[ai % SWIMLANE_ACCENT.length]}
+                transform={`rotate(-90, ${PAD_L / 2 - 2}, ${PAD_T + ai * LANE_H + LANE_H / 2})`}>
+                {actor.length > 18 ? actor.slice(0, 17) + '…' : actor}
+              </text>
+            </g>
+          ))}
+
+          {/* Vertical lane divider */}
+          <line x1={PAD_L - 4} y1={PAD_T} x2={PAD_L - 4} y2={svgH - PAD_T} stroke="#CBD5E1" strokeWidth={1.5}/>
+
+          {/* Arrows */}
+          {arrows.map((a, i) => {
+            if (Math.abs(a.y1 - a.y2) < 2) {
+              // Straight horizontal arrow
+              return <line key={i} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#94A3B8" strokeWidth={1.5} markerEnd="url(#arr)"/>
+            }
+            // Elbow arrow for cross-lane
+            const mx = (a.x1 + a.x2) / 2
+            return <path key={i} d={`M${a.x1},${a.y1} L${mx},${a.y1} L${mx},${a.y2} L${a.x2},${a.y2}`}
+              stroke="#94A3B8" strokeWidth={1.5} fill="none" markerEnd="url(#arr)"/>
+          })}
+
+          {/* Step nodes */}
+          {steps.map((step, i) => {
+            const p = positioned[i]
+            if (!p) return null
+            const ai = actors.indexOf(step.actor || actors[0])
+            const accent = SWIMLANE_ACCENT[ai % SWIMLANE_ACCENT.length]
+            const bg = SWIMLANE_COLORS[ai % SWIMLANE_COLORS.length]
+            const x = p.cx - BOX_W / 2
+            const y = p.cy - BOX_H / 2
+            const label = step.step || ''
+            return (
+              <g key={i}>
+                <rect x={x} y={y} width={BOX_W} height={BOX_H} rx={6} ry={6}
+                  fill="#fff" stroke={accent} strokeWidth={1.5}/>
+                <rect x={x} y={y} width={BOX_W} height={4} rx={3} fill={accent}/>
+                <text x={p.cx} y={p.cy - 4} textAnchor="middle" dominantBaseline="middle"
+                  fontSize="11" fontWeight="600" fill="#1E293B" style={{ pointerEvents: 'none' }}>
+                  {label.length > 20 ? label.slice(0, 19) + '…' : label}
+                </text>
+                {step.sla && (
+                  <text x={p.cx} y={p.cy + 12} textAnchor="middle" dominantBaseline="middle"
+                    fontSize="9" fill="#94A3B8">⏱ {step.sla}</text>
+                )}
+                {/* Step number badge */}
+                <circle cx={x + 14} cy={y + 14} r={9} fill={accent}/>
+                <text x={x + 14} y={y + 14} textAnchor="middle" dominantBaseline="middle"
+                  fontSize="8" fontWeight="700" fill="#fff">{i + 1}</text>
+              </g>
+            )
+          })}
+
+          {/* START / END nodes */}
+          <ellipse cx={PAD_L + 20} cy={PAD_T + LANE_H / 2} rx={28} ry={16} fill="#059669" stroke="none"/>
+          <text x={PAD_L + 20} y={PAD_T + LANE_H / 2} textAnchor="middle" dominantBaseline="middle"
+            fontSize="10" fontWeight="700" fill="#fff">START</text>
+        </svg>
+      </div>
+
+      {/* Decision points */}
+      {decisions.length > 0 && (
+        <div style={{ borderTop: '1px solid #E5E7EB', padding: '14px 16px', background: '#FFFBEB' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Decision Points</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {decisions.map((d, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <svg width={28} height={28} viewBox="0 0 28 28" style={{ flexShrink: 0, marginTop: 1 }}>
+                  <polygon points="14,2 26,14 14,26 2,14" fill="#FEF3C7" stroke="#D97706" strokeWidth="1.5"/>
+                  <text x="14" y="14" textAnchor="middle" dominantBaseline="middle" fontSize="10" fill="#D97706">?</text>
+                </svg>
+                <div>
+                  <div style={{ fontSize: 13, color: '#92400E', fontWeight: 500 }}>{d}</div>
+                  {exceptions[i] && (
+                    <div style={{ fontSize: 11, color: '#B45309', marginTop: 3, fontStyle: 'italic' }}>
+                      ↳ Exception: {exceptions[i]}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -498,34 +615,99 @@ function AutomationTable({ title, color, columns, rows }) {
   )
 }
 
+// Visual IF/THEN/ELSE rule card
+function RuleCard({ trigger, index }) {
+  const colors = { bg: '#F0FDF4', border: '#BBF7D0', accent: '#059669' }
+  return (
+    <div style={{ border: `1.5px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}>
+      {/* WHEN header */}
+      <div style={{ background: '#1E293B', padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 9, fontWeight: 800, color: '#94A3B8', letterSpacing: '0.1em' }}>RULE {index + 1}</span>
+        <div style={{ width: 1, height: 12, background: '#334155' }}/>
+        <span style={{ fontSize: 11, fontWeight: 700, color: '#E2E8F0' }}>WHEN</span>
+        <span style={{ fontSize: 12, color: '#7DD3FC', fontWeight: 500 }}>{trigger.event}</span>
+      </div>
+      <div style={{ background: '#fff', padding: '0 14px 0' }}>
+        {/* IF condition */}
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #F1F5F9' }}>
+          <div style={{ width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FEF3C7', borderRight: '1px solid #FDE68A' }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#D97706', letterSpacing: '0.05em', writingMode: 'horizontal-tb' }}>IF</span>
+          </div>
+          <div style={{ flex: 1, padding: '10px 14px' }}>
+            <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>{trigger.condition || 'Condition met'}</div>
+          </div>
+        </div>
+        {/* THEN action */}
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #F1F5F9' }}>
+          <div style={{ width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F0FDF4', borderRight: '1px solid #BBF7D0' }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#059669', letterSpacing: '0.05em' }}>THEN</span>
+          </div>
+          <div style={{ flex: 1, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+              <circle cx="7" cy="7" r="6" fill="#059669"/>
+              <path d="M4 7l2 2 4-4" stroke="#fff" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <div style={{ fontSize: 12, color: '#065F46', fontWeight: 500, lineHeight: 1.5 }}>{trigger.action}</div>
+          </div>
+        </div>
+        {/* Output if present */}
+        {trigger.output && (
+          <div style={{ display: 'flex', gap: 0 }}>
+            <div style={{ width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#EEF2FF', borderRight: '1px solid #C7D2FE' }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: '#4F46E5', letterSpacing: '0.04em' }}>OUT</span>
+            </div>
+            <div style={{ flex: 1, padding: '8px 14px' }}>
+              <div style={{ fontSize: 11, color: '#6B7280', fontStyle: 'italic' }}>{trigger.output}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AutomationModelContent({ data }) {
   if (!data) return null
+  const triggers = data.triggers || []
   return (
-    <div style={{ background: '#fff', borderRadius: 8, padding: '16px 16px 2px', border: '1px solid #E5E7EB' }}>
-      <AutomationTable
-        title="Triggers"
-        color="#059669"
-        columns={['Trigger Event', 'Condition', 'Action', 'Output']}
-        rows={(data.triggers || []).map(t => ({ 'Trigger Event': t.event, Condition: t.condition, Action: t.action, Output: t.output || '—' }))}
-      />
-      <AutomationTable
-        title="Notifications"
-        color="#0284C7"
-        columns={['Event', 'Recipient', 'Channel', 'Message']}
-        rows={(data.notifications || []).map(n => ({ Event: n.event, Recipient: n.recipient, Channel: n.channel, Message: n.template || n.message || '—' }))}
-      />
-      <AutomationTable
-        title="Escalations"
-        color="#D97706"
-        columns={['Condition', 'Action', 'Escalate To']}
-        rows={(data.escalations || []).map(e => ({ Condition: e.condition, Action: e.action, 'Escalate To': e.recipient || e.escalateTo || '—' }))}
-      />
-      <AutomationTable
-        title="Integrations"
-        color="#7C3AED"
-        columns={['System', 'Type', 'Purpose']}
-        rows={(data.integrations || []).map(i => ({ System: i.system, Type: i.type, Purpose: i.purpose }))}
-      />
+    <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '10px 16px', background: '#0F172A', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#E2E8F0' }}>Automation Rules</span>
+        <span style={{ fontSize: 10, color: '#64748B', background: '#1E293B', borderRadius: 4, padding: '2px 8px' }}>{triggers.length} rules</span>
+      </div>
+
+      <div style={{ padding: '14px 14px 4px' }}>
+        {/* IF/THEN rule cards */}
+        {triggers.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Logic Rules</div>
+            {triggers.map((t, i) => <RuleCard key={i} trigger={t} index={i}/>)}
+          </div>
+        )}
+
+        {/* Notifications table */}
+        <AutomationTable
+          title="Notifications"
+          color="#0284C7"
+          columns={['Event', 'Recipient', 'Channel', 'Message']}
+          rows={(data.notifications || []).map(n => ({ Event: n.event, Recipient: n.recipient, Channel: n.channel, Message: n.template || n.message || '—' }))}
+        />
+        {/* Escalations table */}
+        <AutomationTable
+          title="Escalations"
+          color="#D97706"
+          columns={['Condition', 'Action', 'Escalate To']}
+          rows={(data.escalations || []).map(e => ({ Condition: e.condition, Action: e.action, 'Escalate To': e.recipient || e.escalateTo || '—' }))}
+        />
+        {/* Integrations table */}
+        <AutomationTable
+          title="Integrations"
+          color="#7C3AED"
+          columns={['System', 'Type', 'Purpose']}
+          rows={(data.integrations || []).map(i => ({ System: i.system, Type: i.type, Purpose: i.purpose }))}
+        />
+      </div>
     </div>
   )
 }
@@ -534,13 +716,12 @@ function AutomationModelContent({ data }) {
 function AppSpecContent({ data }) {
   if (!data) return null
   const primary = data.colorTheme?.primary || '#7C3AED'
-  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 
   return (
-    <div style={{ background: '#F3F4F6', padding: '16px 0' }}>
+    <div style={D.canvas}>
       <div style={D.page}>
         {/* Color accent bar */}
-        <div style={{ height: 4, background: primary, borderRadius: 2, marginBottom: 20 }} />
+        <div style={{ height: 5, background: primary, borderRadius: 2, marginBottom: 28 }} />
 
         {/* Title */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
