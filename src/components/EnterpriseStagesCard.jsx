@@ -781,6 +781,11 @@ function StyledTextView({ text, editing, artifact, stageId, data, onDone, onReve
           cursor: editing ? 'text' : 'default',
           transition: 'border-color 0.15s, box-shadow 0.15s',
           minHeight: 120,
+          overflowWrap: 'break-word',
+          wordBreak: 'break-word',
+          overflow: 'hidden',
+          boxSizing: 'border-box',
+          width: '100%',
         }}
       >
         {/* Revert button — only shown when NOT editing */}
@@ -796,7 +801,7 @@ function StyledTextView({ text, editing, artifact, stageId, data, onDone, onReve
           {sections.map((sec, si) => (
             <div key={si}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: DOC.label, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: DOC.label, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '65%' }}>
                   {sec.header}
                 </p>
                 <div style={{ flex: 1, height: 1, background: DOC.border }} />
