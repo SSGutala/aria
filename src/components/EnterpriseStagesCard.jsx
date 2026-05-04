@@ -676,10 +676,19 @@ function InlineEditor({ artifact, stageId, data, onDone }) {
 }
 
 // ─── Styled view for edited plain text (matches original design) ──────────────
+// Professional document palette
+const DOC = {
+  heading:  '#111827',
+  body:     '#374151',
+  label:    '#6B7280',
+  border:   '#E5E7EB',
+  rowAlt:   '#F9FAFB',
+  accent:   '#1D4ED8',
+}
+
 function StyledTextView({ text, onRevert }) {
   if (!text) return null
 
-  // Parse plain text into sections: lines that are NOT indented and NOT bullets/numbers = section headers
   const lines = text.split('\n')
   const sections = []
   let current = null
@@ -687,37 +696,44 @@ function StyledTextView({ text, onRevert }) {
   for (const raw of lines) {
     const line = raw.trimEnd()
     const isHeader = line.length > 0 && !line.startsWith('  ') && !line.match(/^\s*[\d•·\-*]/)
-    const isEmpty = line.trim() === ''
-
     if (isHeader) {
       if (current) sections.push(current)
       current = { header: line.trim(), body: [] }
-    } else if (!isEmpty && current) {
+    } else if (current) {
       current.body.push(line)
-    } else if (isEmpty && current) {
-      current.body.push('')
     }
   }
   if (current) sections.push(current)
 
   return (
-    <div style={{ position: 'relative' }}>
+    // White document card — matches ArtifactViewer canvas style
+    <div style={{
+      background: '#FFFFFF',
+      border: '1px solid #E5E7EB',
+      borderRadius: 6,
+      padding: '28px 32px',
+      position: 'relative',
+      boxShadow: '0 1px 8px rgba(0,0,0,0.08)',
+    }}>
       <button
         onClick={onRevert}
-        title="Revert to original"
-        style={{ position: 'absolute', top: 0, right: 0, fontSize: 9, color: '#3D3D3D', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 4px', fontFamily: 'inherit' }}
+        title="Revert to original AI view"
+        style={{ position: 'absolute', top: 12, right: 14, fontSize: 10, color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
       >↺ revert</button>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {sections.map((sec, si) => (
           <div key={si}>
-            {/* Section header — same style as SectionLabel */}
-            <p style={{ margin: '0 0 8px', fontSize: 9, fontWeight: 700, color: '#525252', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-              {sec.header}
-            </p>
+            {/* Section header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: DOC.label, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+                {sec.header}
+              </p>
+              <div style={{ flex: 1, height: 1, background: DOC.border }} />
+            </div>
 
             {/* Body lines */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {(() => {
                 const bodyLines = sec.body.filter((l, i, a) => !(l.trim() === '' && (i === 0 || i === a.length - 1)))
                 const items = []
@@ -726,33 +742,31 @@ function StyledTextView({ text, onRevert }) {
                   const line = bodyLines[i]
                   const trimmed = line.trim()
 
-                  // Numbered item: "  1. Step — Actor"
+                  // Numbered item
                   const numMatch = trimmed.match(/^(\d+)\.\s+(.+)/)
                   if (numMatch) {
+                    const num = numMatch[1]
                     const title = numMatch[2]
                     const sub = []
                     i++
                     while (i < bodyLines.length && bodyLines[i].trim() !== '' && !bodyLines[i].trim().match(/^\d+\./)) {
-                      sub.push(bodyLines[i].trim())
-                      i++
+                      sub.push(bodyLines[i].trim()); i++
                     }
                     items.push(
-                      <div key={i} style={{ display: 'flex', gap: 12, paddingBottom: 10 }}>
+                      <div key={`n${i}`} style={{ display: 'flex', gap: 14, paddingBottom: 10 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#34D399', flexShrink: 0, marginTop: 4 }} />
-                          <div style={{ width: 1, flex: 1, background: '#1E1E1E', minHeight: 10, marginTop: 3 }} />
+                          <div style={{ width: 22, height: 22, borderRadius: '50%', background: DOC.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{num}</div>
+                          <div style={{ width: 1, flex: 1, background: DOC.border, marginTop: 4, minHeight: 8 }} />
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#D4D4D4', marginBottom: 3 }}>{title}</div>
+                        <div style={{ flex: 1, paddingTop: 2 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: DOC.heading, marginBottom: 4, lineHeight: 1.4 }}>{title}</div>
                           {sub.map((s, j) => {
                             const kv = s.match(/^([^:]+):\s*(.+)/)
                             return kv ? (
-                              <div key={j} style={{ fontSize: 11, color: '#737373', marginBottom: 1 }}>
-                                <span style={{ color: '#525252' }}>{kv[1]}: </span>{kv[2]}
+                              <div key={j} style={{ fontSize: 12, color: DOC.body, marginBottom: 2 }}>
+                                <span style={{ color: DOC.label, fontWeight: 500 }}>{kv[1]}: </span>{kv[2]}
                               </div>
-                            ) : (
-                              <div key={j} style={{ fontSize: 11, color: '#A3A3A3' }}>{s}</div>
-                            )
+                            ) : <div key={j} style={{ fontSize: 12, color: DOC.body }}>{s}</div>
                           })}
                         </div>
                       </div>
@@ -760,24 +774,21 @@ function StyledTextView({ text, onRevert }) {
                     continue
                   }
 
-                  // Bullet item: "  • Something"
+                  // Bullet item
                   const bulletMatch = trimmed.match(/^[•·\-\*]\s+(.+)/)
                   if (bulletMatch) {
                     const sub = []
                     const mainText = bulletMatch[1]
                     i++
                     while (i < bodyLines.length && bodyLines[i].trim() !== '' && !bodyLines[i].trim().match(/^[•·\-\*\d]/)) {
-                      sub.push(bodyLines[i].trim())
-                      i++
+                      sub.push(bodyLines[i].trim()); i++
                     }
                     items.push(
-                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                        <span style={{ color: '#34D399', fontSize: 10, marginTop: 3, flexShrink: 0 }}>▸</span>
+                      <div key={`b${i}`} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: DOC.accent, flexShrink: 0, marginTop: 6 }} />
                         <div>
-                          <span style={{ fontSize: 12, color: '#C4C4C4', lineHeight: 1.6 }}>{mainText}</span>
-                          {sub.map((s, j) => (
-                            <div key={j} style={{ fontSize: 11, color: '#737373', marginTop: 2 }}>{s}</div>
-                          ))}
+                          <span style={{ fontSize: 13, color: DOC.body, lineHeight: 1.6 }}>{mainText}</span>
+                          {sub.map((s, j) => <div key={j} style={{ fontSize: 11, color: DOC.label, marginTop: 2 }}>{s}</div>)}
                         </div>
                       </div>
                     )
@@ -785,11 +796,7 @@ function StyledTextView({ text, onRevert }) {
                   }
 
                   // Plain line
-                  if (trimmed) {
-                    items.push(
-                      <p key={i} style={{ margin: 0, fontSize: 12, color: '#C4C4C4', lineHeight: 1.6 }}>{trimmed}</p>
-                    )
-                  }
+                  if (trimmed) items.push(<p key={`p${i}`} style={{ margin: 0, fontSize: 13, color: DOC.body, lineHeight: 1.65 }}>{trimmed}</p>)
                   i++
                 }
                 return items
