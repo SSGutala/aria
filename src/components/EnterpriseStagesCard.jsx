@@ -603,8 +603,7 @@ function localKey(artifact, stageId) {
   return `aria_edit_${artifact?.conversation_id || 'local'}_${stageId}`
 }
 
-function InlineEditor({ artifact, stageId, data, onClose }) {
-  // Priority: server _manualEdit → localStorage → generated plain text
+function InlineEditor({ artifact, stageId, data, onDone }) {
   const lsKey = localKey(artifact, stageId)
   const initialText =
     artifact?.content?._manualEdit ||
@@ -612,59 +611,48 @@ function InlineEditor({ artifact, stageId, data, onClose }) {
     stageToPlainText(stageId, data)
 
   const [text, setText] = useState(initialText)
-  const [status, setStatus] = useState('idle') // idle | unsaved | saving | saved
+  const [saving, setSaving] = useState(false)
   const debounce = useRef(null)
 
-  async function save(val) {
-    // Always save to localStorage immediately — works with or without artifacts table
+  async function persist(val) {
     localStorage.setItem(lsKey, val)
-
-    // Also try to persist to server if artifact is linked
     if (artifact?.id) {
-      setStatus('saving')
       try {
-        const res = await fetch(`${API}/api/artifacts/${artifact.id}`, {
+        await fetch(`${API}/api/artifacts/${artifact.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ content: { ...(artifact.content || {}), _manualEdit: val } }),
         })
-        if (!res.ok) throw new Error()
-        setStatus('saved')
-      } catch {
-        // Server save failed but localStorage succeeded — still show saved
-        setStatus('saved')
-      }
-    } else {
-      setStatus('saved')
+      } catch {}
     }
-    setTimeout(() => setStatus('idle'), 2500)
   }
 
   function onChange(e) {
     const val = e.target.value
     setText(val)
-    setStatus('unsaved')
     clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => save(val), 1500)
+    debounce.current = setTimeout(() => persist(val), 1500)
   }
 
-  const statusColor = { idle: '#3D3D3D', unsaved: '#FBBF24', saving: '#737373', saved: '#34D399' }[status]
-  const statusLabel = { idle: 'Edit freely — autosaves', unsaved: 'Unsaved...', saving: 'Saving...', saved: '✓ Saved' }[status]
+  async function handleDone() {
+    setSaving(true)
+    clearTimeout(debounce.current)
+    await persist(text)
+    setSaving(false)
+    onDone(text) // pass final text back so view can show it immediately
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 10px', borderBottom: '0.5px solid #1A1A1A', marginBottom: 10 }}>
         <span style={{ fontSize: 10, color: '#A78BFA', fontWeight: 700, letterSpacing: '0.04em' }}>✏ EDITING</span>
-        <span style={{ fontSize: 10, color: statusColor, flex: 1 }}>{statusLabel}</span>
-        <button onClick={onClose}
-          style={{ fontSize: 11, color: '#737373', background: 'transparent', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '4px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-          Cancel
-        </button>
-        <button onClick={() => { clearTimeout(debounce.current); save(text) }}
-          disabled={status === 'saving'}
-          style={{ fontSize: 11, color: '#34D399', background: '#0D2A1A', border: '0.5px solid #34D39933', borderRadius: 5, padding: '4px 14px', cursor: status === 'saving' ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
-          {status === 'saving' ? 'Saving...' : 'Save'}
+        <span style={{ fontSize: 10, color: '#3D3D3D', flex: 1 }}>Changes save automatically</span>
+        <button
+          onClick={handleDone}
+          disabled={saving}
+          style={{ fontSize: 11, color: '#111', background: saving ? '#2A2A2A' : '#E5E5E5', border: 'none', borderRadius: 5, padding: '5px 16px', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+          {saving ? 'Saving...' : 'Done'}
         </button>
       </div>
 
@@ -683,9 +671,6 @@ function InlineEditor({ artifact, stageId, data, onClose }) {
           boxSizing: 'border-box', whiteSpace: 'pre-wrap',
         }}
       />
-      <p style={{ margin: '6px 0 0', fontSize: 10, color: '#3D3D3D' }}>
-        Changes are saved automatically. Section headings are labels — edit the content beneath them.
-      </p>
     </div>
   )
 }
@@ -696,6 +681,11 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
   const fileUrls = artifact?.file_urls || {}
   const formats = STAGE_FORMATS[stage.id] || ['pdf']
   const [editing, setEditing] = useState(false)
+  // savedText: the plain-text the user saved; null means show the structured component view
+  const lsKey = `aria_edit_${artifact?.conversation_id || 'local'}_${stage.id}`
+  const [savedText, setSavedText] = useState(
+    artifact?.content?._manualEdit || localStorage.getItem(lsKey) || null
+  )
 
   return (
     <div style={{ borderBottom: '0.5px solid #1A1A1A' }}>
@@ -760,8 +750,31 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
       {isOpen && (
         <div style={{ padding: '14px 16px', borderTop: '0.5px solid #1A1A1A', background: '#0D0D0D' }}>
           {editing
-            ? <InlineEditor artifact={artifact} stageId={stage.id} data={data} onClose={() => setEditing(false)} />
-            : <Component data={data} />
+            ? <InlineEditor
+                artifact={artifact}
+                stageId={stage.id}
+                data={data}
+                onDone={(text) => { setSavedText(text); setEditing(false) }}
+              />
+            : savedText
+              ? (
+                /* Polished plain-text view — show edited content */
+                <div style={{ position: 'relative' }}>
+                  <pre style={{
+                    margin: 0, fontSize: 13, color: '#C4C4C4', lineHeight: 1.75,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  }}>{savedText}</pre>
+                  <button
+                    onClick={() => { setSavedText(null); localStorage.removeItem(lsKey) }}
+                    title="Revert to original"
+                    style={{ position: 'absolute', top: 0, right: 0, fontSize: 9, color: '#3D3D3D', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+                  >
+                    ↺ revert
+                  </button>
+                </div>
+              )
+              : <Component data={data} />
           }
 
           {/* Action bar */}
@@ -786,7 +799,7 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
                 onClick={() => setEditing(true)}
                 style={{ background: '#1A1A2A', color: '#A78BFA', border: '0.5px solid #3A1E5F', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}
               >
-                <EditIcon /> Edit
+                <EditIcon /> {savedText ? 'Edit again' : 'Edit'}
               </button>
 
               {/* Open full viewer */}
