@@ -57,14 +57,27 @@ function contentToMarkdown(artifact) {
   return lines.join('\n')
 }
 
-// ─── Document renderer (read-only, document-style) ───────────────────────────
+// ─── Document styles (white-background professional document) ─────────────────
+const D = {
+  heading:   { color: '#111111' },
+  body:      { color: '#374151' },
+  label:     { color: '#6B7280' },
+  border:    '#E5E7EB',
+  tableHdr:  '#F3F4F6',
+  mutedText: '#9CA3AF',
+}
+
+// ─── Document sub-components (white doc style) ────────────────────────────────
 
 function DocSection({ title, color, children }) {
   return (
-    <div style={{ marginBottom: 32 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <h2 style={{ margin: 0, fontSize: 13, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{title}</h2>
-        <div style={{ flex: 1, height: 1, background: `${color}30` }} />
+    <div style={{ marginBottom: 36 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <h2 style={{
+          margin: 0, fontSize: 11, fontWeight: 700, color: D.label.color,
+          textTransform: 'uppercase', letterSpacing: '0.10em',
+        }}>{title}</h2>
+        <div style={{ flex: 1, height: 1, background: D.border }} />
       </div>
       {children}
     </div>
@@ -74,28 +87,31 @@ function DocSection({ title, color, children }) {
 function DocField({ label, value }) {
   if (!value && value !== 0 && value !== false) return null
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 10, color: '#525252', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 13, color: '#D4D4D4', lineHeight: 1.65 }}>{String(value)}</div>
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 10, ...D.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 13.5, ...D.body, lineHeight: 1.7 }}>{String(value)}</div>
     </div>
   )
 }
 
-function DocList({ label, items, color }) {
+function DocList({ label, items, color, numbered }) {
   if (!items?.length) return null
   return (
-    <div style={{ marginBottom: 14 }}>
-      {label && <div style={{ fontSize: 10, color: '#525252', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</div>}
-      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+    <div style={{ marginBottom: 16 }}>
+      {label && <div style={{ fontSize: 10, ...D.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>{label}</div>}
+      <ol style={{ margin: 0, padding: 0, listStyle: 'none', counterReset: 'list-counter' }}>
         {items.map((item, i) => (
-          <li key={i} style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'flex-start' }}>
-            <span style={{ color, fontSize: 12, marginTop: 2, flexShrink: 0 }}>▸</span>
-            <span style={{ fontSize: 13, color: '#C4C4C4', lineHeight: 1.6 }}>
+          <li key={i} style={{ display: 'flex', gap: 12, marginBottom: 10, alignItems: 'flex-start' }}>
+            {numbered
+              ? <span style={{ fontSize: 11, color: '#FFFFFF', background: color, borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+              : <span style={{ color: D.mutedText, fontSize: 16, flexShrink: 0, marginTop: 1, lineHeight: 1 }}>•</span>
+            }
+            <span style={{ fontSize: 13.5, ...D.body, lineHeight: 1.65 }}>
               {typeof item === 'string' ? item : JSON.stringify(item)}
             </span>
           </li>
         ))}
-      </ul>
+      </ol>
     </div>
   )
 }
@@ -103,20 +119,32 @@ function DocList({ label, items, color }) {
 function DocTable({ headers, rows, color }) {
   if (!rows?.length) return null
   return (
-    <div style={{ overflowX: 'auto', marginBottom: 16 }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+    <div style={{ overflowX: 'auto', marginBottom: 20, border: `1px solid ${D.border}`, borderRadius: 6 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
         <thead>
           <tr>
-            {headers.map(h => (
-              <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 10, color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: `1px solid ${color}44`, background: '#0D0D0D' }}>{h}</th>
+            {headers.map((h, i) => (
+              <th key={h} style={{
+                textAlign: 'left', padding: '9px 14px',
+                fontSize: 10, ...D.label, fontWeight: 700,
+                textTransform: 'uppercase', letterSpacing: '0.07em',
+                background: D.tableHdr,
+                borderBottom: `1px solid ${D.border}`,
+                borderRight: i < headers.length - 1 ? `1px solid ${D.border}` : 'none',
+              }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: '0.5px solid #1A1A1A' }}>
+            <tr key={i} style={{ background: i % 2 === 1 ? '#F9F9F9' : '#FFFFFF' }}>
               {row.map((cell, j) => (
-                <td key={j} style={{ padding: '8px 12px', color: j === 0 ? '#D4D4D4' : '#A3A3A3', verticalAlign: 'top', lineHeight: 1.5 }}>{cell}</td>
+                <td key={j} style={{
+                  padding: '9px 14px', ...D.body, verticalAlign: 'top', lineHeight: 1.55,
+                  borderBottom: i < rows.length - 1 ? `1px solid ${D.border}` : 'none',
+                  borderRight: j < row.length - 1 ? `1px solid ${D.border}` : 'none',
+                  fontWeight: j === 0 ? 500 : 400,
+                }}>{cell}</td>
               ))}
             </tr>
           ))}
@@ -132,40 +160,82 @@ function StatusFlow({ statuses, color }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: 16 }}>
       {statuses.map((s, i) => (
         <React.Fragment key={i}>
-          <span style={{ fontSize: 11, color, background: '#1A1A1A', border: `1px solid ${color}44`, borderRadius: 5, padding: '4px 10px', fontWeight: 600 }}>{s}</span>
-          {i < statuses.length - 1 && <span style={{ color: '#3D3D3D', fontSize: 14 }}>→</span>}
+          <span style={{
+            fontSize: 12, color, background: `${color}15`,
+            border: `1px solid ${color}40`, borderRadius: 20,
+            padding: '4px 14px', fontWeight: 600,
+          }}>{s}</span>
+          {i < statuses.length - 1 && <span style={{ color: D.mutedText, fontSize: 16, fontWeight: 300 }}>→</span>}
         </React.Fragment>
       ))}
     </div>
   )
 }
 
+function HighlightBox({ children, bg = '#FFFBEB', border = '#FDE68A' }) {
+  return (
+    <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: 6, padding: '14px 18px', marginBottom: 16 }}>
+      {children}
+    </div>
+  )
+}
+
+// ─── Document renderer (white-background, read-only) ─────────────────────────
 function DocumentView({ artifact }) {
   const meta = TYPE_META[artifact.artifact_type] || {}
   const color = meta.color || '#94A3B8'
   const c = artifact.content || {}
 
+  const docTitle = {
+    fontSize: 26, fontWeight: 800, ...D.heading, marginBottom: 6, lineHeight: 1.2,
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+  }
+  const docSubtitle = {
+    fontSize: 13, ...D.label, marginBottom: 32,
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+  }
+
   switch (artifact.artifact_type) {
+
     case 'intake_summary': return (
-      <>
-        <DocSection title="What Aria Understood" color={color}>
-          <DocField label="Summary" value={c.understood} />
-          <DocField label="Business Problem" value={c.businessProblem} />
-          <DocField label="Desired Outcome" value={c.mainOutcome} />
-          <DocField label="Process Being Replaced" value={c.currentProcess} />
+      <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <h1 style={docTitle}>Intake Summary</h1>
+        <p style={docSubtitle}>{artifact.title}</p>
+
+        {c.understood && (
+          <DocSection title="Executive Summary" color={color}>
+            <p style={{ fontSize: 14, ...D.body, lineHeight: 1.75, margin: 0 }}>{c.understood}</p>
+          </DocSection>
+        )}
+
+        <DocSection title="Project Details" color={color}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px' }}>
+            <DocField label="Business Problem" value={c.businessProblem} />
+            <DocField label="Desired Outcome" value={c.mainOutcome} />
+            <DocField label="Process Being Replaced" value={c.currentProcess} />
+          </div>
         </DocSection>
-        <DocSection title="Users" color={color}>
-          <DocList label="Primary Users" items={c.primaryUsers} color={color} />
-          <DocList label="Secondary Users" items={c.secondaryUsers} color={color} />
-        </DocSection>
-      </>
+
+        {(c.primaryUsers?.length > 0 || c.secondaryUsers?.length > 0) && (
+          <DocSection title="Users & Stakeholders" color={color}>
+            <DocList label="Primary Users" items={c.primaryUsers} color={color} />
+            <DocList label="Secondary Users" items={c.secondaryUsers} color={color} />
+          </DocSection>
+        )}
+      </div>
     )
 
     case 'product_brief': return (
-      <>
-        <DocSection title="Objective" color={color}>
-          <p style={{ fontSize: 14, color: '#D4D4D4', lineHeight: 1.7, margin: 0 }}>{c.objective}</p>
-        </DocSection>
+      <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <h1 style={docTitle}>{artifact.title}</h1>
+        <p style={docSubtitle}>Product Brief</p>
+
+        {c.objective && (
+          <DocSection title="Objective" color={color}>
+            <p style={{ fontSize: 15, ...D.body, lineHeight: 1.8, margin: 0, fontStyle: 'italic' }}>{c.objective}</p>
+          </DocSection>
+        )}
+
         {c.userRoles?.length > 0 && (
           <DocSection title="User Roles" color={color}>
             <DocTable
@@ -175,109 +245,199 @@ function DocumentView({ artifact }) {
             />
           </DocSection>
         )}
-        <DocSection title="Core Workflows" color={color}>
-          <DocList items={c.coreWorkflows} color={color} />
-        </DocSection>
-        <DocSection title="Business Rules" color={color}>
-          <DocList items={c.businessRules} color={color} />
-        </DocSection>
-        <DocSection title="Success Criteria" color={color}>
-          <DocList items={c.successCriteria} color={color} />
-        </DocSection>
-        {c.openQuestions?.length > 0 && (
-          <DocSection title="Open Questions" color={color}>
-            <DocList items={c.openQuestions} color={color} />
+
+        {c.coreWorkflows?.length > 0 && (
+          <DocSection title="Core Workflows" color={color}>
+            <DocList items={c.coreWorkflows} color={color} numbered />
           </DocSection>
         )}
-        {c.assumptions?.length > 0 && (
-          <DocSection title="Assumptions" color={color}>
-            <DocList items={c.assumptions} color={color} />
+
+        {c.businessRules?.length > 0 && (
+          <DocSection title="Business Rules" color={color}>
+            <DocList items={c.businessRules} color={color} numbered />
           </DocSection>
         )}
-      </>
+
+        {c.successCriteria?.length > 0 && (
+          <DocSection title="Success Criteria" color={color}>
+            <DocList items={c.successCriteria} color={color} numbered />
+          </DocSection>
+        )}
+
+        {(c.openQuestions?.length > 0 || c.assumptions?.length > 0) && (
+          <DocSection title="Open Questions & Assumptions" color={color}>
+            <HighlightBox>
+              <DocList label="Open Questions" items={c.openQuestions} color={color} />
+              <DocList label="Assumptions" items={c.assumptions} color={color} />
+            </HighlightBox>
+          </DocSection>
+        )}
+      </div>
     )
 
     case 'workflow_map': return (
-      <>
-        <DocSection title="Trigger" color={color}>
-          <div style={{ background: '#161616', border: `1px solid ${color}33`, borderRadius: 8, padding: '12px 16px', fontSize: 13, color: '#D4D4D4', lineHeight: 1.6 }}>{c.trigger}</div>
-        </DocSection>
+      <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <h1 style={docTitle}>{artifact.title}</h1>
+        <p style={docSubtitle}>Workflow Map</p>
+
+        {c.trigger && (
+          <DocSection title="Trigger" color={color}>
+            <div style={{
+              background: `${color}10`, border: `1px solid ${color}40`,
+              borderRadius: 6, padding: '14px 18px',
+              fontSize: 14, ...D.body, lineHeight: 1.65,
+            }}>{c.trigger}</div>
+          </DocSection>
+        )}
+
         {c.steps?.length > 0 && (
           <DocSection title="Process Steps" color={color}>
             {c.steps.map((step, i) => (
-              <div key={i} style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
+              <div key={i} style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
+                {/* Step number column */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#0D0D0D', border: `2px solid ${color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color, fontWeight: 700 }}>{i + 1}</div>
-                  {i < c.steps.length - 1 && <div style={{ width: 2, flex: 1, background: `${color}22`, marginTop: 4, minHeight: 20 }} />}
+                  <div style={{
+                    width: 32, height: 32, borderRadius: '50%',
+                    background: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, color: '#FFFFFF', fontWeight: 700, flexShrink: 0,
+                  }}>{i + 1}</div>
+                  {i < c.steps.length - 1 && (
+                    <div style={{ width: 2, flex: 1, background: `${color}30`, marginTop: 4, minHeight: 24 }} />
+                  )}
                 </div>
-                <div style={{ flex: 1, background: '#141414', border: '0.5px solid #2A2A2A', borderRadius: 8, padding: '12px 16px', marginBottom: 4 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#E5E5E5' }}>{step.step}</span>
-                    <span style={{ fontSize: 10, color: '#525252', background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 3, padding: '2px 8px' }}>{step.actor}</span>
+                {/* Step content */}
+                <div style={{
+                  flex: 1, border: `1px solid ${D.border}`, borderRadius: 8,
+                  padding: '14px 18px', marginBottom: 4, background: '#FAFAFA',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, ...D.heading }}>{step.step}</span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {step.actor && (
+                        <span style={{
+                          fontSize: 11, ...D.label, background: '#F3F4F6',
+                          border: `1px solid ${D.border}`, borderRadius: 20, padding: '3px 10px', fontWeight: 500,
+                        }}>{step.actor}</span>
+                      )}
+                      {step.sla && (
+                        <span style={{ fontSize: 11, color, fontWeight: 500 }}>⏱ {step.sla}</span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, color: '#A3A3A3', marginBottom: step.output || step.sla ? 8 : 0, lineHeight: 1.6 }}>{step.action}</div>
-                  {step.output && <div style={{ fontSize: 11, color: '#737373' }}>Output: {step.output}</div>}
-                  {step.sla && <div style={{ fontSize: 11, color, marginTop: 4 }}>⏱ SLA: {step.sla}</div>}
+                  {step.action && <div style={{ fontSize: 13, ...D.body, lineHeight: 1.6, marginBottom: step.output ? 8 : 0 }}>{step.action}</div>}
+                  {step.output && <div style={{ fontSize: 12, ...D.label, fontStyle: 'italic' }}>Output: {step.output}</div>}
                 </div>
               </div>
             ))}
           </DocSection>
         )}
-        <DocSection title="Decision Points" color={color}>
-          <DocList items={c.decisionPoints} color={color} />
-        </DocSection>
-        <DocSection title="Exception Paths" color={color}>
-          <DocList items={c.exceptionPaths} color={color} />
-        </DocSection>
-      </>
+
+        {c.decisionPoints?.length > 0 && (
+          <DocSection title="Decision Points" color={color}>
+            {c.decisionPoints.map((d, i) => (
+              <div key={i} style={{ border: `1px solid ${D.border}`, borderLeft: `3px solid ${color}`, borderRadius: 4, padding: '10px 14px', marginBottom: 8, fontSize: 13, ...D.body }}>
+                {typeof d === 'string' ? d : JSON.stringify(d)}
+              </div>
+            ))}
+          </DocSection>
+        )}
+
+        {c.exceptionPaths?.length > 0 && (
+          <DocSection title="Exception Paths" color={color}>
+            {c.exceptionPaths.map((e, i) => (
+              <div key={i} style={{ border: `1px solid #FCA5A5`, borderLeft: '3px solid #EF4444', borderRadius: 4, padding: '10px 14px', marginBottom: 8, fontSize: 13, ...D.body, background: '#FFF5F5' }}>
+                {typeof e === 'string' ? e : JSON.stringify(e)}
+              </div>
+            ))}
+          </DocSection>
+        )}
+      </div>
     )
 
     case 'data_model': return (
-      <>
-        <DocSection title="Primary Entity" color={color}>
-          <div style={{ fontSize: 18, fontWeight: 700, color, marginBottom: 8 }}>{c.primaryEntity}</div>
-        </DocSection>
+      <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <h1 style={docTitle}>{artifact.title}</h1>
+        <p style={docSubtitle}>Data Model</p>
+
+        {c.primaryEntity && (
+          <DocSection title="Primary Entity" color={color}>
+            <div style={{ fontSize: 20, fontWeight: 800, color, marginBottom: 12 }}>{c.primaryEntity}</div>
+            {c.statusFlow?.length > 0 && (
+              <>
+                <div style={{ fontSize: 10, ...D.label, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Status Flow</div>
+                <StatusFlow statuses={c.statusFlow} color={color} />
+              </>
+            )}
+          </DocSection>
+        )}
+
         {c.fields?.length > 0 && (
           <DocSection title="Fields" color={color}>
             <DocTable
               headers={['Field Name', 'Label', 'Type', 'Required', 'Options']}
-              rows={c.fields.map(f => [
-                <code style={{ fontFamily: 'monospace', fontSize: 11, color: '#A3A3A3' }}>{f.name}</code>,
-                f.label, f.type,
-                f.required ? <span style={{ color: '#34D399' }}>Yes</span> : <span style={{ color: '#525252' }}>No</span>,
+              rows={c.fields.map((f, i) => [
+                <code key={i} style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12, color: '#1F2937', background: '#F3F4F6', borderRadius: 3, padding: '1px 5px' }}>{f.name}</code>,
+                f.label,
+                f.type,
+                f.required
+                  ? <span style={{ color: '#059669', fontWeight: 600 }}>Yes</span>
+                  : <span style={{ ...D.label }}>No</span>,
                 f.options?.join(', ') || '—',
               ])}
               color={color}
             />
           </DocSection>
         )}
-        <DocSection title="Status Flow" color={color}>
-          <StatusFlow statuses={c.statusFlow} color={color} />
-        </DocSection>
-        <DocSection title="Relationships" color={color}>
-          <DocList items={c.relationships} color={color} />
-        </DocSection>
-        <DocSection title="Audit Fields" color={color}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {c.auditFields?.map(f => <code key={f} style={{ fontSize: 11, color: '#737373', background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 4, padding: '3px 8px' }}>{f}</code>)}
-          </div>
-        </DocSection>
-      </>
+
+        {c.relationships?.length > 0 && (
+          <DocSection title="Relationships" color={color}>
+            <DocList items={c.relationships} color={color} />
+          </DocSection>
+        )}
+
+        {c.auditFields?.length > 0 && (
+          <DocSection title="Audit Fields" color={color}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {c.auditFields.map(f => (
+                <code key={f} style={{
+                  fontSize: 12, ...D.body, background: '#F3F4F6',
+                  border: `1px solid ${D.border}`, borderRadius: 4, padding: '3px 10px',
+                  fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                }}>{f}</code>
+              ))}
+            </div>
+          </DocSection>
+        )}
+      </div>
     )
 
     case 'automation_model': return (
-      <>
+      <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <h1 style={docTitle}>{artifact.title}</h1>
+        <p style={docSubtitle}>Automation Model</p>
+
         {c.triggers?.length > 0 && (
           <DocSection title="Triggers" color={color}>
             {c.triggers.map((t, i) => (
-              <div key={i} style={{ background: '#141414', border: '0.5px solid #2A2A2A', borderRadius: 8, padding: '12px 16px', marginBottom: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#E5E5E5', marginBottom: 6 }}>{t.event}</div>
-                <div style={{ fontSize: 12, color: '#737373', marginBottom: 4 }}>Condition: {t.condition}</div>
-                <div style={{ fontSize: 12, color }}>→ {t.action}</div>
+              <div key={i} style={{ border: `1px solid ${D.border}`, borderRadius: 8, marginBottom: 12, overflow: 'hidden' }}>
+                <div style={{ background: D.tableHdr, padding: '10px 16px', borderBottom: `1px solid ${D.border}` }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, ...D.heading }}>{t.event}</span>
+                </div>
+                <div style={{ padding: '12px 16px', display: 'grid', gridTemplateColumns: '80px 1fr', gap: '8px 12px', alignItems: 'start' }}>
+                  <span style={{ fontSize: 10, ...D.label, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', paddingTop: 2 }}>When</span>
+                  <span style={{ fontSize: 13, ...D.body }}>{t.event}</span>
+                  {t.condition && <>
+                    <span style={{ fontSize: 10, ...D.label, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', paddingTop: 2 }}>If</span>
+                    <span style={{ fontSize: 13, ...D.body }}>{t.condition}</span>
+                  </>}
+                  <span style={{ fontSize: 10, ...D.label, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', paddingTop: 2 }}>Then</span>
+                  <span style={{ fontSize: 13, color, fontWeight: 500 }}>{t.action}</span>
+                </div>
               </div>
             ))}
           </DocSection>
         )}
+
         {c.notifications?.length > 0 && (
           <DocSection title="Notifications" color={color}>
             <DocTable
@@ -287,16 +447,22 @@ function DocumentView({ artifact }) {
             />
           </DocSection>
         )}
+
         {c.escalations?.length > 0 && (
           <DocSection title="Escalations" color={color}>
             {c.escalations.map((e, i) => (
-              <div key={i} style={{ background: '#1A0D0D', border: '0.5px solid #5F1E1E', borderRadius: 8, padding: '10px 14px', marginBottom: 8 }}>
-                <div style={{ fontSize: 11, color: '#F87171', marginBottom: 4 }}>Trigger: {e.condition}</div>
-                <div style={{ fontSize: 12, color: '#D4D4D4' }}>→ {e.action} → {e.recipient}</div>
+              <div key={i} style={{
+                background: '#FFF5F5', border: '1px solid #FCA5A5',
+                borderLeft: '3px solid #EF4444', borderRadius: 6,
+                padding: '12px 16px', marginBottom: 10,
+              }}>
+                <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600, marginBottom: 6 }}>Trigger: {e.condition}</div>
+                <div style={{ fontSize: 13, ...D.body }}>→ {e.action}{e.recipient ? ` → ${e.recipient}` : ''}</div>
               </div>
             ))}
           </DocSection>
         )}
+
         {c.integrations?.length > 0 && (
           <DocSection title="Integrations" color={color}>
             <DocTable
@@ -306,80 +472,121 @@ function DocumentView({ artifact }) {
             />
           </DocSection>
         )}
-      </>
+      </div>
     )
 
     case 'ux_recommendation': return (
-      <>
+      <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <h1 style={docTitle}>{artifact.title}</h1>
+        <p style={docSubtitle}>UX Recommendation</p>
+
         <DocSection title="Layout Direction" color={color}>
-          <DocField label="Layout Type" value={c.layoutType} />
-          <DocField label="Navigation Model" value={c.navigationModel} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px' }}>
+            <DocField label="Layout Type" value={c.layoutType} />
+            <DocField label="Navigation Model" value={c.navigationModel} />
+          </div>
           <DocField label="Rationale" value={c.rationale} />
         </DocSection>
+
         {c.visualTheme && (
           <DocSection title="Visual Theme" color={color}>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, background: '#141414', border: '0.5px solid #2A2A2A', borderRadius: 8, padding: 16 }}>
-              <div style={{ width: 48, height: 48, borderRadius: 8, background: c.visualTheme.primaryColor, flexShrink: 0, boxShadow: `0 4px 16px ${c.visualTheme.primaryColor}44` }} />
+            <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', padding: '16px 20px', border: `1px solid ${D.border}`, borderRadius: 8, marginBottom: 16, background: '#FAFAFA' }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: 8, flexShrink: 0,
+                background: c.visualTheme.primaryColor,
+                boxShadow: `0 4px 12px ${c.visualTheme.primaryColor}55`,
+              }} />
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#E5E5E5', marginBottom: 3 }}>{c.visualTheme.colorName}</div>
-                <div style={{ fontSize: 11, color: '#525252', fontFamily: 'monospace', marginBottom: 3 }}>{c.visualTheme.primaryColor}</div>
-                <div style={{ fontSize: 11, color: '#737373', textTransform: 'capitalize' }}>{c.visualTheme.mood}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, ...D.heading, marginBottom: 4 }}>{c.visualTheme.colorName}</div>
+                <code style={{ fontSize: 12, ...D.label, fontFamily: 'ui-monospace, monospace', display: 'block', marginBottom: 4 }}>{c.visualTheme.primaryColor}</code>
+                <div style={{ fontSize: 12, ...D.label, textTransform: 'capitalize' }}>{c.visualTheme.mood}</div>
               </div>
             </div>
             <DocField label="Design Rationale" value={c.visualTheme.rationale} />
           </DocSection>
         )}
+
         {c.primaryScreens?.length > 0 && (
           <DocSection title="Primary Screens" color={color}>
             {c.primaryScreens.map((s, i) => (
-              <div key={i} style={{ background: '#141414', border: '0.5px solid #2A2A2A', borderRadius: 8, padding: '12px 16px', marginBottom: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#E5E5E5', marginBottom: 5 }}>{s.screen}</div>
-                <div style={{ fontSize: 12, color: '#A3A3A3', marginBottom: 8 }}>{s.purpose}</div>
-                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                  {s.keyActions?.map((a, j) => <span key={j} style={{ fontSize: 10, color: '#525252', background: '#111', border: '0.5px solid #222', borderRadius: 4, padding: '3px 8px' }}>{a}</span>)}
+              <div key={i} style={{ border: `1px solid ${D.border}`, borderRadius: 8, padding: '16px 20px', marginBottom: 12, background: '#FAFAFA' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, ...D.heading, marginBottom: 6 }}>{s.screen}</div>
+                <div style={{ fontSize: 13, ...D.body, marginBottom: 12, lineHeight: 1.6 }}>{s.purpose}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {s.keyActions?.map((a, j) => (
+                    <span key={j} style={{
+                      fontSize: 11, ...D.label, background: '#F3F4F6',
+                      border: `1px solid ${D.border}`, borderRadius: 4, padding: '4px 10px',
+                    }}>{a}</span>
+                  ))}
                 </div>
               </div>
             ))}
           </DocSection>
         )}
-      </>
+      </div>
     )
 
     case 'app_spec': return (
-      <>
-        <DocSection title="App Identity" color={color}>
-          <div style={{ background: '#141414', border: '0.5px solid #2A2A2A', borderRadius: 10, padding: '20px 24px', marginBottom: 8 }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#F5F5F5', marginBottom: 6 }}>{c.appTitle}</div>
-            <div style={{ fontSize: 13, color, fontWeight: 600, marginBottom: 8 }}>{c.appType}</div>
-            <div style={{ fontSize: 13, color: '#A3A3A3', lineHeight: 1.6 }}>{c.tagline}</div>
+      <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        {/* App identity header */}
+        <div style={{ marginBottom: 36 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <h1 style={{ ...docTitle, margin: 0 }}>{c.appTitle || artifact.title}</h1>
+            {c.appType && (
+              <span style={{
+                fontSize: 11, color, background: `${color}15`,
+                border: `1px solid ${color}40`, borderRadius: 20,
+                padding: '4px 12px', fontWeight: 600, marginTop: 4, whiteSpace: 'nowrap',
+              }}>{c.appType}</span>
+            )}
           </div>
-          <DocField label="Purpose" value={c.purpose} />
-          <DocField label="Primary Action" value={c.primaryActionLabel} />
-        </DocSection>
-        <DocSection title="Features" color={color}>
-          <DocList items={c.features} color={color} />
-        </DocSection>
+          {c.tagline && <p style={{ fontSize: 15, ...D.body, margin: '0 0 6px', lineHeight: 1.6 }}>{c.tagline}</p>}
+        </div>
+
+        {(c.purpose || c.primaryActionLabel) && (
+          <DocSection title="Overview" color={color}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px' }}>
+              <DocField label="Purpose" value={c.purpose} />
+              <DocField label="Primary Action" value={c.primaryActionLabel} />
+            </div>
+          </DocSection>
+        )}
+
+        {c.statusFlow?.length > 0 && (
+          <DocSection title="Status Flow" color={color}>
+            <StatusFlow statuses={c.statusFlow} color={color} />
+          </DocSection>
+        )}
+
+        {c.features?.length > 0 && (
+          <DocSection title="Features" color={color}>
+            <DocList items={c.features} color={color} />
+          </DocSection>
+        )}
+
         {c.fields?.length > 0 && (
           <DocSection title="Data Fields" color={color}>
             <DocTable
               headers={['Field Name', 'Label', 'Type', 'Required']}
-              rows={c.fields.map(f => [
-                <code style={{ fontFamily: 'monospace', fontSize: 11 }}>{f.name}</code>,
+              rows={c.fields.map((f, i) => [
+                <code key={i} style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#1F2937', background: '#F3F4F6', borderRadius: 3, padding: '1px 5px' }}>{f.name}</code>,
                 f.label, f.type,
-                f.required ? <span style={{ color: '#34D399' }}>Yes</span> : '—',
+                f.required ? <span style={{ color: '#059669', fontWeight: 600 }}>Yes</span> : <span style={D.label}>—</span>,
               ])}
               color={color}
             />
           </DocSection>
         )}
-        <DocSection title="Status Flow" color={color}>
-          <StatusFlow statuses={c.statusFlow} color={color} />
-        </DocSection>
-      </>
+      </div>
     )
 
     default:
-      return <pre style={{ fontSize: 11, color: '#A3A3A3', whiteSpace: 'pre-wrap', lineHeight: 1.6, margin: 0 }}>{JSON.stringify(c, null, 2)}</pre>
+      return (
+        <pre style={{ fontSize: 12, ...D.body, whiteSpace: 'pre-wrap', lineHeight: 1.6, margin: 0, fontFamily: 'ui-monospace, monospace' }}>
+          {JSON.stringify(c, null, 2)}
+        </pre>
+      )
   }
 }
 
@@ -479,14 +686,14 @@ function ManualEditor({ artifact, onSaved, onCancel }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Editor header bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 24px', borderBottom: '0.5px solid #1A1A1A', background: '#0D0D0D', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 24px', borderBottom: '1px solid #D1D5DB', background: '#F9FAFB', flexShrink: 0 }}>
         <span style={{ fontSize: 11, color: statusColor, flex: 1 }}>{statusLabel}</span>
         <button onClick={onCancel}
-          style={{ background: 'transparent', color: '#737373', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ background: 'transparent', color: '#374151', border: '1px solid #D1D5DB', borderRadius: 5, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
           Cancel
         </button>
         <button onClick={handleSave} disabled={saveStatus === 'saving'}
-          style={{ background: '#0D2A1A', color: saveStatus === 'saving' ? '#525252' : '#34D399', border: '0.5px solid #34D39933', borderRadius: 5, padding: '5px 14px', fontSize: 11, cursor: saveStatus === 'saving' ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+          style={{ background: '#F0FDF4', color: saveStatus === 'saving' ? '#9CA3AF' : '#059669', border: '1px solid #6EE7B7', borderRadius: 5, padding: '5px 14px', fontSize: 11, cursor: saveStatus === 'saving' ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
           Save
         </button>
       </div>
@@ -496,9 +703,9 @@ function ManualEditor({ artifact, onSaved, onCancel }) {
         onChange={handleChange}
         style={{
           flex: 1,
-          background: '#0D0D0D',
-          color: '#D4D4D4',
-          border: 'none',
+          background: '#FFFFFF',
+          color: '#111111',
+          border: '1px solid #D1D5DB',
           padding: '24px 32px',
           fontSize: 13,
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -629,6 +836,36 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
 
   const statusColors = { draft: '#737373', approved: '#34D399', built: '#60A5FA', superseded: '#525252' }
 
+  // White page canvas (rendered inside dark surround)
+  function DocumentCanvas() {
+    return (
+      <div style={{
+        flex: 1, overflow: 'auto',
+        background: '#1A1A1A',
+        padding: '32px 24px',
+      }}>
+        <div style={{
+          maxWidth: 760, margin: '0 auto',
+          background: '#FFFFFF',
+          borderRadius: 4,
+          boxShadow: '0 2px 24px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3)',
+          padding: '56px 64px',
+          minHeight: 600,
+          position: 'relative',
+          overflow: 'hidden',
+        }}>
+          {/* Color accent bar at top of page */}
+          <div style={{
+            height: 4, background: color, borderRadius: 0,
+            marginBottom: 40,
+            marginLeft: -64, marginRight: -64, marginTop: -56,
+          }} />
+          <DocumentView artifact={artifact} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 9000,
@@ -637,7 +874,7 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
     }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
 
       <div style={{
-        width: 'min(820px, 96vw)', margin: '24px auto',
+        width: 'min(880px, 96vw)', margin: '24px auto',
         background: '#111', border: '0.5px solid #2A2A2A', borderRadius: 14,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         boxShadow: '0 32px 100px rgba(0,0,0,0.7)',
@@ -646,7 +883,7 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
         {/* Color accent */}
         <div style={{ height: 3, background: `linear-gradient(90deg, ${color}, ${color}44)`, flexShrink: 0 }} />
 
-        {/* Document header */}
+        {/* Document header — stays dark */}
         <div style={{ padding: '18px 24px 14px', borderBottom: '0.5px solid #1A1A1A', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
             <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>{meta.icon}</span>
@@ -711,12 +948,8 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
         </div>
 
         {/* Document body */}
-        <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
-          {mode === 'view' && (
-            <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
-              <DocumentView artifact={artifact} />
-            </div>
-          )}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {mode === 'view' && <DocumentCanvas />}
 
           {mode === 'manual' && (
             <ManualEditor
@@ -726,11 +959,7 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
             />
           )}
 
-          {mode === 'ai' && (
-            <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
-              <DocumentView artifact={artifact} />
-            </div>
-          )}
+          {mode === 'ai' && <DocumentCanvas />}
         </div>
 
         {/* AI Edit pane at bottom when in ai mode */}
