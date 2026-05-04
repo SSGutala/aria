@@ -288,9 +288,10 @@ function ProductBriefContent({ data }) {
   )
 }
 
-// ── 3. WorkflowMapContent — Custom SVG swimlane flowchart ─────────────────────
-const SWIMLANE_COLORS = ['#DBEAFE','#D1FAE5','#FEF3C7','#EDE9FE','#FCE7F3','#ECFDF5']
-const SWIMLANE_ACCENT = ['#2563EB','#059669','#D97706','#7C3AED','#DB2777','#10B981']
+// ── 3. WorkflowMapContent — Proper swimlane flowchart ─────────────────────────
+const SL_FILL   = ['#EFF6FF','#F0FDF4','#FFFBEB','#F5F3FF','#FFF1F2','#ECFDF5']
+const SL_ACCENT = ['#2563EB','#16A34A','#D97706','#7C3AED','#E11D48','#059669']
+const SL_LABEL  = ['#1E40AF','#14532D','#92400E','#4C1D95','#9F1239','#064E3B']
 
 function WorkflowMapContent({ data }) {
   if (!data) return null
@@ -298,175 +299,251 @@ function WorkflowMapContent({ data }) {
   const decisions = data.decisionPoints || []
   const exceptions = data.exceptionPaths || []
 
-  // Collect unique actors for swimlanes
+  // Unique ordered actors
   const actors = []
   steps.forEach(s => { if (s.actor && !actors.includes(s.actor)) actors.push(s.actor) })
-  if (actors.length === 0) actors.push('Process')
+  if (!actors.length) actors.push('Process')
 
-  // Layout constants
-  const LANE_W = 560
-  const LANE_H = 90
-  const BOX_W = 160
-  const BOX_H = 52
-  const DIAMOND = 48
-  const PAD_L = 130
-  const PAD_T = 40
-  const GAP = 40
+  // ── Layout constants ────────────────────────────────────────────────────────
+  const LABEL_W  = 100   // left column: lane labels
+  const START_W  = 90    // column reserved for START oval (before step 0)
+  const BOX_W    = 164   // step box width
+  const BOX_H    = 68    // step box height
+  const COL_GAP  = 52    // horizontal gap between step columns
+  const LANE_H   = 110   // height of each swimlane row
+  const TOP_PAD  = 16    // vertical padding above/below lanes
 
-  // Place each step in its actor's lane
-  // We'll lay them out left-to-right across lanes
-  const nodesByActor = {}
-  actors.forEach(a => { nodesByActor[a] = [] })
-  steps.forEach((step, i) => {
-    const actor = step.actor || actors[0]
-    if (!nodesByActor[actor]) nodesByActor[actor] = []
-    nodesByActor[actor].push({ ...step, globalIdx: i })
+  // Column x-center for step i: LABEL_W + START_W + i*(BOX_W+COL_GAP) + BOX_W/2
+  const colCX  = i => LABEL_W + START_W + i * (BOX_W + COL_GAP) + BOX_W / 2
+  // Row y-center for actor ai: TOP_PAD + ai*LANE_H + LANE_H/2
+  const rowCY  = ai => TOP_PAD + ai * LANE_H + LANE_H / 2
+
+  const svgW = LABEL_W + START_W + steps.length * (BOX_W + COL_GAP) + COL_GAP
+  const svgH = TOP_PAD + actors.length * LANE_H + TOP_PAD
+
+  // START node in lane of first step
+  const startAi  = steps.length ? actors.indexOf(steps[0].actor || actors[0]) : 0
+  const startCX  = LABEL_W + START_W / 2
+  const startCY  = rowCY(Math.max(0, startAi))
+  const startRX  = 34
+  const startRY  = 18
+
+  // Each step's center
+  const nodePos = steps.map((step, i) => {
+    const ai = actors.indexOf(step.actor || actors[0])
+    return { cx: colCX(i), cy: rowCY(ai < 0 ? 0 : ai), ai: ai < 0 ? 0 : ai }
   })
 
-  // Total columns = max steps in any lane
-  const maxPerLane = Math.max(...actors.map(a => (nodesByActor[a] || []).length), 1)
-  const svgW = PAD_L + maxPerLane * (BOX_W + GAP) + GAP + 80
-  const svgH = PAD_T + actors.length * LANE_H + PAD_T
+  // END node after last step, same lane
+  const lastNode = nodePos[nodePos.length - 1]
+  const endCX = lastNode ? colCX(steps.length - 1) + BOX_W / 2 + COL_GAP / 2 + 34 : startCX + 80
+  const endCY = lastNode ? lastNode.cy : startCY
 
-  // Assign x position within each lane by index
-  const positioned = {} // globalIdx → {x, y, cx, cy}
-  actors.forEach((actor, ai) => {
-    const lane = nodesByActor[actor] || []
-    const cy = PAD_T + ai * LANE_H + LANE_H / 2
-    lane.forEach((node, li) => {
-      const cx = PAD_L + li * (BOX_W + GAP) + BOX_W / 2 + GAP / 2
-      positioned[node.globalIdx] = { cx, cy }
-    })
-  })
-
-  // Build arrows: connect sequential steps
-  const arrows = []
-  for (let i = 0; i < steps.length - 1; i++) {
-    const from = positioned[i]
-    const to = positioned[i + 1]
-    if (from && to) {
-      arrows.push({ x1: from.cx + BOX_W / 2, y1: from.cy, x2: to.cx - BOX_W / 2, y2: to.cy, label: '' })
+  // ── Arrow path builder ──────────────────────────────────────────────────────
+  function arrowPath(x1, y1, x2, y2) {
+    if (Math.abs(y1 - y2) < 3) {
+      return `M${x1},${y1} L${x2},${y2}`
     }
+    // Elbow: go right to midpoint x, then down/up, then right to target
+    const mx = x1 + (x2 - x1) * 0.5
+    return `M${x1},${y1} L${mx},${y1} L${mx},${y2} L${x2},${y2}`
   }
 
+  const markerId = 'wf_arr_' + (data.trigger || 'x').slice(0, 6).replace(/\W/g, '')
+
   return (
-    <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: '10px 16px', background: '#F8FAFC', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>Workflow Map</span>
-          <span style={{ fontSize: 11, color: '#6B7280', marginLeft: 10 }}>Swimlane diagram · {steps.length} steps · {actors.length} roles</span>
+    <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 6px rgba(0,0,0,0.06)' }}>
+
+      {/* ── Header bar ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="1" y="1" width="6" height="5" rx="1.5" fill="#2563EB"/>
+            <rect x="9" y="5" width="6" height="5" rx="1.5" fill="#16A34A"/>
+            <rect x="1" y="10" width="6" height="5" rx="1.5" fill="#D97706"/>
+            <line x1="7" y1="3.5" x2="9" y2="7.5" stroke="#94A3B8" strokeWidth="1.2"/>
+            <line x1="7" y1="12.5" x2="9" y2="7.5" stroke="#94A3B8" strokeWidth="1.2"/>
+          </svg>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Workflow Map</span>
+          <span style={{ fontSize: 11, color: '#64748B' }}>
+            Swimlane · {steps.length} steps · {actors.length} {actors.length === 1 ? 'role' : 'roles'}
+          </span>
         </div>
-        <span style={{ fontSize: 10, color: '#9CA3AF', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 8px' }}>Flowchart</span>
+        <span style={{ fontSize: 10, color: '#64748B', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 4, padding: '2px 8px', fontWeight: 500 }}>
+          FLOWCHART
+        </span>
       </div>
 
-      {/* Trigger banner */}
+      {/* ── Trigger banner ── */}
       {data.trigger && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', background: '#F0FDF4', borderBottom: '1px solid #BBF7D0' }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Trigger</span>
-          <span style={{ fontSize: 13, color: '#065F46', flex: 1 }}>{data.trigger}</span>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 16px', background: '#F0FDF4', borderBottom: '1px solid #BBF7D0' }}>
+          <div style={{ flexShrink: 0, marginTop: 1 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#15803D', background: '#DCFCE7', border: '1px solid #86EFAC', borderRadius: 4, padding: '2px 7px', letterSpacing: '0.06em' }}>TRIGGER</span>
           </div>
+          <span style={{ fontSize: 13, color: '#14532D', lineHeight: 1.5, flex: 1 }}>{data.trigger}</span>
         </div>
       )}
 
-      {/* Swimlanes */}
-      <div style={{ overflowX: 'auto', padding: '0 0 8px' }}>
-        <svg width={svgW} height={svgH} style={{ display: 'block', minWidth: 420 }}>
+      {/* ── SVG swimlane diagram ── */}
+      <div style={{ overflowX: 'auto', background: '#FAFAFA' }}>
+        <svg
+          width={svgW}
+          height={svgH}
+          style={{ display: 'block', minWidth: 480, fontFamily: 'inherit' }}
+        >
           <defs>
-            <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L8,3 z" fill="#94A3B8"/>
+            <marker id={markerId} markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+              <path d="M0,0.5 L0,6.5 L8,3.5 z" fill="#64748B"/>
             </marker>
+            <filter id="wf_shadow" x="-10%" y="-10%" width="120%" height="130%">
+              <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#00000018"/>
+            </filter>
           </defs>
 
-          {/* Lane backgrounds */}
-          {actors.map((actor, ai) => (
-            <g key={actor}>
-              <rect x={0} y={PAD_T + ai * LANE_H} width={svgW} height={LANE_H}
-                fill={SWIMLANE_COLORS[ai % SWIMLANE_COLORS.length]} opacity={0.45}
-                stroke="#E5E7EB" strokeWidth={1}/>
-              {/* Lane label */}
-              <rect x={0} y={PAD_T + ai * LANE_H} width={PAD_L - 4} height={LANE_H}
-                fill={SWIMLANE_ACCENT[ai % SWIMLANE_ACCENT.length]} opacity={0.12}/>
-              <text x={PAD_L / 2 - 2} y={PAD_T + ai * LANE_H + LANE_H / 2}
-                textAnchor="middle" dominantBaseline="middle"
-                fontSize="12" fontWeight="600" fill={SWIMLANE_ACCENT[ai % SWIMLANE_ACCENT.length]}
-                transform={`rotate(-90, ${PAD_L / 2 - 2}, ${PAD_T + ai * LANE_H + LANE_H / 2})`}>
-                {actor.length > 18 ? actor.slice(0, 17) + '…' : actor}
-              </text>
-            </g>
-          ))}
-
-          {/* Vertical lane divider */}
-          <line x1={PAD_L - 4} y1={PAD_T} x2={PAD_L - 4} y2={svgH - PAD_T} stroke="#CBD5E1" strokeWidth={1.5}/>
-
-          {/* Arrows */}
-          {arrows.map((a, i) => {
-            if (Math.abs(a.y1 - a.y2) < 2) {
-              // Straight horizontal arrow
-              return <line key={i} x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2} stroke="#94A3B8" strokeWidth={1.5} markerEnd="url(#arr)"/>
-            }
-            // Elbow arrow for cross-lane
-            const mx = (a.x1 + a.x2) / 2
-            return <path key={i} d={`M${a.x1},${a.y1} L${mx},${a.y1} L${mx},${a.y2} L${a.x2},${a.y2}`}
-              stroke="#94A3B8" strokeWidth={1.5} fill="none" markerEnd="url(#arr)"/>
-          })}
-
-          {/* Step nodes */}
-          {steps.map((step, i) => {
-            const p = positioned[i]
-            if (!p) return null
-            const ai = actors.indexOf(step.actor || actors[0])
-            const accent = SWIMLANE_ACCENT[ai % SWIMLANE_ACCENT.length]
-            const bg = SWIMLANE_COLORS[ai % SWIMLANE_COLORS.length]
-            const x = p.cx - BOX_W / 2
-            const y = p.cy - BOX_H / 2
-            const label = step.step || ''
+          {/* ── Lane backgrounds & labels ── */}
+          {actors.map((actor, ai) => {
+            const laneY = TOP_PAD + ai * LANE_H
+            const accent = SL_ACCENT[ai % SL_ACCENT.length]
+            const fill   = SL_FILL[ai % SL_FILL.length]
+            const label  = SL_LABEL[ai % SL_LABEL.length]
             return (
-              <g key={i}>
-                <rect x={x} y={y} width={BOX_W} height={BOX_H} rx={6} ry={6}
-                  fill="#fff" stroke={accent} strokeWidth={1.5}/>
-                <rect x={x} y={y} width={BOX_W} height={4} rx={3} fill={accent}/>
-                <text x={p.cx} y={p.cy - 4} textAnchor="middle" dominantBaseline="middle"
-                  fontSize="11" fontWeight="600" fill="#1E293B" style={{ pointerEvents: 'none' }}>
-                  {label.length > 20 ? label.slice(0, 19) + '…' : label}
+              <g key={actor}>
+                {/* Full lane background */}
+                <rect x={0} y={laneY} width={svgW} height={LANE_H} fill={fill} stroke="#E2E8F0" strokeWidth={0.5}/>
+                {/* Label column */}
+                <rect x={0} y={laneY} width={LABEL_W} height={LANE_H} fill={accent} opacity={0.13}/>
+                <line x1={LABEL_W} y1={laneY} x2={LABEL_W} y2={laneY + LANE_H} stroke={accent} strokeWidth={2} opacity={0.4}/>
+                {/* Actor name — rotated */}
+                <text
+                  x={LABEL_W / 2} y={laneY + LANE_H / 2}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize="12" fontWeight="700" fill={label}
+                  transform={`rotate(-90,${LABEL_W / 2},${laneY + LANE_H / 2})`}
+                >
+                  {actor.length > 20 ? actor.slice(0, 19) + '…' : actor}
                 </text>
-                {step.sla && (
-                  <text x={p.cx} y={p.cy + 12} textAnchor="middle" dominantBaseline="middle"
-                    fontSize="9" fill="#94A3B8">⏱ {step.sla}</text>
-                )}
-                {/* Step number badge */}
-                <circle cx={x + 14} cy={y + 14} r={9} fill={accent}/>
-                <text x={x + 14} y={y + 14} textAnchor="middle" dominantBaseline="middle"
-                  fontSize="8" fontWeight="700" fill="#fff">{i + 1}</text>
               </g>
             )
           })}
 
-          {/* START / END nodes */}
-          <ellipse cx={PAD_L + 20} cy={PAD_T + LANE_H / 2} rx={28} ry={16} fill="#059669" stroke="none"/>
-          <text x={PAD_L + 20} y={PAD_T + LANE_H / 2} textAnchor="middle" dominantBaseline="middle"
-            fontSize="10" fontWeight="700" fill="#fff">START</text>
+          {/* ── START oval — own column, no overlap ── */}
+          <ellipse
+            cx={startCX} cy={startCY}
+            rx={startRX} ry={startRY}
+            fill="#15803D" filter="url(#wf_shadow)"
+          />
+          <text x={startCX} y={startCY} textAnchor="middle" dominantBaseline="middle"
+            fontSize="10" fontWeight="800" fill="#fff" letterSpacing="0.08em">START</text>
+          {/* Arrow from START to step 0 */}
+          {nodePos.length > 0 && (
+            <path
+              d={arrowPath(startCX + startRX, startCY, nodePos[0].cx - BOX_W / 2, nodePos[0].cy)}
+              stroke="#64748B" strokeWidth="1.8" fill="none"
+              markerEnd={`url(#${markerId})`}
+            />
+          )}
+
+          {/* ── Step-to-step arrows ── */}
+          {nodePos.map((node, i) => {
+            if (i === nodePos.length - 1) return null
+            const next = nodePos[i + 1]
+            const x1 = node.cx + BOX_W / 2
+            const y1 = node.cy
+            const x2 = next.cx - BOX_W / 2
+            const y2 = next.cy
+            return (
+              <path key={i}
+                d={arrowPath(x1, y1, x2, y2)}
+                stroke="#64748B" strokeWidth="1.8" fill="none"
+                markerEnd={`url(#${markerId})`}
+              />
+            )
+          })}
+
+          {/* ── Arrow from last step to END ── */}
+          {nodePos.length > 0 && (
+            <path
+              d={`M${nodePos[nodePos.length - 1].cx + BOX_W / 2},${endCY} L${endCX - 34},${endCY}`}
+              stroke="#64748B" strokeWidth="1.8" fill="none"
+              markerEnd={`url(#${markerId})`}
+            />
+          )}
+
+          {/* ── END oval ── */}
+          {nodePos.length > 0 && (
+            <>
+              <ellipse cx={endCX} cy={endCY} rx={30} ry={16} fill="#0F172A" filter="url(#wf_shadow)"/>
+              <text x={endCX} y={endCY} textAnchor="middle" dominantBaseline="middle"
+                fontSize="10" fontWeight="800" fill="#fff" letterSpacing="0.08em">END</text>
+            </>
+          )}
+
+          {/* ── Step boxes ── */}
+          {steps.map((step, i) => {
+            const { cx, cy, ai } = nodePos[i]
+            const accent = SL_ACCENT[ai % SL_ACCENT.length]
+            const label  = SL_LABEL[ai % SL_LABEL.length]
+            const bx = cx - BOX_W / 2
+            const by = cy - BOX_H / 2
+            // Wrap label at ~22 chars
+            const raw = step.step || ''
+            const line1 = raw.length > 22 ? raw.slice(0, 22) : raw
+            const line2 = raw.length > 22 ? raw.slice(22, 44) : ''
+            return (
+              <g key={i} filter="url(#wf_shadow)">
+                {/* White card */}
+                <rect x={bx} y={by} width={BOX_W} height={BOX_H} rx={7} ry={7}
+                  fill="#ffffff" stroke={accent} strokeWidth={2}/>
+                {/* Accent top bar */}
+                <rect x={bx + 1} y={by + 1} width={BOX_W - 2} height={5} rx={6} fill={accent}/>
+                {/* Step number badge */}
+                <circle cx={bx + 16} cy={by + 5 + 14} r={11} fill={accent}/>
+                <text x={bx + 16} y={by + 5 + 14} textAnchor="middle" dominantBaseline="middle"
+                  fontSize="9" fontWeight="800" fill="#fff">{i + 1}</text>
+                {/* Step label */}
+                <text x={bx + 34} y={by + (line2 ? 24 : 28)} fontSize="12" fontWeight="700" fill="#0F172A">
+                  {line1}
+                </text>
+                {line2 && (
+                  <text x={bx + 34} y={by + 38} fontSize="12" fontWeight="700" fill="#0F172A">{line2}</text>
+                )}
+                {/* Actor tag below label */}
+                {step.actor && (
+                  <text x={bx + 34} y={by + BOX_H - 10} fontSize="9" fill={accent} fontWeight="600" opacity={0.8}>
+                    {step.actor.length > 22 ? step.actor.slice(0, 21) + '…' : step.actor}
+                  </text>
+                )}
+                {/* SLA chip */}
+                {step.sla && step.sla !== 'None' && step.sla !== 'null' && (
+                  <>
+                    <rect x={cx + 44} y={by + 6} width={56} height={14} rx={4} fill={accent} opacity={0.12}/>
+                    <text x={cx + 47} y={by + 13} fontSize="8" fill={accent} fontWeight="600">⏱ {step.sla}</text>
+                  </>
+                )}
+              </g>
+            )
+          })}
         </svg>
       </div>
 
-      {/* Decision points */}
-      {decisions.length > 0 && (
-        <div style={{ borderTop: '1px solid #E5E7EB', padding: '14px 16px', background: '#FFFBEB' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Decision Points</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* ── Decision points + exceptions ── */}
+      {(decisions.length > 0 || exceptions.length > 0) && (
+        <div style={{ borderTop: '1px solid #FDE68A', background: '#FFFBEB', padding: '14px 20px' }}>
+          <div style={{ fontSize: 10, fontWeight: 800, color: '#B45309', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Decision Points</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {decisions.map((d, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <svg width={28} height={28} viewBox="0 0 28 28" style={{ flexShrink: 0, marginTop: 1 }}>
-                  <polygon points="14,2 26,14 14,26 2,14" fill="#FEF3C7" stroke="#D97706" strokeWidth="1.5"/>
-                  <text x="14" y="14" textAnchor="middle" dominantBaseline="middle" fontSize="10" fill="#D97706">?</text>
+              <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                {/* Diamond icon */}
+                <svg width="30" height="26" viewBox="0 0 30 26" style={{ flexShrink: 0, marginTop: 2 }}>
+                  <polygon points="15,2 28,13 15,24 2,13" fill="#FEF3C7" stroke="#D97706" strokeWidth="1.8"/>
+                  <text x="15" y="13" textAnchor="middle" dominantBaseline="middle" fontSize="11" fontWeight="700" fill="#D97706">?</text>
                 </svg>
-                <div>
-                  <div style={{ fontSize: 13, color: '#92400E', fontWeight: 500 }}>{d}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: '#78350F', fontWeight: 600, lineHeight: 1.5 }}>{d}</div>
                   {exceptions[i] && (
-                    <div style={{ fontSize: 11, color: '#B45309', marginTop: 3, fontStyle: 'italic' }}>
-                      ↳ Exception: {exceptions[i]}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <span style={{ fontSize: 10, color: '#B45309', fontWeight: 700 }}>↳ EXCEPTION</span>
+                      <span style={{ fontSize: 12, color: '#92400E', fontStyle: 'italic' }}>{exceptions[i]}</span>
                     </div>
                   )}
                 </div>
