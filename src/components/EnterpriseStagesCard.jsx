@@ -597,22 +597,125 @@ function stageToPlainText(stageId, data) {
   }
 }
 
-// ─── Inline text editor for stage content ────────────────────────────────────
-// localStorage key: aria_edit_{conversationId}_{stageId}
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function localKey(artifact, stageId) {
   return `aria_edit_${artifact?.conversation_id || 'local'}_${stageId}`
 }
 
-function InlineEditor({ artifact, stageId, data, onDone }) {
-  const lsKey = localKey(artifact, stageId)
-  const initialText =
-    artifact?.content?._manualEdit ||
-    localStorage.getItem(lsKey) ||
-    stageToPlainText(stageId, data)
+// ─── Styled view for edited plain text (matches original design) ──────────────
+// Professional document palette
+const DOC = {
+  heading:  '#111827',
+  body:     '#374151',
+  label:    '#6B7280',
+  border:   '#E5E7EB',
+  rowAlt:   '#F9FAFB',
+  accent:   '#1D4ED8',
+}
 
-  const [text, setText] = useState(initialText)
-  const [saving, setSaving] = useState(false)
+// Parse plain text into sections for rendering
+function parseSections(text) {
+  const lines = (text || '').split('\n')
+  const sections = []
+  let current = null
+  for (const raw of lines) {
+    const line = raw.trimEnd()
+    const isHeader = line.length > 0 && !line.startsWith('  ') && !line.match(/^\s*[\d•·\-*]/)
+    if (isHeader) {
+      if (current) sections.push(current)
+      current = { header: line.trim(), body: [] }
+    } else if (current) {
+      current.body.push(line)
+    }
+  }
+  if (current) sections.push(current)
+  return sections
+}
+
+// Render section body lines as styled items
+function SectionBody({ lines }) {
+  const bodyLines = lines.filter((l, i, a) => !(l.trim() === '' && (i === 0 || i === a.length - 1)))
+  const items = []
+  let i = 0
+  while (i < bodyLines.length) {
+    const line = bodyLines[i]
+    const trimmed = line.trim()
+
+    const numMatch = trimmed.match(/^(\d+)\.\s+(.+)/)
+    if (numMatch) {
+      const num = numMatch[1]
+      const title = numMatch[2]
+      const sub = []
+      i++
+      while (i < bodyLines.length && bodyLines[i].trim() !== '' && !bodyLines[i].trim().match(/^\d+\./)) {
+        sub.push(bodyLines[i].trim()); i++
+      }
+      items.push(
+        <div key={`n${i}`} style={{ display: 'flex', gap: 14, paddingBottom: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+            <div style={{ width: 22, height: 22, borderRadius: '50%', background: DOC.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{num}</div>
+            <div style={{ width: 1, flex: 1, background: DOC.border, marginTop: 4, minHeight: 8 }} />
+          </div>
+          <div style={{ flex: 1, paddingTop: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: DOC.heading, marginBottom: 4, lineHeight: 1.4 }}>{title}</div>
+            {sub.map((s, j) => {
+              const kv = s.match(/^([^:]+):\s*(.+)/)
+              return kv
+                ? <div key={j} style={{ fontSize: 12, color: DOC.body, marginBottom: 2 }}><span style={{ color: DOC.label, fontWeight: 500 }}>{kv[1]}: </span>{kv[2]}</div>
+                : <div key={j} style={{ fontSize: 12, color: DOC.body }}>{s}</div>
+            })}
+          </div>
+        </div>
+      )
+      continue
+    }
+
+    const bulletMatch = trimmed.match(/^[•·\-\*]\s+(.+)/)
+    if (bulletMatch) {
+      const mainText = bulletMatch[1]
+      const sub = []
+      i++
+      while (i < bodyLines.length && bodyLines[i].trim() !== '' && !bodyLines[i].trim().match(/^[•·\-\*\d]/)) {
+        sub.push(bodyLines[i].trim()); i++
+      }
+      items.push(
+        <div key={`b${i}`} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: DOC.accent, flexShrink: 0, marginTop: 6 }} />
+          <div>
+            <span style={{ fontSize: 13, color: DOC.body, lineHeight: 1.6 }}>{mainText}</span>
+            {sub.map((s, j) => <div key={j} style={{ fontSize: 11, color: DOC.label, marginTop: 2 }}>{s}</div>)}
+          </div>
+        </div>
+      )
+      continue
+    }
+
+    if (trimmed) items.push(<p key={`p${i}`} style={{ margin: 0, fontSize: 13, color: DOC.body, lineHeight: 1.65 }}>{trimmed}</p>)
+    i++
+  }
+  return <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items}</div>
+}
+
+// The document view — switches to contentEditable when editing=true
+function StyledTextView({ text, editing, artifact, stageId, data, onDone, onRevert }) {
+  const lsKey = localKey(artifact, stageId)
+  const docRef = useRef(null)
   const debounce = useRef(null)
+  const [saving, setSaving] = useState(false)
+
+  // When editing mode turns on, focus the doc and move cursor to start
+  useEffect(() => {
+    if (editing && docRef.current) {
+      docRef.current.focus()
+      // place cursor at beginning
+      const sel = window.getSelection()
+      const range = document.createRange()
+      range.setStart(docRef.current, 0)
+      range.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+  }, [editing])
 
   async function persist(val) {
     localStorage.setItem(lsKey, val)
@@ -627,9 +730,9 @@ function InlineEditor({ artifact, stageId, data, onDone }) {
     }
   }
 
-  function onChange(e) {
-    const val = e.target.value
-    setText(val)
+  function onInput() {
+    // Autosave plain text from contentEditable
+    const val = docRef.current?.innerText || ''
     clearTimeout(debounce.current)
     debounce.current = setTimeout(() => persist(val), 1500)
   }
@@ -637,173 +740,71 @@ function InlineEditor({ artifact, stageId, data, onDone }) {
   async function handleDone() {
     setSaving(true)
     clearTimeout(debounce.current)
-    await persist(text)
+    const val = docRef.current?.innerText || text || ''
+    await persist(val)
     setSaving(false)
-    onDone(text) // pass final text back so view can show it immediately
+    onDone(val)
   }
+
+  const displayText = text || stageToPlainText(stageId, data)
+  const sections = parseSections(displayText)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0 10px', borderBottom: '0.5px solid #1A1A1A', marginBottom: 10 }}>
-        <span style={{ fontSize: 10, color: '#A78BFA', fontWeight: 700, letterSpacing: '0.04em' }}>✏ EDITING</span>
-        <span style={{ fontSize: 10, color: '#3D3D3D', flex: 1 }}>Changes save automatically</span>
-        <button
-          onClick={handleDone}
-          disabled={saving}
-          style={{ fontSize: 11, color: '#111', background: saving ? '#2A2A2A' : '#E5E5E5', border: 'none', borderRadius: 5, padding: '5px 16px', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
-          {saving ? 'Saving...' : 'Done'}
-        </button>
-      </div>
+      {/* Editing toolbar — only shown while editing */}
+      {editing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: '#F0F0FF', border: '1px solid #C4B5FD', borderRadius: '6px 6px 0 0', marginBottom: -1 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, color: '#7C3AED', letterSpacing: '0.06em' }}>✏ EDITING</span>
+          <span style={{ fontSize: 10, color: '#9CA3AF', flex: 1 }}>Click anywhere in the document to edit</span>
+          <button
+            onClick={handleDone}
+            disabled={saving}
+            style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: saving ? '#9CA3AF' : '#1D4ED8', border: 'none', borderRadius: 5, padding: '5px 18px', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}
+          >{saving ? 'Saving…' : 'Done'}</button>
+        </div>
+      )}
 
-      {/* Plain-text area */}
-      <textarea
-        value={text}
-        onChange={onChange}
-        autoFocus
+      {/* White document card — contentEditable when editing */}
+      <div
+        ref={docRef}
+        contentEditable={editing}
+        suppressContentEditableWarning
+        onInput={onInput}
         style={{
-          width: '100%', minHeight: 260,
-          background: '#0A0A0A', color: '#E5E5E5',
-          border: '0.5px solid #2A2A2A', borderRadius: 7,
-          padding: '16px 18px', fontSize: 13,
-          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          lineHeight: 1.75, resize: 'vertical', outline: 'none',
-          boxSizing: 'border-box', whiteSpace: 'pre-wrap',
+          background: '#FFFFFF',
+          border: editing ? '1px solid #A78BFA' : '1px solid #E5E7EB',
+          borderRadius: editing ? '0 0 6px 6px' : 6,
+          padding: '28px 32px',
+          position: 'relative',
+          boxShadow: editing ? '0 0 0 3px rgba(167,139,250,0.15), 0 1px 8px rgba(0,0,0,0.08)' : '0 1px 8px rgba(0,0,0,0.08)',
+          outline: 'none',
+          cursor: editing ? 'text' : 'default',
+          transition: 'border-color 0.15s, box-shadow 0.15s',
+          minHeight: 120,
         }}
-      />
-    </div>
-  )
-}
+      >
+        {/* Revert button — only shown when NOT editing */}
+        {!editing && (
+          <button
+            onClick={onRevert}
+            title="Revert to original AI view"
+            style={{ position: 'absolute', top: 12, right: 14, fontSize: 10, color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
+          >↺ revert</button>
+        )}
 
-// ─── Styled view for edited plain text (matches original design) ──────────────
-// Professional document palette
-const DOC = {
-  heading:  '#111827',
-  body:     '#374151',
-  label:    '#6B7280',
-  border:   '#E5E7EB',
-  rowAlt:   '#F9FAFB',
-  accent:   '#1D4ED8',
-}
-
-function StyledTextView({ text, onRevert }) {
-  if (!text) return null
-
-  const lines = text.split('\n')
-  const sections = []
-  let current = null
-
-  for (const raw of lines) {
-    const line = raw.trimEnd()
-    const isHeader = line.length > 0 && !line.startsWith('  ') && !line.match(/^\s*[\d•·\-*]/)
-    if (isHeader) {
-      if (current) sections.push(current)
-      current = { header: line.trim(), body: [] }
-    } else if (current) {
-      current.body.push(line)
-    }
-  }
-  if (current) sections.push(current)
-
-  return (
-    // White document card — matches ArtifactViewer canvas style
-    <div style={{
-      background: '#FFFFFF',
-      border: '1px solid #E5E7EB',
-      borderRadius: 6,
-      padding: '28px 32px',
-      position: 'relative',
-      boxShadow: '0 1px 8px rgba(0,0,0,0.08)',
-    }}>
-      <button
-        onClick={onRevert}
-        title="Revert to original AI view"
-        style={{ position: 'absolute', top: 12, right: 14, fontSize: 10, color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
-      >↺ revert</button>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        {sections.map((sec, si) => (
-          <div key={si}>
-            {/* Section header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: DOC.label, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
-                {sec.header}
-              </p>
-              <div style={{ flex: 1, height: 1, background: DOC.border }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {sections.map((sec, si) => (
+            <div key={si}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <p style={{ margin: 0, fontSize: 10, fontWeight: 700, color: DOC.label, textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
+                  {sec.header}
+                </p>
+                <div style={{ flex: 1, height: 1, background: DOC.border }} />
+              </div>
+              <SectionBody lines={sec.body} />
             </div>
-
-            {/* Body lines */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {(() => {
-                const bodyLines = sec.body.filter((l, i, a) => !(l.trim() === '' && (i === 0 || i === a.length - 1)))
-                const items = []
-                let i = 0
-                while (i < bodyLines.length) {
-                  const line = bodyLines[i]
-                  const trimmed = line.trim()
-
-                  // Numbered item
-                  const numMatch = trimmed.match(/^(\d+)\.\s+(.+)/)
-                  if (numMatch) {
-                    const num = numMatch[1]
-                    const title = numMatch[2]
-                    const sub = []
-                    i++
-                    while (i < bodyLines.length && bodyLines[i].trim() !== '' && !bodyLines[i].trim().match(/^\d+\./)) {
-                      sub.push(bodyLines[i].trim()); i++
-                    }
-                    items.push(
-                      <div key={`n${i}`} style={{ display: 'flex', gap: 14, paddingBottom: 10 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                          <div style={{ width: 22, height: 22, borderRadius: '50%', background: DOC.accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>{num}</div>
-                          <div style={{ width: 1, flex: 1, background: DOC.border, marginTop: 4, minHeight: 8 }} />
-                        </div>
-                        <div style={{ flex: 1, paddingTop: 2 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: DOC.heading, marginBottom: 4, lineHeight: 1.4 }}>{title}</div>
-                          {sub.map((s, j) => {
-                            const kv = s.match(/^([^:]+):\s*(.+)/)
-                            return kv ? (
-                              <div key={j} style={{ fontSize: 12, color: DOC.body, marginBottom: 2 }}>
-                                <span style={{ color: DOC.label, fontWeight: 500 }}>{kv[1]}: </span>{kv[2]}
-                              </div>
-                            ) : <div key={j} style={{ fontSize: 12, color: DOC.body }}>{s}</div>
-                          })}
-                        </div>
-                      </div>
-                    )
-                    continue
-                  }
-
-                  // Bullet item
-                  const bulletMatch = trimmed.match(/^[•·\-\*]\s+(.+)/)
-                  if (bulletMatch) {
-                    const sub = []
-                    const mainText = bulletMatch[1]
-                    i++
-                    while (i < bodyLines.length && bodyLines[i].trim() !== '' && !bodyLines[i].trim().match(/^[•·\-\*\d]/)) {
-                      sub.push(bodyLines[i].trim()); i++
-                    }
-                    items.push(
-                      <div key={`b${i}`} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: DOC.accent, flexShrink: 0, marginTop: 6 }} />
-                        <div>
-                          <span style={{ fontSize: 13, color: DOC.body, lineHeight: 1.6 }}>{mainText}</span>
-                          {sub.map((s, j) => <div key={j} style={{ fontSize: 11, color: DOC.label, marginTop: 2 }}>{s}</div>)}
-                        </div>
-                      </div>
-                    )
-                    continue
-                  }
-
-                  // Plain line
-                  if (trimmed) items.push(<p key={`p${i}`} style={{ margin: 0, fontSize: 13, color: DOC.body, lineHeight: 1.65 }}>{trimmed}</p>)
-                  i++
-                }
-                return items
-              })()}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -883,24 +884,23 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
       {/* Expanded content */}
       {isOpen && (
         <div style={{ padding: '14px 16px', borderTop: '0.5px solid #1A1A1A', background: '#0D0D0D' }}>
-          {editing
-            ? <InlineEditor
+          {/* Show structured component only when no edits and not editing */}
+          {!editing && !savedText
+            ? <Component data={data} />
+            : (
+              <StyledTextView
+                text={savedText}
+                editing={editing}
                 artifact={artifact}
                 stageId={stage.id}
                 data={data}
                 onDone={(text) => { setSavedText(text); setEditing(false) }}
+                onRevert={() => { setSavedText(null); localStorage.removeItem(lsKey) }}
               />
-            : savedText
-              ? (
-                <StyledTextView
-                  text={savedText}
-                  onRevert={() => { setSavedText(null); localStorage.removeItem(lsKey) }}
-                />
-              )
-              : <Component data={data} />
+            )
           }
 
-          {/* Action bar */}
+          {/* Action bar — hide while editing (toolbar is inside StyledTextView) */}
           {!editing && (
             <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, borderTop: '0.5px solid #1A1A1A', paddingTop: 10 }}>
               <button
