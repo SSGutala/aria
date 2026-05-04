@@ -1602,7 +1602,7 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
       {isOpen && (
         <div style={{ borderTop: '0.5px solid #1A1A1A', background: '#0D0D0D' }}>
           {/* Scrollable content area — caps height so long docs don't push page */}
-          <div style={{ maxHeight: 640, overflowY: 'auto', overflowX: 'hidden', padding: '14px 16px' }}>
+          <div style={{ maxHeight: 640, overflow: 'auto', padding: '14px 16px' }}>
           {/* Show structured component only when no edits and not editing */}
           {!editing && !savedText
             ? <Component data={data} />
