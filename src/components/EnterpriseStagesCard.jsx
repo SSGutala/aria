@@ -1437,17 +1437,29 @@ function StyledTextView({ text, editing, artifact, stageId, data, onDone, onReve
   )
 }
 
+// System artifacts always render their visual component — never plain-text fallback
+const SYSTEM_ARTIFACTS = new Set(['workflowMap', 'dataModel', 'automationModel', 'uxRecommendation'])
+
 // ─── Stage row ────────────────────────────────────────────────────────────────
 function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, onOpen, hasArtifact, artifact }) {
   const Component = stage.component
   const fileUrls = artifact?.file_urls || {}
   const formats = STAGE_FORMATS[stage.id] || ['pdf']
+  const isSystemArtifact = SYSTEM_ARTIFACTS.has(stage.id)
   const [editing, setEditing] = useState(false)
-  // savedText: the plain-text the user saved; null means show the structured component view
   const lsKey = `aria_edit_${artifact?.conversation_id || 'local'}_${stage.id}`
-  const [savedText, setSavedText] = useState(
-    artifact?.content?._manualEdit || localStorage.getItem(lsKey) || null
-  )
+
+  // System artifacts never use savedText — they always show their visual component.
+  // Business docs (intakeSummary, productBrief, appSpec) use savedText for manual edits.
+  const [savedText, setSavedText] = useState(() => {
+    if (isSystemArtifact) return null // always ignore for visual components
+    return artifact?.content?._manualEdit || localStorage.getItem(lsKey) || null
+  })
+
+  // Clear any stale localStorage for system artifact stages
+  useEffect(() => {
+    if (isSystemArtifact) localStorage.removeItem(lsKey)
+  }, [isSystemArtifact, lsKey])
 
   return (
     <div style={{ borderBottom: '0.5px solid #1A1A1A' }}>
@@ -1544,13 +1556,15 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
                 {approved ? 'Approved' : 'Approve'}
               </button>
 
-              {/* ✏ Edit inline */}
-              <button
-                onClick={() => setEditing(true)}
-                style={{ background: '#1A1A2A', color: '#A78BFA', border: '0.5px solid #3A1E5F', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}
-              >
-                <EditIcon /> {savedText ? 'Edit again' : 'Edit'}
-              </button>
+              {/* ✏ Edit — only for business docs; system artifacts have inline editing built in */}
+              {!isSystemArtifact && (
+                <button
+                  onClick={() => setEditing(true)}
+                  style={{ background: '#1A1A2A', color: '#A78BFA', border: '0.5px solid #3A1E5F', borderRadius: 6, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4 }}
+                >
+                  <EditIcon /> {savedText ? 'Edit again' : 'Edit'}
+                </button>
+              )}
 
               {/* Open full viewer */}
               {hasArtifact && onOpen && (
