@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import mermaid from 'mermaid'
 import { API_URL as API } from '../lib/api'
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -72,96 +73,182 @@ function ArrowRow({ items, activeIdx = 0 }) {
 
 // ─── Stage content renderers ──────────────────────────────────────────────────
 
+// Shared doc styles
+const D = {
+  page: { background: '#FFFFFF', maxWidth: 720, margin: '0 auto', padding: '40px 48px', fontFamily: 'inherit', color: '#374151' },
+  title: { fontSize: 24, fontWeight: 700, color: '#111827', margin: '0 0 4px' },
+  subtitle: { fontSize: 13, color: '#6B7280', margin: 0 },
+  h2: { fontSize: 16, fontWeight: 700, color: '#111827', margin: '0 0 6px', paddingBottom: 6, borderBottom: '1px solid #E5E7EB' },
+  body: { fontSize: 14, color: '#374151', lineHeight: 1.7, margin: 0 },
+  hr: { border: 'none', borderTop: '1px solid #E5E7EB', margin: '20px 0' },
+  label: { fontSize: 11, color: '#6B7280', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' },
+}
+
+// ── 1. IntakeSummaryContent ────────────────────────────────────────────────────
 function IntakeSummaryContent({ data }) {
   if (!data) return null
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div>
-        <SectionLabel>What Aria understood</SectionLabel>
-        <p style={{ margin: 0, fontSize: 12, color: '#C4C4C4', lineHeight: 1.6 }}>{data.understood}</p>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div>
-          <SectionLabel>Business problem</SectionLabel>
-          <p style={{ margin: 0, fontSize: 11, color: '#A3A3A3', lineHeight: 1.6 }}>{data.businessProblem}</p>
-        </div>
-        <div>
-          <SectionLabel>Primary users</SectionLabel>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {(data.primaryUsers || []).map((u, i) => <Tag key={i}>{u}</Tag>)}
-            {(data.secondaryUsers || []).map((u, i) => <Pill key={i} color="#3D3D3D">{u}</Pill>)}
+    <div style={{ background: '#F3F4F6', padding: '16px 0' }}>
+      <div style={D.page}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 40, height: 40, border: '1.5px dashed #D1D5DB', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ fontSize: 9, color: '#9CA3AF', textAlign: 'center', lineHeight: 1.2 }}>Logo</span>
+            </div>
+            <span style={{ fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' }}>[Company Name]</span>
           </div>
+          <span style={{ fontSize: 12, color: '#6B7280' }}>{today}</span>
         </div>
-        <div>
-          <SectionLabel>Replacing</SectionLabel>
-          <p style={{ margin: 0, fontSize: 11, color: '#A3A3A3', lineHeight: 1.6 }}>{data.currentProcess}</p>
-        </div>
-        <div>
-          <SectionLabel>Main outcome</SectionLabel>
-          <p style={{ margin: 0, fontSize: 11, color: '#A3A3A3', lineHeight: 1.6 }}>{data.mainOutcome}</p>
+        <h1 style={D.title}>Intake Summary</h1>
+        <hr style={D.hr} />
+
+        {/* Sections */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+          <div>
+            <h2 style={D.h2}>What We Understood</h2>
+            <p style={D.body}>{data.understood}</p>
+          </div>
+          <div>
+            <h2 style={D.h2}>Business Problem</h2>
+            <p style={D.body}>{data.businessProblem}</p>
+          </div>
+          <div>
+            <h2 style={D.h2}>Primary Users</h2>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+              {(data.primaryUsers || []).map((u, i) => (
+                <span key={i} style={{ fontSize: 13, color: '#1D4ED8', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 20, padding: '3px 12px', fontWeight: 500 }}>{u}</span>
+              ))}
+              {(data.secondaryUsers || []).map((u, i) => (
+                <span key={i} style={{ fontSize: 13, color: '#6B7280', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 20, padding: '3px 12px' }}>{u}</span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <h2 style={D.h2}>Process Being Replaced</h2>
+            <p style={D.body}>{data.currentProcess}</p>
+          </div>
+          <div>
+            <h2 style={D.h2}>Expected Outcome</h2>
+            <p style={D.body}>{data.mainOutcome}</p>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
+// ── 2. ProductBriefContent ─────────────────────────────────────────────────────
 function ProductBriefContent({ data }) {
   if (!data) return null
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div>
-        <SectionLabel>Objective</SectionLabel>
-        <p style={{ margin: 0, fontSize: 12, color: '#C4C4C4', lineHeight: 1.6 }}>{data.objective}</p>
-      </div>
-      <div>
-        <SectionLabel>User roles</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {(data.userRoles || []).map((r, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', background: '#161616', borderRadius: 6, border: '0.5px solid #222' }}>
-              <Tag>{r.role}</Tag>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 11, color: '#A3A3A3', lineHeight: 1.5 }}>{r.access}</p>
-                {r.estimated && <p style={{ margin: '2px 0 0', fontSize: 10, color: '#3D3D3D' }}>~{r.estimated}</p>}
-              </div>
+    <div style={{ background: '#F3F4F6', padding: '16px 0' }}>
+      <div style={D.page}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 40, height: 40, border: '1.5px dashed #D1D5DB', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 9, color: '#9CA3AF' }}>Logo</span>
             </div>
-          ))}
+            <span style={{ fontSize: 13, color: '#9CA3AF', fontStyle: 'italic' }}>[Company Name]</span>
+          </div>
+          <span style={{ fontSize: 12, color: '#6B7280' }}>{today}</span>
         </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div>
-          <SectionLabel>Core workflows</SectionLabel>
-          <ul style={{ margin: 0, paddingLeft: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {(data.coreWorkflows || []).map((w, i) => (
-              <li key={i} style={{ fontSize: 11, color: '#A3A3A3', lineHeight: 1.55 }}>{w}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <SectionLabel>Business rules</SectionLabel>
-          <ul style={{ margin: 0, paddingLeft: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {(data.businessRules || []).map((r, i) => (
-              <li key={i} style={{ fontSize: 11, color: '#A3A3A3', lineHeight: 1.55 }}>{r}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <SectionLabel>Success criteria</SectionLabel>
-          <ul style={{ margin: 0, paddingLeft: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {(data.successCriteria || []).map((s, i) => (
-              <li key={i} style={{ fontSize: 11, color: '#A3A3A3', lineHeight: 1.55 }}>{s}</li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          {(data.openQuestions || []).length > 0 && (
-            <>
-              <SectionLabel>Open questions</SectionLabel>
-              <ul style={{ margin: 0, paddingLeft: 14, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {data.openQuestions.map((q, i) => (
-                  <li key={i} style={{ fontSize: 11, color: '#737373', lineHeight: 1.55, fontStyle: 'italic' }}>{q}</li>
+        <h1 style={D.title}>Product Brief</h1>
+        <hr style={D.hr} />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+          {/* Objective */}
+          <div>
+            <h2 style={D.h2}>Objective</h2>
+            <p style={{ ...D.body, fontSize: 15, color: '#111827', fontWeight: 500 }}>{data.objective}</p>
+          </div>
+
+          {/* User Roles table */}
+          {(data.userRoles || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>User Roles</h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#1E3A5F' }}>
+                    {['Role', 'Access Level', 'Est. Users'].map(col => (
+                      <th key={col} style={{ padding: '8px 12px', color: '#fff', fontWeight: 600, textAlign: 'left', fontSize: 12 }}>{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.userRoles.map((r, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? '#F9FAFB' : '#fff' }}>
+                      <td style={{ padding: '8px 12px', color: '#111827', fontWeight: 500, borderBottom: '1px solid #E5E7EB' }}>{r.role}</td>
+                      <td style={{ padding: '8px 12px', color: '#374151', borderBottom: '1px solid #E5E7EB' }}>{r.access}</td>
+                      <td style={{ padding: '8px 12px', color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{r.estimated || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Core Workflows */}
+          {(data.coreWorkflows || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>Core Workflows</h2>
+              <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {data.coreWorkflows.map((w, i) => (
+                  <li key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#1D4ED8', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                    <span style={D.body}>{w}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Business Rules */}
+          {(data.businessRules || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>Business Rules</h2>
+              <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.businessRules.map((r, i) => (
+                  <li key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#374151', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                    <span style={D.body}>{r}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Success Criteria */}
+          {(data.successCriteria || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>Success Criteria</h2>
+              <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.successCriteria.map((s, i) => (
+                  <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 14, color: '#059669', flexShrink: 0, marginTop: 2 }}>✓</span>
+                    <span style={D.body}>{s}</span>
+                  </li>
                 ))}
               </ul>
-            </>
+            </div>
+          )}
+
+          {/* Open Questions */}
+          {(data.openQuestions || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>Open Questions</h2>
+              <ol style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.openQuestions.map((q, i) => (
+                  <li key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ flexShrink: 0, marginTop: 2 }}>⚠</span>
+                    <span style={{ ...D.body, fontStyle: 'italic', color: '#6B7280' }}>{q}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
           )}
         </div>
       </div>
@@ -169,259 +256,613 @@ function ProductBriefContent({ data }) {
   )
 }
 
+// ── 3. WorkflowMapContent ──────────────────────────────────────────────────────
+function sanitizeMermaidLabel(text) {
+  if (!text) return ''
+  return String(text).replace(/"/g, "'").replace(/[<>{}[\]]/g, ' ').replace(/\n/g, ' ').trim().slice(0, 60)
+}
+
+function generateMermaidSrc(data) {
+  if (!data) return 'flowchart TD\n  START([Start])'
+  const lines = ['flowchart TD']
+  const trigger = sanitizeMermaidLabel(data.trigger || 'Trigger')
+  lines.push(`  START(["▶ ${trigger}"])`)
+
+  const steps = data.steps || []
+  steps.forEach((step, i) => {
+    const label = sanitizeMermaidLabel(`${step.step}\\n${step.actor || ''}`)
+    lines.push(`  S${i}["${label}"]`)
+  })
+
+  // Connect steps
+  if (steps.length > 0) lines.push(`  START --> S0`)
+  for (let i = 0; i < steps.length - 1; i++) {
+    lines.push(`  S${i} --> S${i + 1}`)
+  }
+
+  // Decision points
+  const decisions = data.decisionPoints || []
+  const exceptions = data.exceptionPaths || []
+  decisions.forEach((d, i) => {
+    const label = sanitizeMermaidLabel(d)
+    lines.push(`  D${i}{"${label}"}`)
+    if (steps.length > 0) lines.push(`  S${steps.length - 1} --> D${i}`)
+    lines.push(`  D${i} -->|Yes| END`)
+    if (exceptions[i]) {
+      const exLabel = sanitizeMermaidLabel(exceptions[i])
+      lines.push(`  EX${i}["${exLabel}"]`)
+      lines.push(`  D${i} -->|No| EX${i}`)
+    }
+  })
+
+  if (decisions.length === 0 && steps.length > 0) {
+    lines.push(`  S${steps.length - 1} --> END`)
+  }
+  lines.push('  END(["⏹ Complete"])')
+  return lines.join('\n')
+}
+
 function WorkflowMapContent({ data }) {
   if (!data) return null
+  const diagramRef = useRef(null)
+  const [showSource, setShowSource] = useState(false)
+  const [mermaidSrc, setMermaidSrc] = useState(() => generateMermaidSrc(data))
+  const [renderError, setRenderError] = useState(null)
+
+  useEffect(() => {
+    setMermaidSrc(generateMermaidSrc(data))
+  }, [data])
+
+  useEffect(() => {
+    if (showSource || !diagramRef.current) return
+    setRenderError(null)
+    mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' })
+    const id = 'wf_' + Math.random().toString(36).slice(2)
+    diagramRef.current.innerHTML = '<div style="color:#9CA3AF;fontSize:12px;padding:20px">Rendering diagram…</div>'
+    mermaid.render(id, mermaidSrc)
+      .then(({ svg }) => {
+        if (diagramRef.current) {
+          diagramRef.current.innerHTML = svg
+          const svgEl = diagramRef.current.querySelector('svg')
+          if (svgEl) { svgEl.style.maxWidth = '100%'; svgEl.style.height = 'auto' }
+        }
+      })
+      .catch(err => {
+        setRenderError('Diagram render error: ' + err.message)
+        if (diagramRef.current) diagramRef.current.innerHTML = ''
+      })
+  }, [mermaidSrc, showSource])
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div>
-        <SectionLabel>Trigger</SectionLabel>
-        <p style={{ margin: 0, fontSize: 12, color: '#C4C4C4', lineHeight: 1.6 }}>{data.trigger}</p>
+    <div style={{ background: '#fff', borderRadius: 8, overflow: 'hidden', border: '1px solid #E5E7EB' }}>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>Workflow Diagram</span>
+        <button
+          onClick={() => setShowSource(v => !v)}
+          style={{ fontSize: 11, color: '#1D4ED8', background: 'transparent', border: '1px solid #BFDBFE', borderRadius: 5, padding: '3px 10px', cursor: 'pointer', fontFamily: 'inherit' }}
+        >{showSource ? 'Show Diagram' : 'Edit Source'}</button>
       </div>
-      <div>
-        <SectionLabel>Process steps</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {(data.steps || []).map((step, i) => (
-            <div key={i} style={{ display: 'flex', gap: 0 }}>
-              {/* Timeline line */}
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginRight: 12, width: 20 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#34D399', border: '1.5px solid #0D1F16', flexShrink: 0, marginTop: 8 }} />
-                {i < (data.steps || []).length - 1 && (
-                  <div style={{ width: 1, flex: 1, background: '#1E1E1E', minHeight: 16 }} />
-                )}
-              </div>
-              <div style={{ flex: 1, paddingBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#D4D4D4' }}>{step.step}</span>
-                  <Tag>{step.actor}</Tag>
-                  {step.sla && <Pill color="#3D3D3D" bg="#111" border="#1A1A1A">{step.sla}</Pill>}
-                </div>
-                <p style={{ margin: '0 0 2px', fontSize: 11, color: '#737373', lineHeight: 1.5 }}>{step.action}</p>
-                {step.output && (
-                  <p style={{ margin: 0, fontSize: 10, color: '#3D3D3D', fontStyle: 'italic' }}>→ {step.output}</p>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      {(data.decisionPoints || []).length > 0 && (
-        <div>
-          <SectionLabel>Decision points</SectionLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {data.decisionPoints.map((d, i) => (
-              <div key={i} style={{ fontSize: 11, color: '#A3A3A3', padding: '5px 10px', background: '#161616', borderRadius: 5, border: '0.5px solid #1E2A1E', lineHeight: 1.5 }}>
-                {d}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {(data.exceptionPaths || []).length > 0 && (
-        <div>
-          <SectionLabel>Exception paths</SectionLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {data.exceptionPaths.map((e, i) => (
-              <div key={i} style={{ fontSize: 11, color: '#737373', padding: '5px 10px', background: '#161616', borderRadius: 5, border: '0.5px solid #2A1E1E', lineHeight: 1.5, fontStyle: 'italic' }}>
-                {e}
-              </div>
-            ))}
-          </div>
+
+      {showSource ? (
+        <textarea
+          value={mermaidSrc}
+          onChange={e => setMermaidSrc(e.target.value)}
+          style={{ width: '100%', minHeight: 220, padding: 16, fontSize: 12, fontFamily: 'monospace', color: '#111827', border: 'none', resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: '#fff' }}
+        />
+      ) : (
+        <div style={{ padding: 20, minHeight: 200, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {renderError
+            ? <div style={{ color: '#DC2626', fontSize: 12, padding: 12, background: '#FEF2F2', borderRadius: 6 }}>{renderError}</div>
+            : <div ref={diagramRef} style={{ width: '100%' }} />
+          }
         </div>
       )}
     </div>
   )
 }
 
+// ── 4. DataModelContent ────────────────────────────────────────────────────────
+function EditableCell({ children, style }) {
+  return (
+    <td
+      contentEditable
+      suppressContentEditableWarning
+      style={{ padding: '7px 10px', fontSize: 13, color: '#374151', borderBottom: '1px solid #E5E7EB', verticalAlign: 'top', outline: 'none', cursor: 'text', ...style }}
+      onFocus={e => e.currentTarget.style.background = '#FAFAFA'}
+      onBlur={e => e.currentTarget.style.background = ''}
+    >{children}</td>
+  )
+}
+
 function DataModelContent({ data }) {
   if (!data) return null
+  const thStyle = { padding: '9px 10px', fontSize: 12, fontWeight: 600, color: '#fff', background: '#1E3A5F', textAlign: 'left', whiteSpace: 'nowrap' }
+  const cols = ['Field Name', 'Type', 'Required', 'Description', 'Example Value', 'Validation Rules']
+  const fields = data.fields || []
+  const audit = data.auditFields || []
+  const statusFlow = data.statusFlow || []
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <SectionLabel>Primary entity</SectionLabel>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#D4D4D4', marginBottom: 8 }}>{data.primaryEntity}</span>
+    <div style={{ background: '#fff', borderRadius: 8, overflow: 'hidden', border: '1px solid #E5E7EB' }}>
+      {/* Entity header */}
+      <div style={{ padding: '10px 14px', background: '#1E3A5F', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{data.primaryEntity || 'Entity'}</span>
+        <span style={{ fontSize: 11, color: '#93C5FD' }}>Data Model</span>
       </div>
-      <div>
-        <SectionLabel>Status flow</SectionLabel>
-        <ArrowRow items={data.statusFlow || []} activeIdx={0} />
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+          <thead>
+            <tr>{cols.map(c => <th key={c} style={thStyle}>{c}</th>)}</tr>
+          </thead>
+          <tbody>
+            {fields.map((f, i) => (
+              <tr key={i} style={{ background: i % 2 === 0 ? '#F9FAFB' : '#fff' }}>
+                <EditableCell style={{ fontWeight: 600, color: '#111827' }}>{f.name || f.label || ''}</EditableCell>
+                <EditableCell><span style={{ fontSize: 11, background: '#EFF6FF', color: '#1D4ED8', borderRadius: 4, padding: '1px 6px' }}>{f.type || ''}</span></EditableCell>
+                <EditableCell style={{ textAlign: 'center', color: f.required ? '#DC2626' : '#9CA3AF' }}>{f.required ? '✓' : '—'}</EditableCell>
+                <EditableCell>{f.label || f.name || ''}</EditableCell>
+                <EditableCell style={{ color: '#6B7280', fontStyle: 'italic' }}>{(f.options && f.options.length > 0) ? f.options[0] : '—'}</EditableCell>
+                <EditableCell style={{ color: '#6B7280' }}>{f.options && f.options.length > 1 ? `Options: ${f.options.join(', ')}` : (f.required ? 'Required' : '—')}</EditableCell>
+              </tr>
+            ))}
+
+            {/* Audit fields */}
+            {audit.length > 0 && (
+              <>
+                <tr>
+                  <td colSpan={6} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#6B7280', background: '#F3F4F6', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Audit Fields</td>
+                </tr>
+                {audit.map((f, i) => (
+                  <tr key={`a${i}`} style={{ background: i % 2 === 0 ? '#F9FAFB' : '#fff' }}>
+                    <EditableCell style={{ fontWeight: 600, color: '#111827' }}>{f}</EditableCell>
+                    <EditableCell><span style={{ fontSize: 11, background: '#F3F4F6', color: '#6B7280', borderRadius: 4, padding: '1px 6px' }}>timestamp</span></EditableCell>
+                    <EditableCell style={{ textAlign: 'center', color: '#DC2626' }}>✓</EditableCell>
+                    <EditableCell>Auto-managed audit field</EditableCell>
+                    <EditableCell style={{ color: '#6B7280', fontStyle: 'italic' }}>2024-01-01T00:00:00Z</EditableCell>
+                    <EditableCell style={{ color: '#6B7280' }}>ISO 8601</EditableCell>
+                  </tr>
+                ))}
+              </>
+            )}
+
+            {/* Status flow */}
+            {statusFlow.length > 0 && (
+              <>
+                <tr>
+                  <td colSpan={6} style={{ padding: '6px 10px', fontSize: 11, fontWeight: 700, color: '#6B7280', background: '#F3F4F6', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Status Flow</td>
+                </tr>
+                <tr>
+                  <td colSpan={6} style={{ padding: '10px 12px', borderBottom: '1px solid #E5E7EB' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {statusFlow.map((s, i) => (
+                        <React.Fragment key={i}>
+                          <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontWeight: 500 }}>{s}</span>
+                          {i < statusFlow.length - 1 && <span style={{ color: '#9CA3AF', fontSize: 12 }}>→</span>}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              </>
+            )}
+          </tbody>
+        </table>
       </div>
-      <div>
-        <SectionLabel>Fields ({(data.fields || []).length})</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-          {(data.fields || []).map((f, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', background: '#161616', borderRadius: 5, border: '0.5px solid #222' }}>
-              <span style={{ fontSize: 11, color: '#A3A3A3' }}>{f.label}</span>
-              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                {f.required && <span style={{ fontSize: 8, color: '#F87171' }}>required</span>}
-                <Pill color="#525252" bg="#111" border="#1A1A1A">{f.type}</Pill>
-              </div>
-            </div>
-          ))}
-        </div>
+    </div>
+  )
+}
+
+// ── 5. AutomationModelContent ──────────────────────────────────────────────────
+function AutomationTable({ title, color, columns, rows }) {
+  if (!rows || rows.length === 0) return null
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ padding: '7px 12px', background: color, borderRadius: '6px 6px 0 0' }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#fff' }}>{title}</span>
       </div>
-      {(data.relationships || []).length > 0 && (
-        <div>
-          <SectionLabel>Relationships</SectionLabel>
-          {data.relationships.map((r, i) => (
-            <p key={i} style={{ margin: '0 0 4px', fontSize: 11, color: '#737373' }}>{r}</p>
-          ))}
-        </div>
-      )}
-      {(data.auditFields || []).length > 0 && (
-        <div>
-          <SectionLabel>Audit fields</SectionLabel>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {data.auditFields.map((f, i) => <Pill key={i} color="#3D3D3D">{f}</Pill>)}
-          </div>
-        </div>
-      )}
+      <div style={{ overflowX: 'auto', border: '1px solid #E5E7EB', borderTop: 'none', borderRadius: '0 0 6px 6px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 400 }}>
+          <thead>
+            <tr style={{ background: color + '22' }}>
+              {columns.map(c => (
+                <th key={c} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 600, color: color, textAlign: 'left', borderBottom: '1px solid #E5E7EB' }}>{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} style={{ background: i % 2 === 0 ? '#F9FAFB' : '#fff' }}>
+                {columns.map((col, j) => {
+                  const key = col.toLowerCase().replace(/\s+/g, '_')
+                  const altKeys = [key, col.toLowerCase(), Object.keys(row)[j]]
+                  const val = altKeys.reduce((v, k) => v !== undefined ? v : row[k], undefined)
+                  return (
+                    <td
+                      key={j}
+                      contentEditable
+                      suppressContentEditableWarning
+                      onFocus={e => e.currentTarget.style.background = '#F0F9FF'}
+                      onBlur={e => e.currentTarget.style.background = ''}
+                      style={{ padding: '7px 10px', fontSize: 13, color: '#374151', borderBottom: '1px solid #E5E7EB', verticalAlign: 'top', outline: 'none', cursor: 'text' }}
+                    >{val || '—'}</td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
 
 function AutomationModelContent({ data }) {
   if (!data) return null
-  const sections = [
-    { key: 'triggers', label: 'Triggers', icon: '⚡', fields: ['event', 'condition', 'action'] },
-    { key: 'notifications', label: 'Notifications', icon: '🔔', fields: ['event', 'recipient', 'channel', 'template'] },
-    { key: 'escalations', label: 'Escalations', icon: '🔺', fields: ['condition', 'action', 'recipient'] },
-    { key: 'documentGeneration', label: 'Document Generation', icon: '📄', fields: ['document', 'trigger', 'format'] },
-    { key: 'integrations', label: 'Integrations', icon: '🔗', fields: ['system', 'type', 'purpose'] },
-  ]
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {sections.map(section => {
-        const items = data[section.key] || []
-        if (!items.length) return null
-        return (
-          <div key={section.key}>
-            <SectionLabel>{section.icon} {section.label}</SectionLabel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {items.map((item, i) => (
-                <div key={i} style={{ padding: '8px 10px', background: '#161616', borderRadius: 6, border: '0.5px solid #222' }}>
-                  {section.fields.map(f => item[f] ? (
-                    <div key={f} style={{ display: 'flex', gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontSize: 9, color: '#3D3D3D', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0, minWidth: 52 }}>{f}</span>
-                      <span style={{ fontSize: 11, color: '#A3A3A3', lineHeight: 1.5 }}>{item[f]}</span>
-                    </div>
-                  ) : null)}
+    <div style={{ background: '#fff', borderRadius: 8, padding: '16px 16px 2px', border: '1px solid #E5E7EB' }}>
+      <AutomationTable
+        title="Triggers"
+        color="#059669"
+        columns={['Trigger Event', 'Condition', 'Action', 'Output']}
+        rows={(data.triggers || []).map(t => ({ 'Trigger Event': t.event, Condition: t.condition, Action: t.action, Output: t.output || '—' }))}
+      />
+      <AutomationTable
+        title="Notifications"
+        color="#0284C7"
+        columns={['Event', 'Recipient', 'Channel', 'Message']}
+        rows={(data.notifications || []).map(n => ({ Event: n.event, Recipient: n.recipient, Channel: n.channel, Message: n.template || n.message || '—' }))}
+      />
+      <AutomationTable
+        title="Escalations"
+        color="#D97706"
+        columns={['Condition', 'Action', 'Escalate To']}
+        rows={(data.escalations || []).map(e => ({ Condition: e.condition, Action: e.action, 'Escalate To': e.recipient || e.escalateTo || '—' }))}
+      />
+      <AutomationTable
+        title="Integrations"
+        color="#7C3AED"
+        columns={['System', 'Type', 'Purpose']}
+        rows={(data.integrations || []).map(i => ({ System: i.system, Type: i.type, Purpose: i.purpose }))}
+      />
+    </div>
+  )
+}
+
+// ── 6. AppSpecContent ──────────────────────────────────────────────────────────
+function AppSpecContent({ data }) {
+  if (!data) return null
+  const primary = data.colorTheme?.primary || '#7C3AED'
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+
+  return (
+    <div style={{ background: '#F3F4F6', padding: '16px 0' }}>
+      <div style={D.page}>
+        {/* Color accent bar */}
+        <div style={{ height: 4, background: primary, borderRadius: 2, marginBottom: 20 }} />
+
+        {/* Title */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+          <div>
+            <h1 style={{ ...D.title, fontSize: 26 }}>{data.appTitle}</h1>
+            <p style={{ ...D.subtitle, fontSize: 14, marginTop: 4 }}>{data.tagline}</p>
+          </div>
+          <span style={{ fontSize: 12, color: '#6B7280', flexShrink: 0, marginLeft: 16 }}>{today}</span>
+        </div>
+        <hr style={D.hr} />
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+          {/* Overview */}
+          <div>
+            <h2 style={D.h2}>Application Overview</h2>
+            <p style={D.body}>{data.purpose}</p>
+          </div>
+
+          {/* App Type & Layout */}
+          <div>
+            <h2 style={D.h2}>App Type & Layout</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+              {[['App Type', data.appType], ['Layout', (data.layoutType || '').replace(/_/g, ' ')], ['Workflow Type', data.workflowType], ['Primary Action', data.primaryActionLabel]].map(([k, v]) => v ? (
+                <div key={k} style={{ padding: '10px 14px', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 6 }}>
+                  <div style={D.label}>{k}</div>
+                  <div style={{ fontSize: 14, color: '#111827', fontWeight: 500, marginTop: 4 }}>{v}</div>
                 </div>
-              ))}
+              ) : null)}
             </div>
           </div>
-        )
-      })}
+
+          {/* Color Theme */}
+          {data.colorTheme && (
+            <div>
+              <h2 style={D.h2}>Color Theme</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, padding: '12px 16px', background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 6 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: primary, border: '1px solid rgba(0,0,0,0.1)', flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{data.colorTheme.name}</div>
+                  <div style={{ fontSize: 12, color: '#6B7280', fontFamily: 'monospace' }}>{primary}</div>
+                </div>
+                {data.colorTheme.light && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 16 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: 5, background: data.colorTheme.light, border: '1px solid #E5E7EB' }} />
+                    <span style={{ fontSize: 12, color: '#6B7280', fontFamily: 'monospace' }}>{data.colorTheme.light}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Status Workflow */}
+          {(data.statusFlow || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>Status Workflow</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                {data.statusFlow.map((s, i) => (
+                  <React.Fragment key={i}>
+                    <span style={{ padding: '5px 14px', borderRadius: 20, background: i === 0 ? primary : '#F3F4F6', color: i === 0 ? '#fff' : '#374151', border: `1px solid ${i === 0 ? primary : '#E5E7EB'}`, fontSize: 13, fontWeight: i === 0 ? 600 : 400 }}>{s}</span>
+                    {i < data.statusFlow.length - 1 && <span style={{ color: '#9CA3AF', fontSize: 14 }}>→</span>}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Features */}
+          {(data.features || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>Features</h2>
+              <ol style={{ margin: '10px 0 0', padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.features.map((f, i) => (
+                  <li key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    <span style={{ width: 22, height: 22, borderRadius: '50%', background: primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}</span>
+                    <span style={D.body}>{f}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {/* Data Fields */}
+          {(data.fields || []).length > 0 && (
+            <div>
+              <h2 style={D.h2}>Data Fields</h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
+                <thead>
+                  <tr style={{ background: '#1E3A5F' }}>
+                    {['Field', 'Label', 'Type', 'Required'].map(c => (
+                      <th key={c} style={{ padding: '8px 12px', color: '#fff', fontWeight: 600, textAlign: 'left', fontSize: 12 }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.fields.map((f, i) => (
+                    <tr key={i} style={{ background: i % 2 === 0 ? '#F9FAFB' : '#fff' }}>
+                      <td style={{ padding: '7px 12px', fontFamily: 'monospace', fontSize: 12, color: '#1D4ED8', borderBottom: '1px solid #E5E7EB' }}>{f.name || f.label}</td>
+                      <td style={{ padding: '7px 12px', color: '#374151', borderBottom: '1px solid #E5E7EB' }}>{f.label || f.name}</td>
+                      <td style={{ padding: '7px 12px', borderBottom: '1px solid #E5E7EB' }}><span style={{ fontSize: 11, background: '#EFF6FF', color: '#1D4ED8', borderRadius: 4, padding: '1px 6px' }}>{f.type}</span></td>
+                      <td style={{ padding: '7px 12px', color: f.required ? '#DC2626' : '#9CA3AF', borderBottom: '1px solid #E5E7EB', textAlign: 'center' }}>{f.required ? '✓' : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Primary Action */}
+          {data.primaryActionLabel && (
+            <div>
+              <h2 style={D.h2}>Primary Action</h2>
+              <div style={{ marginTop: 8, padding: '14px 20px', background: primary + '12', border: `1.5px solid ${primary}`, borderRadius: 8, display: 'inline-block' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: primary }}>⚡ {data.primaryActionLabel}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 7. UXRecommendationContent ─────────────────────────────────────────────────
+function hasKeyword(keyActions, ...words) {
+  const str = (keyActions || []).join(' ').toLowerCase()
+  return words.some(w => str.includes(w))
+}
+
+function MockScreenInner({ screen, primaryColor }) {
+  const actions = screen.keyActions || []
+  const isForm = hasKeyword(actions, 'form', 'create', 'submit', 'add', 'new', 'edit')
+  const isTable = hasKeyword(actions, 'table', 'list', 'view', 'filter', 'search', 'browse')
+  const isSplit = hasKeyword(actions, 'review', 'approve', 'detail', 'inspect')
+
+  const inputStyle = {
+    display: 'block', width: '100%', padding: '5px 8px', fontSize: 11, border: '1px solid #D1D5DB',
+    borderRadius: 4, background: '#fff', color: '#374151', boxSizing: 'border-box', marginBottom: 8,
+  }
+  const labelStyle = { fontSize: 10, fontWeight: 600, color: '#6B7280', marginBottom: 3, display: 'block' }
+
+  if (isForm) {
+    return (
+      <div style={{ padding: '12px 14px' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: '#111827', marginBottom: 12 }}>New Entry</div>
+        {['Title / Name', 'Category', 'Assigned To', 'Due Date', 'Notes'].map((label, i) => (
+          <div key={i} style={{ marginBottom: 10 }}>
+            <span style={labelStyle}>{label}</span>
+            {i === 4
+              ? <div style={{ ...inputStyle, height: 44, background: '#F9FAFB' }} />
+              : <div style={{ ...inputStyle, background: '#F9FAFB' }}>&nbsp;</div>
+            }
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+          <div style={{ padding: '6px 16px', background: primaryColor, borderRadius: 5, fontSize: 11, color: '#fff', fontWeight: 600, cursor: 'default' }}>Submit</div>
+          <div style={{ padding: '6px 16px', background: '#F3F4F6', borderRadius: 5, fontSize: 11, color: '#374151', cursor: 'default' }}>Cancel</div>
+        </div>
+      </div>
+    )
+  }
+
+  if (isSplit) {
+    const items = ['Item A', 'Item B', 'Item C', 'Item D']
+    return (
+      <div style={{ display: 'flex', height: '100%' }}>
+        <div style={{ width: '40%', borderRight: '1px solid #E5E7EB', overflow: 'hidden' }}>
+          {items.map((it, i) => (
+            <div key={i} style={{ padding: '8px 10px', borderBottom: '1px solid #F3F4F6', background: i === 0 ? primaryColor + '15' : '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: i === 0 ? primaryColor : '#374151', fontWeight: i === 0 ? 600 : 400 }}>{it}</span>
+              <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 10, background: i === 0 ? primaryColor : '#E5E7EB', color: i === 0 ? '#fff' : '#6B7280' }}>{i === 0 ? 'Active' : 'Draft'}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ flex: 1, padding: '10px 12px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Item A</div>
+          {['Field 1', 'Field 2', 'Field 3'].map((f, i) => (
+            <div key={i} style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 600, marginBottom: 2 }}>{f}</div>
+              <div style={{ height: 14, background: '#F3F4F6', borderRadius: 3, width: i === 0 ? '80%' : '60%' }} />
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+            <div style={{ padding: '5px 12px', background: primaryColor, borderRadius: 4, fontSize: 10, color: '#fff', fontWeight: 600 }}>Approve</div>
+            <div style={{ padding: '5px 12px', background: '#FEF2F2', borderRadius: 4, fontSize: 10, color: '#DC2626', fontWeight: 600 }}>Reject</div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Default: table/list view
+  const cols = ['#', 'Name', 'Status', 'Date', 'Actions']
+  const fakeRows = [
+    ['001', 'Alpha Request', 'Active', 'Jan 12', ''],
+    ['002', 'Beta Review', 'Pending', 'Jan 15', ''],
+    ['003', 'Gamma Task', 'Complete', 'Jan 18', ''],
+    ['004', 'Delta Item', 'Draft', 'Jan 20', ''],
+  ]
+  return (
+    <div style={{ overflow: 'hidden' }}>
+      {/* Filters row */}
+      <div style={{ padding: '8px 10px', background: '#F9FAFB', borderBottom: '1px solid #E5E7EB', display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ flex: 1, height: 22, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 4, padding: '0 8px', display: 'flex', alignItems: 'center' }}>
+          <span style={{ fontSize: 9, color: '#9CA3AF' }}>🔍 Search…</span>
+        </div>
+        {['All', 'Active', 'Pending'].map((f, i) => (
+          <span key={i} style={{ fontSize: 9, padding: '3px 8px', borderRadius: 12, background: i === 0 ? primaryColor : '#F3F4F6', color: i === 0 ? '#fff' : '#374151', fontWeight: i === 0 ? 600 : 400, cursor: 'default' }}>{f}</span>
+        ))}
+        <div style={{ padding: '3px 8px', background: primaryColor, borderRadius: 4, fontSize: 9, color: '#fff', fontWeight: 600, cursor: 'default', marginLeft: 4 }}>+ New</div>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+        <thead>
+          <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+            {cols.map(c => <th key={c} style={{ padding: '5px 8px', textAlign: 'left', fontWeight: 600, color: '#6B7280', fontSize: 9 }}>{c}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {fakeRows.map((row, i) => (
+            <tr key={i} style={{ borderBottom: '1px solid #F3F4F6', background: i % 2 === 0 ? '#fff' : '#FAFAFA' }}>
+              <td style={{ padding: '5px 8px', color: '#9CA3AF', fontFamily: 'monospace' }}>{row[0]}</td>
+              <td style={{ padding: '5px 8px', color: '#111827', fontWeight: 500 }}>{row[1]}</td>
+              <td style={{ padding: '5px 8px' }}>
+                <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: row[2] === 'Active' ? '#D1FAE5' : row[2] === 'Pending' ? '#FEF3C7' : row[2] === 'Complete' ? '#EFF6FF' : '#F3F4F6', color: row[2] === 'Active' ? '#059669' : row[2] === 'Pending' ? '#D97706' : row[2] === 'Complete' ? '#2563EB' : '#6B7280', fontWeight: 600 }}>{row[2]}</span>
+              </td>
+              <td style={{ padding: '5px 8px', color: '#6B7280' }}>{row[3]}</td>
+              <td style={{ padding: '5px 8px' }}>
+                <span style={{ fontSize: 9, color: primaryColor, fontWeight: 600, cursor: 'default' }}>View →</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function BrowserFrame({ screen, primaryColor, hasSidebar }) {
+  const navItems = ['Dashboard', 'Records', 'Reports', 'Settings']
+  return (
+    <div style={{ width: 520, flexShrink: 0, border: '1.5px solid #D1D5DB', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.12)', overflow: 'hidden', background: '#fff' }}>
+      {/* Title bar */}
+      <div style={{ background: '#F3F4F6', borderBottom: '1px solid #E5E7EB', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {['#FC5753', '#FEBC2E', '#28C840'].map(c => (
+            <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
+          ))}
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 5, padding: '2px 12px', fontSize: 10, color: '#6B7280', minWidth: 120, textAlign: 'center' }}>{screen.screen}</div>
+        </div>
+      </div>
+
+      {/* Content area */}
+      <div style={{ display: 'flex', height: 320, overflow: 'hidden' }}>
+        {/* Sidebar */}
+        {hasSidebar && (
+          <div style={{ width: 110, background: '#1E3A5F', display: 'flex', flexDirection: 'column', padding: '12px 0', flexShrink: 0 }}>
+            <div style={{ padding: '6px 12px', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#fff', opacity: 0.9 }}>App</div>
+            </div>
+            {navItems.map((item, i) => (
+              <div key={i} style={{ padding: '7px 12px', fontSize: 10, color: i === 0 ? '#fff' : '#93C5FD', background: i === 0 ? primaryColor + '33' : 'transparent', fontWeight: i === 0 ? 600 : 400, borderLeft: i === 0 ? `2px solid ${primaryColor}` : '2px solid transparent', cursor: 'default' }}>{item}</div>
+            ))}
+          </div>
+        )}
+
+        {/* Main content */}
+        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {/* Top bar */}
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid #E5E7EB', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#111827' }}>{screen.screen}</span>
+            <span style={{ fontSize: 9, color: '#6B7280' }}>User ▾</span>
+          </div>
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            <MockScreenInner screen={screen} primaryColor={primaryColor} />
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
 
 function UXRecommendationContent({ data }) {
   if (!data) return null
+  const primaryColor = data.visualTheme?.primaryColor || '#1D4ED8'
+  const hasSidebar = (data.navigationModel || '').toLowerCase().includes('sidebar')
+  const screens = data.primaryScreens || []
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div>
-          <SectionLabel>Layout type</SectionLabel>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#D4D4D4' }}>{(data.layoutType || '').replace(/_/g, ' ')}</span>
-          </div>
-        </div>
-        <div>
-          <SectionLabel>Navigation model</SectionLabel>
-          <span style={{ fontSize: 12, color: '#A3A3A3' }}>{data.navigationModel}</span>
-        </div>
-        {data.visualTheme && (
-          <>
-            <div>
-              <SectionLabel>Visual mood</SectionLabel>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {data.visualTheme.primaryColor && (
-                  <div style={{ width: 14, height: 14, borderRadius: 4, background: data.visualTheme.primaryColor, border: '0.5px solid rgba(255,255,255,0.1)', flexShrink: 0 }} />
-                )}
-                <span style={{ fontSize: 12, color: '#A3A3A3' }}>{data.visualTheme.mood}</span>
-                {data.visualTheme.colorName && (
-                  <span style={{ fontSize: 10, color: '#3D3D3D' }}>· {data.visualTheme.colorName}</span>
-                )}
-              </div>
-            </div>
-            <div>
-              <SectionLabel>Color rationale</SectionLabel>
-              <p style={{ margin: 0, fontSize: 11, color: '#737373', lineHeight: 1.5 }}>{data.visualTheme.rationale}</p>
-            </div>
-          </>
-        )}
+    <div style={{ background: '#F3F4F6', borderRadius: 8, padding: '16px', overflow: 'hidden' }}>
+      {/* Theme strip */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, padding: '8px 12px', background: '#fff', borderRadius: 6, border: '1px solid #E5E7EB' }}>
+        <div style={{ width: 18, height: 18, borderRadius: 4, background: primaryColor, flexShrink: 0 }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#111827' }}>{data.visualTheme?.colorName || 'Theme'}</span>
+        <span style={{ fontSize: 11, color: '#6B7280' }}>{data.visualTheme?.mood}</span>
+        <span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 'auto' }}>{data.layoutType?.replace(/_/g, ' ')} · {data.navigationModel}</span>
       </div>
-      <div>
-        <SectionLabel>Primary screens</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {(data.primaryScreens || []).map((s, i) => (
-            <div key={i} style={{ padding: '7px 10px', background: '#161616', borderRadius: 6, border: '0.5px solid #222' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#D4D4D4' }}>{s.screen}</span>
-              </div>
-              <p style={{ margin: '0 0 5px', fontSize: 11, color: '#737373', lineHeight: 1.4 }}>{s.purpose}</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {(s.keyActions || []).map((a, j) => <Tag key={j}>{a}</Tag>)}
+
+      {/* Screen frames — horizontally scrollable */}
+      <div style={{ display: 'flex', gap: 20, overflowX: 'auto', paddingBottom: 12 }}>
+        {screens.length > 0
+          ? screens.map((screen, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+              <BrowserFrame screen={screen} primaryColor={primaryColor} hasSidebar={hasSidebar} />
+              <div style={{ textAlign: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#374151' }}>{screen.screen}</span>
+                <span style={{ fontSize: 10, color: '#9CA3AF', marginLeft: 6 }}>{(screen.keyActions || []).slice(0, 2).join(' · ')}</span>
               </div>
             </div>
-          ))}
-        </div>
+          ))
+          : (
+            <div style={{ padding: 40, color: '#9CA3AF', fontSize: 13 }}>No screens defined.</div>
+          )
+        }
       </div>
+
+      {/* Rationale */}
       {data.rationale && (
-        <div>
-          <SectionLabel>Design rationale</SectionLabel>
-          <p style={{ margin: 0, fontSize: 11, color: '#737373', lineHeight: 1.6, fontStyle: 'italic' }}>{data.rationale}</p>
+        <div style={{ marginTop: 8, padding: '10px 14px', background: '#fff', borderRadius: 6, border: '1px solid #E5E7EB' }}>
+          <span style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.6, fontStyle: 'italic' }}>{data.rationale}</span>
         </div>
       )}
-    </div>
-  )
-}
-
-function AppSpecContent({ data }) {
-  if (!data) return null
-  const primary = data.colorTheme?.primary || '#7C3AED'
-  const light = data.colorTheme?.light || '#F5F3FF'
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ padding: '12px 14px', background: primary + '18', borderRadius: 8, border: `0.5px solid ${primary}33` }}>
-        <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 700, color: '#F5F5F5' }}>{data.appTitle}</p>
-        <p style={{ margin: 0, fontSize: 11, color: '#A3A3A3' }}>{data.tagline}</p>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <div>
-          <SectionLabel>App type</SectionLabel>
-          <span style={{ fontSize: 11, color: '#A3A3A3' }}>{data.appType}</span>
-        </div>
-        <div>
-          <SectionLabel>Layout</SectionLabel>
-          <span style={{ fontSize: 11, color: '#A3A3A3' }}>{(data.layoutType || '').replace(/_/g, ' ')}</span>
-        </div>
-        <div>
-          <SectionLabel>Color theme</SectionLabel>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <div style={{ width: 12, height: 12, borderRadius: 3, background: primary, border: '0.5px solid rgba(255,255,255,0.1)' }} />
-            <span style={{ fontSize: 11, color: '#A3A3A3' }}>{data.colorTheme?.name}</span>
-          </div>
-        </div>
-        <div>
-          <SectionLabel>Action label</SectionLabel>
-          <span style={{ fontSize: 11, color: '#A3A3A3' }}>{data.primaryActionLabel}</span>
-        </div>
-      </div>
-      <div>
-        <SectionLabel>Status flow</SectionLabel>
-        <ArrowRow items={data.statusFlow || []} activeIdx={0} />
-      </div>
-      <div>
-        <SectionLabel>Features</SectionLabel>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {(data.features || []).map((f, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-              <div style={{ width: 4, height: 4, borderRadius: '50%', background: primary, flexShrink: 0, marginTop: 6 }} />
-              <span style={{ fontSize: 11, color: '#A3A3A3', lineHeight: 1.55 }}>{f}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }
