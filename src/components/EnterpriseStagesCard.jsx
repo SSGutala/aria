@@ -76,7 +76,7 @@ function ArrowRow({ items, activeIdx = 0 }) {
 // ── Shared business document styles ──────────────────────────────────────────
 // Outer canvas: light gray surround (like Google Docs), white page card inside
 const D = {
-  canvas: { background: '#E8EAED', padding: '28px 24px', minHeight: 400 },
+  canvas: { background: '#E8EAED', padding: '28px 24px' },
   page: {
     background: '#FFFFFF',
     maxWidth: 740,
@@ -1600,7 +1600,9 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
 
       {/* Expanded content */}
       {isOpen && (
-        <div style={{ padding: '14px 16px', borderTop: '0.5px solid #1A1A1A', background: '#0D0D0D' }}>
+        <div style={{ borderTop: '0.5px solid #1A1A1A', background: '#0D0D0D' }}>
+          {/* Scrollable content area — caps height so long docs don't push page */}
+          <div style={{ maxHeight: 640, overflowY: 'auto', overflowX: 'hidden', padding: '14px 16px' }}>
           {/* Show structured component only when no edits and not editing */}
           {!editing && !savedText
             ? <Component data={data} />
@@ -1617,9 +1619,11 @@ function StageRow({ stage, index, data, isOpen, approved, onToggle, onApprove, o
             )
           }
 
-          {/* Action bar — hide while editing (toolbar is inside StyledTextView) */}
+          </div>{/* end scrollable content */}
+
+          {/* Action bar — always visible, outside scroll area */}
           {!editing && (
-            <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 6, borderTop: '0.5px solid #1A1A1A', paddingTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, borderTop: '0.5px solid #1A1A1A', padding: '8px 16px' }}>
               <button
                 onClick={onApprove}
                 style={{
