@@ -318,7 +318,8 @@ function WorkflowMapContent({ data }) {
   // Row y-center for actor ai: TOP_PAD + ai*LANE_H + LANE_H/2
   const rowCY  = ai => TOP_PAD + ai * LANE_H + LANE_H / 2
 
-  const svgW = LABEL_W + START_W + steps.length * (BOX_W + COL_GAP) + COL_GAP
+  // Include END oval (rx=30) + right padding so nothing clips
+  const svgW = LABEL_W + START_W + steps.length * (BOX_W + COL_GAP) + COL_GAP + 30 + 40
   const svgH = TOP_PAD + actors.length * LANE_H + TOP_PAD
 
   // START node in lane of first step
@@ -385,11 +386,11 @@ function WorkflowMapContent({ data }) {
       )}
 
       {/* ── SVG swimlane diagram ── */}
-      <div style={{ overflowX: 'auto', background: '#FAFAFA' }}>
+      <div style={{ overflow: 'auto', background: '#FAFAFA', maxHeight: 520 }}>
         <svg
           width={svgW}
           height={svgH}
-          style={{ display: 'block', minWidth: 480, fontFamily: 'inherit' }}
+          style={{ display: 'block', fontFamily: 'inherit' }}
         >
           <defs>
             <marker id={markerId} markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
