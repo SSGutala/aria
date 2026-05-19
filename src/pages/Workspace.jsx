@@ -387,7 +387,14 @@ export default function Workspace() {
       const newMsgs = []
 
       if (result.type === 'build_mode') {
-        const modeId = Date.now().toString() + '_bm'
+        // Show natural greeting as a text bubble first
+        if (result.greeting) {
+          newMsgs.push({
+            id: Date.now().toString() + '_greet', role: 'assistant',
+            content: result.greeting, message_type: 'text', metadata: {},
+          })
+        }
+        const modeId = (Date.now() + 1).toString() + '_bm'
         pendingBuildModeMsgId.current = modeId
         newMsgs.push({
           id: modeId, role: 'assistant', content: '', message_type: 'build_mode',
@@ -859,11 +866,36 @@ export default function Workspace() {
       return
     }
 
+    // Detect continuation intent — short affirmative follow-ups when there's
+    // already an active pending state. Respond contextually instead of re-analyzing.
+    const isContinuation = isFollowUpIntent(prompt) && (
+      pendingBuildModeMsgId.current ||
+      pendingClarV2MsgIdRef.current ||
+      pendingClarMsgIdRef.current ||
+      pendingBriefMsgIdRef.current ||
+      pendingSpecMsgIdRef.current
+    )
+
+    if (isContinuation) {
+      addMsg("Take a look at the options above — select whichever fits best and I'll move forward from there.")
+      await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
+      return
+    }
+
     await supabase.from('conversations').update({ updated_at: new Date().toISOString(), title: prompt.slice(0, 60) }).eq('id', convId)
     setCurrentConv(prev => prev ? { ...prev, title: prompt.slice(0, 60) } : prev)
     loadConversations()
 
     await runAnalyzeAndQuestion(prompt)
+  }
+
+  // Detect short follow-up / continuation messages that don't need re-analysis
+  function isFollowUpIntent(text) {
+    const t = text.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '')
+    const CONTINUATIONS = ['continue', 'yes', 'go', 'go ahead', 'ok', 'okay', 'sure', 'proceed',
+      'next', 'do it', 'sounds good', 'looks good', 'perfect', 'great', 'yep', 'yup', 'correct',
+      'that works', 'thats right', 'that is right', 'let s go', 'lets go', 'ready', 'start']
+    return CONTINUATIONS.includes(t) || t.length < 12 && CONTINUATIONS.some(c => t.startsWith(c))
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────

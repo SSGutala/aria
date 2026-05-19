@@ -72,7 +72,7 @@ export default async function handler(req, res) {
         devlog('pm_package.card_shown', { conversationId })
         return res.json({
           type: 'pm_package',
-          intro: `I'll generate a full PM document stack for this project. Which depth do you need?`,
+          intro: `PM document stack — select the depth that fits your initiative.`,
         })
       }
       // pmPackage selected → return PM-focused clarification questions
@@ -87,7 +87,7 @@ PM Package: ${pmPackage}
 
 Generate 4-5 targeted PM discovery questions. Return JSON:
 {
-  "intro": "1-2 sentences confirming the PM package scope",
+  "intro": "1-2 sentences. Confirm what type of product/initiative this is and what the PM package will produce. Do NOT repeat the user's words back. Be specific about the deliverables for this package tier.",
   "questions": [
     { "type": "short_answer | multiple_choice | multi_select | yes_no", "question": "...", "options": ["..."], "placeholder": "..." }
   ]
@@ -117,7 +117,7 @@ Generate 4-5 targeted PM discovery questions. Return JSON:
         return res.json({
           type: 'role_package',
           role: buildMode,
-          intro: `I'll generate a ${roleLabels[buildMode] || buildMode}-specific document package for this project.`,
+          intro: `${roleLabels[buildMode] || buildMode} document package — select the scope that fits your team.`,
         })
       }
       // rolePackage selected → return role-specific clarification questions
@@ -132,7 +132,7 @@ Role: ${buildMode}. Package: ${rolePackage}
 
 Generate 4-5 targeted discovery questions for a ${buildMode} role. Return JSON:
 {
-  "intro": "1-2 sentences confirming the ${buildMode} scope",
+  "intro": "1-2 sentences. Name the specific ${buildMode} workflow being addressed and what the output will cover. Do NOT repeat the user's words back. Be domain-specific.",
   "questions": [
     { "type": "short_answer | multiple_choice | multi_select | yes_no", "question": "...", "options": ["..."], "placeholder": "..." }
   ]
@@ -168,7 +168,7 @@ Build mode: ${buildMode}
 
 Generate ${isQuick ? '2-3 focused' : '4-5 deep'} discovery questions. Return JSON:
 {
-  "intro": "1-2 sentences confirming the project scope",
+  "intro": "1-2 sentences. Confirm what you're building and the key decision you need their input on. Never parrot their words back. Be specific about the domain and workflow. Sound like a senior PM who already understood the request and just needs to nail down a couple of key decisions.",
   "questions": [
     { "type": "short_answer | multiple_choice | multi_select | yes_no", "question": "...", "options": ["..."], "placeholder": "..." }
   ]
@@ -197,33 +197,42 @@ Generate ${isQuick ? '2-3 focused' : '4-5 deep'} discovery questions. Return JSO
   try {
     const historyContext = buildHistoryContext(conversationHistory)
     const memoriesContext = (userMemories?.length)
-      ? `\n\nUser's previous Aria projects (for context, do NOT re-ask about these):\n${userMemories.map(m => `- ${m.summary}`).join('\n')}`
+      ? `\n\nUser's previous Aria projects (for context only — do NOT repeat or reference these unless directly relevant):\n${userMemories.map(m => `- ${m.summary}`).join('\n')}`
       : ''
 
     const parsed = await orch.json('analyze_complexity', {
       tier: 'fast',
-      maxTokens: 400,
+      maxTokens: 500,
       system: INTAKE_TRIAGE,
       prompt: `User request: "${prompt}"${historyContext}${memoriesContext}
 
-Analyze the complexity and recommend a build mode. Return JSON:
+Analyze and respond. Return JSON:
 {
+  "greeting": "1-2 sentence natural acknowledgment. Name what you understood they want to build. Be direct and specific — no 'Great idea!' or 'Sure!' openers. Never repeat their words back verbatim. Show you understood the real problem. End with a forward-moving statement about what you'll need.",
   "recommendedMode": "quick | guided | docs | product_manager | operations | finance | hr | compliance | it_admin",
-  "complexityReason": "1 sentence explaining why this mode fits"
+  "complexityReason": "Under 12 words: why this mode fits (shown as subtitle under the card)"
 }
 
-Rules:
+Mode rules:
 - quick: simple CRUD, single table, solo tool, no approvals
 - guided: multi-role workflows, approvals, automations, integrations
 - docs: compliance required, multi-stakeholder sign-off needed
 - product_manager: user explicitly mentions PRD, product brief, or PM deliverables
-- operations/finance/hr/compliance/it_admin: request is clearly from or for that specific function`,
+- operations/finance/hr/compliance/it_admin: request is clearly from or for that specific function
+
+Greeting rules:
+- Never start with "Sure", "Great", "Absolutely", "Of course", "Got it" alone
+- Never parrot the user's prompt back word-for-word
+- Be specific about what you understood (name the real domain, the actual workflow)
+- 1-2 sentences max. Professional and direct.
+- Example good greeting: "Resume screening with per-session scoring criteria — the key workflow is file ingestion, criteria input, and ranked output. Before I scope this out, a couple of things to nail down."`,
     })
 
     orch.end({ recommendedMode: parsed.recommendedMode })
     devlog('intake.analyzed', { recommendedMode: parsed.recommendedMode, conversationId })
     return res.json({
       type: 'build_mode',
+      greeting: parsed.greeting || '',
       recommendedMode: parsed.recommendedMode || 'guided',
       complexityReason: parsed.complexityReason || '',
     })
