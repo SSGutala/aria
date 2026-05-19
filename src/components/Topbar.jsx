@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import SystemStatus from './SystemStatus'
+import { logAction } from '../lib/devlog'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -24,12 +25,15 @@ function EditableTitle({ value, placeholder, onSave, dim }) {
   // Sync if parent value changes (e.g. from sidebar rename)
   useEffect(() => { if (!editing) setDraft(value || '') }, [value, editing])
 
-  function startEdit() { setDraft(value || ''); setEditing(true) }
+  function startEdit() { setDraft(value || ''); setEditing(true); logAction('conversation.rename_started', {}) }
 
   function commit() {
     setEditing(false)
     const trimmed = draft.trim()
-    if (trimmed && trimmed !== value) onSave(trimmed)
+    if (trimmed && trimmed !== value) {
+      logAction('conversation.renamed', { title: trimmed })
+      onSave(trimmed)
+    }
   }
 
   useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
@@ -88,6 +92,7 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
 
   function copyShareLink() {
     if (!app) return
+    logAction('app.link_copied', { slug: app?.slug })
     const url = `${window.location.origin}/app/${app.slug}`
     navigator.clipboard.writeText(url).then(() => showToast('Link copied!'))
   }
@@ -101,7 +106,7 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
       }}>
         {/* Hamburger — mobile/tablet only */}
         {onMenuToggle && (
-          <button onClick={onMenuToggle} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#525252', padding: '4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+          <button onClick={() => { logAction('sidebar.toggled', {}); onMenuToggle() }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#525252', padding: '4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
             onMouseEnter={e => e.currentTarget.style.color = '#A3A3A3'}
             onMouseLeave={e => e.currentTarget.style.color = '#525252'}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -141,7 +146,7 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
                 Share link
               </button>
               <button
-                onClick={() => window.open(`/app/${app.slug}`, '_blank')}
+                onClick={() => { logAction('app.viewed', { slug: app?.slug }); window.open(`/app/${app.slug}`, '_blank') }}
                 style={{ background: glareGradient, color: '#111111', border: '0.5px solid #484848', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}
               >
                 View app
@@ -171,7 +176,7 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
         {/* Artifacts toggle — shown when there are artifacts */}
         {artifactCount > 0 && onToggleArtifacts && (
           <button
-            onClick={onToggleArtifacts}
+            onClick={() => { logAction('artifacts.panel_toggled', {}); onToggleArtifacts() }}
             style={{
               marginLeft: app ? 0 : 'auto',
               background: showArtifactPanel ? '#1A2A1A' : '#1A1A1A',

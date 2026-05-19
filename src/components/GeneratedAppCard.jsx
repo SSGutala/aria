@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { logAction } from '../lib/devlog'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -24,6 +25,7 @@ export default function GeneratedAppCard({ schema, slug, appId }) {
   }
 
   function copyLink() {
+    logAction('app.link_copied', { appId, slug })
     navigator.clipboard.writeText(appUrl).then(() => showToast('Copied!'))
   }
 
@@ -80,7 +82,7 @@ export default function GeneratedAppCard({ schema, slug, appId }) {
 
         <div style={{ display: 'flex', gap: 6 }}>
           <button
-            onClick={() => window.open(appUrl, '_blank')}
+            onClick={() => { logAction('app.viewed', { appId, slug }); window.open(appUrl, '_blank') }}
             style={{
               background: glareGradient,
               color: '#111111',
@@ -109,7 +111,7 @@ export default function GeneratedAppCard({ schema, slug, appId }) {
             Copy link
           </button>
           <button
-            onClick={() => showToast('Field editing coming soon')}
+            onClick={() => { logAction('app.edit_fields_clicked', { appId, slug }); showToast('Field editing coming soon') }}
             style={{
               background: '#1A1A1A',
               color: '#525252',

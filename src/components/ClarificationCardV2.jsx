@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { logAction } from '../lib/devlog'
 
 function MultipleChoice({ question, options, value, onChange }) {
   return (
@@ -173,7 +174,7 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
     }}>
       {/* Header */}
       <div
-        onClick={() => setUserCollapse(v => !collapsed)}
+        onClick={() => { logAction('clarification.card_toggled', { collapsed: !collapsed }); setUserCollapse(v => !collapsed) }}
         style={{ padding: '12px 16px 10px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', cursor: 'pointer' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 6 }}>
@@ -265,7 +266,7 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
                       question={q.question}
                       options={q.options || []}
                       value={answers[i] ?? null}
-                      onChange={val => setAnswer(i, val)}
+                      onChange={val => { logAction('clarification.option_selected', { questionIndex: i, value: val }); setAnswer(i, val) }}
                     />
                   )}
                   {q.type === 'multi_select' && (
@@ -273,11 +274,11 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
                       question={q.question}
                       options={q.options || []}
                       value={answers[i] ?? []}
-                      onChange={val => setAnswer(i, val)}
+                      onChange={val => { logAction('clarification.option_toggled', { option: val }); setAnswer(i, val) }}
                     />
                   )}
                   {q.type === 'yes_no' && (
-                    <YesNo value={answers[i] ?? null} onChange={val => setAnswer(i, val)} />
+                    <YesNo value={answers[i] ?? null} onChange={val => { logAction('clarification.yes_no_answered', { questionIndex: i, value: val }); setAnswer(i, val) }} />
                   )}
                   {q.type === 'short_answer' && (
                     <ShortAnswer
@@ -337,7 +338,7 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               {onRestart && (
                 <button
-                  onClick={onRestart}
+                  onClick={() => { logAction('clarification.restarted', {}); onRestart() }}
                   style={{
                     background: 'transparent', color: '#525252', border: '0.5px solid #2A2A2A',
                     borderRadius: 6, fontSize: 11, cursor: 'pointer', padding: '5px 10px', fontFamily: 'inherit',
@@ -350,7 +351,7 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
               )}
               {onSubmit && (
                 <button
-                  onClick={handleSubmit}
+                  onClick={() => { logAction('clarification.answers_changed', {}); handleSubmit() }}
                   style={{
                     background: '#1C1C1C', color: '#737373', border: '0.5px solid #2A2A2A',
                     borderRadius: 6, fontSize: 11, cursor: 'pointer', padding: '5px 10px', fontFamily: 'inherit',
@@ -370,7 +371,7 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
             </span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
-                onClick={() => onSubmit('No preference — use your best judgment')}
+                onClick={() => { logAction('clarification.skipped', {}); onSubmit('No preference — use your best judgment') }}
                 style={{
                   background: 'transparent', color: '#525252', border: 'none',
                   fontSize: 11, cursor: 'pointer', padding: '5px 8px', fontFamily: 'inherit',

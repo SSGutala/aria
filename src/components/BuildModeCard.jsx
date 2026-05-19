@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { logAction } from '../lib/devlog'
 
 const MODES = [
   {
@@ -102,7 +103,7 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
     }}>
       {/* Header */}
       <div
-        onClick={() => setUserCollapse(!collapsed)}
+        onClick={() => { logAction('build_mode.card_toggled', { collapsed: !collapsed }); setUserCollapse(!collapsed) }}
         style={{ padding: '14px 18px 12px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', cursor: 'pointer' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

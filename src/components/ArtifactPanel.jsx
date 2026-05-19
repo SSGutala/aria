@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
 import { API_URL as API } from '../lib/api'
+import { logAction } from '../lib/devlog'
 
 const TYPE_META = {
   intake_summary:    { label: 'Intake Summary',    icon: '📋', color: '#60A5FA' },
@@ -45,6 +46,7 @@ function AddDocumentModal({ conversationId, onClose, onArtifactCreated, onGenera
 
   async function handleGenerate() {
     if (!description.trim()) return
+    logAction('artifact.generate_requested', { type, description: description.slice(0, 80) })
     setLoading(true); setError('')
     try {
       await onGenerateArtifact?.(description, type)
@@ -55,6 +57,7 @@ function AddDocumentModal({ conversationId, onClose, onArtifactCreated, onGenera
 
   async function handleCreateBlank() {
     if (!title.trim()) return
+    logAction('artifact.blank_created', { type, title })
     setLoading(true); setError('')
     try {
       const res = await fetch(`${API}/api/artifacts`, {
@@ -73,6 +76,7 @@ function AddDocumentModal({ conversationId, onClose, onArtifactCreated, onGenera
   function handleUpload(e) {
     const file = e.target.files?.[0]
     if (!file) return
+    logAction('artifact.file_uploaded', { fileName: e.target.files[0]?.name })
     onUploadFile?.(file)
     onClose()
   }
@@ -113,7 +117,7 @@ function AddDocumentModal({ conversationId, onClose, onArtifactCreated, onGenera
               />
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 10, color: '#525252', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 6 }}>Document Type</label>
-                <select value={type} onChange={e => setType(e.target.value)}
+                <select value={type} onChange={e => { logAction('artifact.type_changed', { type: e.target.value }); setType(e.target.value) }}
                   style={{ width: '100%', background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 5, color: '#D4D4D4', fontSize: 12, padding: '7px 10px', fontFamily: 'inherit', outline: 'none' }}>
                   {ARTIFACT_TYPES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                 </select>
@@ -224,18 +228,18 @@ function ArtifactRow({ artifact, meta, generating, onOpen, onGenerate, onDelete,
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
               <span style={{ fontSize: 9, color: '#F87171' }}>Delete?</span>
-              <button onClick={e => { e.stopPropagation(); handleDelete() }} disabled={deleting}
+              <button onClick={e => { e.stopPropagation(); logAction('artifact.deleted', { artifactId: artifact.id }); handleDelete() }} disabled={deleting}
                 style={{ background: '#2A0A0A', color: '#F87171', border: '0.5px solid #5F1E1E', borderRadius: 3, fontSize: 9, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit' }}>
                 {deleting ? '…' : 'Yes'}
               </button>
-              <button onClick={e => { e.stopPropagation(); setConfirmDelete(false) }}
+              <button onClick={e => { e.stopPropagation(); logAction('artifact.delete_cancelled', { artifactId: artifact.id }); setConfirmDelete(false) }}
                 style={{ background: '#1A1A1A', color: '#525252', border: '0.5px solid #2A2A2A', borderRadius: 3, fontSize: 9, padding: '2px 6px', cursor: 'pointer', fontFamily: 'inherit' }}>
                 No
               </button>
             </div>
           )}
 
-          <button onClick={() => setExpanded(v => !v)}
+          <button onClick={() => { logAction('artifact.panel_toggled', { expanded: !expanded }); setExpanded(v => !v) }}
             style={{ background: 'none', border: 'none', color: '#3D3D3D', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1, flexShrink: 0, transition: 'transform 0.15s', transform: expanded ? 'rotate(180deg)' : 'none' }}>
             ▾
           </button>
@@ -251,6 +255,7 @@ function ArtifactRow({ artifact, meta, generating, onOpen, onGenerate, onDelete,
               const url = fileUrls[fmt]
               return url ? (
                 <a key={fmt} href={url} download={`${artifact.title.replace(/[^a-z0-9]/gi, '_')}.${fmt}`} target="_blank" rel="noreferrer"
+                  onClick={() => logAction('artifact.downloaded', { artifactId: artifact.id, format: fmt })}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, color: '#A3A3A3', background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 4, padding: '3px 8px', textDecoration: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
                   onMouseEnter={e => { e.currentTarget.style.background = '#1E1E1E'; e.currentTarget.style.color = '#D4D4D4' }}
                   onMouseLeave={e => { e.currentTarget.style.background = '#161616'; e.currentTarget.style.color = '#A3A3A3' }}>
@@ -264,12 +269,12 @@ function ArtifactRow({ artifact, meta, generating, onOpen, onGenerate, onDelete,
             })}
           </div>
           {!hasFiles && (
-            <button onClick={onGenerate} disabled={generating}
+            <button onClick={() => { logAction('artifact.files_generated', { artifactId: artifact.id }); onGenerate() }} disabled={generating}
               style={{ marginTop: 8, fontSize: 10, color: generating ? '#525252' : meta.color, background: 'none', border: `0.5px solid ${generating ? '#2A2A2A' : meta.color + '44'}`, borderRadius: 4, padding: '4px 10px', cursor: generating ? 'default' : 'pointer', fontFamily: 'inherit' }}>
               {generating ? 'Generating…' : '⬇ Generate files'}
             </button>
           )}
-          <button onClick={() => onOpen(artifact)}
+          <button onClick={() => { logAction('artifact.opened', { artifactId: artifact.id }); onOpen(artifact) }}
             style={{ display: 'block', marginTop: 8, fontSize: 10, color: '#525252', background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}>
             Open document ↗
           </button>
@@ -345,19 +350,19 @@ export default function ArtifactPanel({ artifacts = [], conversationId, onOpen, 
               {allApproved && active.length > 0 && <span style={{ color: '#34D399', marginLeft: 6 }}>· Ready to build</span>}
             </div>
           </div>
-          <button onClick={onClose}
+          <button onClick={() => { logAction('artifact.panel_closed', {}); onClose() }}
             style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 5, color: '#525252', cursor: 'pointer', fontSize: 14, padding: '4px 7px', lineHeight: 1 }}>✕</button>
         </div>
 
         {/* Add Document button */}
-        <button onClick={() => setShowAddModal(true)}
+        <button onClick={() => { logAction('artifact.add_modal_opened', {}); setShowAddModal(true) }}
           style={{ width: '100%', background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#A78BFA', fontSize: 11, padding: '7px', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           onMouseEnter={e => e.currentTarget.style.background = '#1E1E1E'}
           onMouseLeave={e => e.currentTarget.style.background = '#161616'}>
           + Add Document
         </button>
 
-        <input value={search} onChange={e => setSearch(e.target.value)}
+        <input value={search} onChange={e => { logAction('artifact.searched', { query: e.target.value.slice(0, 50) }); setSearch(e.target.value) }}
           placeholder="Search documents…"
           style={{ width: '100%', background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 5, color: '#D4D4D4', fontSize: 11, padding: '6px 10px', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
         />

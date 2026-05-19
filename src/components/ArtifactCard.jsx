@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { logAction } from '../lib/devlog'
 
 const TYPE_META = {
   intake_summary:    { label: 'Intake Summary',    icon: '📋', color: '#60A5FA', bg: '#0D1A2A', border: '#1E3A5F' },
@@ -75,6 +76,7 @@ export default function ArtifactCard({ artifact, onOpen, onApprove, compact = fa
   const title  = artifact.title || meta.label
 
   function handleExport(format) {
+    logAction('artifact.exported', { artifactId: artifact.id, format })
     setShowExport(false)
     const safeName = title.replace(/[^a-z0-9]/gi, '_').toLowerCase()
     if (format === 'json') {
@@ -121,9 +123,9 @@ export default function ArtifactCard({ artifact, onOpen, onApprove, compact = fa
 
         {/* Action buttons */}
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', position: 'relative' }}>
-          <ActionBtn label="Open" icon="↗" primary onClick={onOpen} />
+          <ActionBtn label="Open" icon="↗" primary onClick={() => { logAction('artifact.opened', { artifactId: artifact.id, title: artifact.title }); onOpen?.() }} />
           {artifact.status !== 'approved' && (
-            <ActionBtn label="Approve" icon="✓" onClick={onApprove} green />
+            <ActionBtn label="Approve" icon="✓" onClick={() => { logAction('artifact.approved', { artifactId: artifact.id }); onApprove?.() }} green />
           )}
           {artifact.status === 'approved' && (
             <span style={{ fontSize: 10, color: '#34D399', display: 'flex', alignItems: 'center', gap: 3, padding: '4px 0' }}>
@@ -132,7 +134,7 @@ export default function ArtifactCard({ artifact, onOpen, onApprove, compact = fa
             </span>
           )}
           <div style={{ position: 'relative' }}>
-            <ActionBtn label="Export" icon="⬇" onClick={() => setShowExport(v => !v)} />
+            <ActionBtn label="Export" icon="⬇" onClick={() => { logAction('artifact.export_menu_toggled', { artifactId: artifact.id }); setShowExport(v => !v) }} />
             {showExport && (
               <div style={{
                 position: 'absolute', bottom: '100%', left: 0, marginBottom: 4,
