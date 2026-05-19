@@ -29,17 +29,34 @@ const COLOR_PRESETS = [
   { name: 'slate',   primary: '#334155', light: '#F8FAFC', text: '#0F172A' },
 ]
 
-function ColorPicker({ current, onChange, onClose }) {
+function ColorPicker({ current, onChange, onClose, anchorRect }) {
   const ref = useRef(null)
+  const [hexInput, setHexInput] = useState(current.primary || '#7C3AED')
+  const [hexError, setHexError] = useState(false)
+
   useEffect(() => {
     function handler(e) { if (ref.current && !ref.current.contains(e.target)) onClose() }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [onClose])
 
+  function handleHexInput(val) {
+    setHexInput(val)
+    const hex = val.startsWith('#') ? val : '#' + val
+    if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+      setHexError(false)
+      onChange({ name: 'custom', primary: hex, light: hex + '18', text: '#111827' })
+    } else {
+      setHexError(true)
+    }
+  }
+
+  const top = anchorRect ? anchorRect.bottom + 6 : 0
+  const left = anchorRect ? anchorRect.left : 0
+
   return (
     <div ref={ref} style={{
-      position: 'absolute', top: 28, left: 0, zIndex: 100,
+      position: 'fixed', top, left, zIndex: 9999,
       background: '#fff', border: '1px solid #E5E7EB',
       borderRadius: 12, padding: 12,
       boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
@@ -71,14 +88,25 @@ function ColorPicker({ current, onChange, onClose }) {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input
             type="color"
-            defaultValue={current.primary}
-            onChange={e => {
-              const hex = e.target.value
-              onChange({ name: 'custom', primary: hex, light: hex + '18', text: '#111827' })
-            }}
-            style={{ width: 32, height: 28, border: '1px solid #E5E7EB', borderRadius: 6, cursor: 'pointer', padding: 2 }}
+            value={hexInput.startsWith('#') && hexInput.length >= 4 ? hexInput : current.primary}
+            onChange={e => handleHexInput(e.target.value)}
+            style={{ width: 32, height: 28, border: '1px solid #E5E7EB', borderRadius: 6, cursor: 'pointer', padding: 2, flexShrink: 0 }}
           />
-          <span style={{ fontSize: 11, color: '#6B7280', fontFamily: 'monospace' }}>{current.primary}</span>
+          <input
+            type="text"
+            value={hexInput}
+            onChange={e => handleHexInput(e.target.value)}
+            placeholder="#7C3AED"
+            maxLength={7}
+            spellCheck={false}
+            style={{
+              width: 90, fontSize: 11, fontFamily: 'monospace',
+              border: `1px solid ${hexError ? '#F87171' : '#E5E7EB'}`,
+              borderRadius: 6, padding: '4px 8px', outline: 'none',
+              color: hexError ? '#EF4444' : '#374151',
+              background: hexError ? '#FEF2F2' : '#fff',
+            }}
+          />
         </div>
       </div>
     </div>
@@ -89,6 +117,7 @@ export default function SpecCard({ spec, onBuild, onSpecChange }) {
   const [building, setBuilding] = useState(false)
   const [localSpec, setLocalSpec] = useState(spec)
   const [showPicker, setShowPicker] = useState(false)
+  const pickerAnchorRef = useRef(null)
 
   const primary   = localSpec.colorTheme?.primary || '#7C3AED'
   const light     = localSpec.colorTheme?.light   || '#F5F3FF'
@@ -190,8 +219,9 @@ export default function SpecCard({ spec, onBuild, onSpecChange }) {
         {/* Color theme with picker */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Color theme</div>
-          <div style={{ display: 'flex', gap: 5, position: 'relative' }}>
+            <div style={{ display: 'flex', gap: 5, position: 'relative' }}>
             <button
+              ref={pickerAnchorRef}
               onClick={() => setShowPicker(v => !v)}
               title="Click to change color theme"
               style={{ display: 'flex', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0, alignItems: 'center' }}
@@ -208,6 +238,7 @@ export default function SpecCard({ spec, onBuild, onSpecChange }) {
                 current={localSpec.colorTheme || {}}
                 onChange={updateColor}
                 onClose={() => setShowPicker(false)}
+                anchorRect={pickerAnchorRef.current?.getBoundingClientRect()}
               />
             )}
           </div>
