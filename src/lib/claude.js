@@ -1,7 +1,33 @@
+import { apiCall } from '../utils/errorHandler'
+
 const MOCK_MODE = !import.meta.env.VITE_SUPABASE_URL ||
   import.meta.env.VITE_SUPABASE_URL === 'https://placeholder.supabase.co'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
+async function postJSON(path, body, action, config = {}, aiModel = 'claude') {
+  const bodyWithModel = { ...body, aiModel }
+  const res = await apiCall(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bodyWithModel),
+  }, { context: { action }, ...config })
+  return res.json()
+}
+
+async function patchJSON(path, body, action, config = {}) {
+  const res = await apiCall(`${API_URL}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }, { context: { action }, ...config })
+  return res.json()
+}
+
+async function getJSON(path, action, config = {}) {
+  const res = await apiCall(`${API_URL}${path}`, {}, { context: { action }, ...config })
+  return res.json()
+}
 
 function slugify(title) {
   const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
@@ -172,7 +198,7 @@ async function mockUpdateStatus(submissionId, newStatus, appId) {
   return { success: true }
 }
 
-export async function generateApp(prompt, conversationId, messages, clarificationAnswers = null) {
+export async function generateApp(prompt, conversationId, messages, clarificationAnswers = null, aiModel = 'claude') {
   if (MOCK_MODE) return mockGenerate(prompt, conversationId)
 
   // Pass last 10 messages as conversation history for memory
@@ -181,38 +207,68 @@ export async function generateApp(prompt, conversationId, messages, clarificatio
     content: m.content || '',
   }))
 
-  const response = await fetch(`${API_URL}/api/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, messages, clarificationAnswers, conversationHistory }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(err.error || 'Generation failed')
-  }
-  return response.json()
+  return postJSON('/api/generate',
+    { prompt, conversationId, messages, clarificationAnswers, conversationHistory },
+    'generating your app',
+    {},
+    aiModel)
 }
 
-// Phase 1: analyze prompt, return build mode recommendation
-export async function analyzeBuildMode(prompt, conversationId, conversationHistory = []) {
+// Phase 1: analyze prompt and return clarification_v2 directly (no intermediate mode card)
+export async function analyzeAndQuestion(prompt, conversationId, conversationHistory = [], aiModel = 'claude') {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 1000))
-    return { type: 'build_mode', intro: 'I can build that.', recommendedMode: 'guided', complexityReason: 'This workflow involves multiple roles and approval steps, so Guided Build will produce a better result.' }
+    return {
+      type: 'clarification_v2',
+      intro: 'Got it — a few questions before I start building.',
+      outputType: 'brief',
+      buildMode: 'general',
+      questions: [
+        { type: 'multiple_choice', question: 'Who are the primary users of this tool?', options: ['Employees (self-service)', 'Managers / approvers', 'Both'] },
+        { type: 'short_answer', question: 'What is the current manual process this replaces?', placeholder: 'e.g. spreadsheet, email chain, SharePoint form...' },
+        { type: 'multi_select', question: 'What approvals or integrations are needed?', options: ['Manager approval', 'Email notifications', 'Microsoft 365 / Teams', 'No integrations yet'] },
+        { type: 'yes_no', question: 'Are there compliance or audit requirements?' },
+      ],
+    }
   }
-  const response = await fetch(`${API_URL}/api/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, conversationHistory }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(err.error || 'Analysis failed')
+  return postJSON('/api/generate',
+    { prompt, conversationId, conversationHistory },
+    'analyzing your request',
+    {},
+    aiModel)
+}
+
+// Backwards-compatible alias (used in some older flows)
+export async function analyzeBuildMode(prompt, conversationId, conversationHistory = [], aiModel = 'claude') {
+  return analyzeAndQuestion(prompt, conversationId, conversationHistory, aiModel)
+}
+
+// Phase 2 (PM): select PM package (no pmPackage yet) or get questions (with pmPackage)
+export async function getPMPackageOrQuestions(prompt, conversationId, pmPackage = null, conversationHistory = [], aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 600))
+    if (!pmPackage) return { type: 'pm_package', intro: 'I\'ll generate a full PM document package for this project.' }
+    return {
+      type: 'clarification_v2',
+      intro: `Perfect, setting up ${pmPackage} PM package. A few questions before I generate your docs:`,
+      buildMode: 'product_manager',
+      pmPackage,
+      questions: [
+        { type: 'multiple_choice', question: 'Who are the primary users?', options: ['Employees (self-service)', 'Managers / approvers', 'Both'] },
+        { type: 'short_answer', question: 'What is the current manual process this replaces?', placeholder: 'e.g. spreadsheet, email chain, SharePoint form...' },
+        { type: 'multi_select', question: 'Which integrations are needed?', options: ['Microsoft 365 / Teams', 'Email notifications', 'SharePoint', 'No integrations yet'] },
+        { type: 'yes_no', question: 'Are there compliance or audit requirements?' },
+        { type: 'short_answer', question: 'What is the target launch timeline?', placeholder: 'e.g. 6 weeks, Q3 2025...' },
+      ],
+    }
   }
-  return response.json()
+  const body = { prompt, conversationId, buildMode: 'product_manager', conversationHistory }
+  if (pmPackage) body.pmPackage = pmPackage
+  return postJSON('/api/generate', body, 'preparing PM questions', {}, aiModel)
 }
 
 // Phase 2: with build mode selected, get clarification questions
-export async function getModeQuestions(prompt, conversationId, buildMode, conversationHistory = []) {
+export async function getModeQuestions(prompt, conversationId, buildMode, conversationHistory = [], aiModel = 'claude') {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 800))
     if (buildMode === 'quick') return { type: 'clarification', intro: 'Two quick questions:', questions: [{ type: 'multiple_choice', question: 'Who primarily uses this?', options: ['Single team', 'Multiple departments', 'External users'] }], buildMode: 'quick' }
@@ -228,20 +284,15 @@ export async function getModeQuestions(prompt, conversationId, buildMode, conver
       ],
     }
   }
-  const response = await fetch(`${API_URL}/api/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, buildMode, conversationHistory }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(err.error || 'Failed to get questions')
-  }
-  return response.json()
+  return postJSON('/api/generate',
+    { prompt, conversationId, buildMode, conversationHistory },
+    'preparing clarification questions',
+    {},
+    aiModel)
 }
 
 // Generate full enterprise brief (guided + docs modes)
-export async function generateBrief(prompt, conversationId, buildMode, clarificationAnswers = null, conversationHistory = []) {
+export async function generateBrief(prompt, conversationId, buildMode, clarificationAnswers = null, conversationHistory = [], aiModel = 'claude') {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 2000))
     return {
@@ -257,19 +308,143 @@ export async function generateBrief(prompt, conversationId, buildMode, clarifica
       },
     }
   }
-  const response = await fetch(`${API_URL}/api/brief`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, buildMode, clarificationAnswers, conversationHistory }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(err.error || 'Brief generation failed')
-  }
-  return response.json()
+  return postJSON('/api/brief',
+    { prompt, conversationId, buildMode, clarificationAnswers, conversationHistory },
+    'generating the brief',
+    { timeoutMs: 120_000 },
+    aiModel)
 }
 
-export async function generateSpec(prompt, conversationId, clarificationAnswers = null, conversationHistory = []) {
+// Generate full PM brief (product_manager mode)
+export async function generatePMBrief(prompt, conversationId, pmPackage, clarificationAnswers = null, conversationHistory = [], aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 2500))
+    // Reuse the existing mock brief but add PM-specific fields
+    const base = {
+      buildMode: 'product_manager',
+      pmPackage: pmPackage || 'lean',
+      brief: {
+        intakeSummary: { understood: 'Mock PM brief — full document stack generated.', businessProblem: 'Teams track approvals manually via email.', primaryUsers: ['Requesters', 'Approvers'], secondaryUsers: ['Admins'], currentProcess: 'Email chains and shared spreadsheets', mainOutcome: 'Centralized, auditable workflow' },
+        problemStatement: { currentState: 'Teams manage approvals manually', painPoints: ['No visibility into request status', 'Delays from manual routing'], rootCauses: ['No centralized system', 'Email-based communication'], impactedUsers: ['Requesters', 'Approvers'], businessImpact: 'Estimated 5 hours per week lost per team', proposedSolution: 'Build a self-service approval portal', outOfScope: ['External user access in v1'] },
+        productBrief: { objective: 'Eliminate email-based approval tracking.', userRoles: [{ role: 'Requester', access: 'Submit and track', estimated: '50+' }], coreWorkflows: ['Submit → Review → Approve/Reject → Notify'], businessRules: ['Only managers can approve'], successCriteria: ['90% requests processed in <24h'], assumptions: ['Single approval level'], openQuestions: ['Multi-level approval needed?'] },
+        prd: { version: '1.0', status: 'Draft', overview: 'A PM-grade approval portal.', goals: ['Reduce approval cycle time by 50%'], nonGoals: ['Mobile app in v1'], userPersonas: [{ name: 'Operations Lead', role: 'Requester', needs: 'Fast approvals', painPoints: 'Email delays' }], functionalRequirements: [{ id: 'FR-01', category: 'Core', requirement: 'Submit and track requests', priority: 'P0' }], nonFunctionalRequirements: [{ id: 'NFR-01', category: 'Security', requirement: 'RBAC with audit logging' }], dependencies: ['SSO authentication'], risksAndMitigations: [{ risk: 'Low adoption', mitigation: 'Training and comms plan', likelihood: 'Medium' }] },
+        userStories: { epics: [{ id: 'E-01', title: 'Request Submission', stories: [{ id: 'US-01', title: 'Submit a request', asA: 'Requester', iWant: 'Submit a structured request', soThat: 'It reaches the right approver', acceptanceCriteria: ['Given I fill the form, when I submit, then it appears in the approver queue'], priority: 'P0', estimate: '3' }] }] },
+        workflowMap: { trigger: 'Requester submits form', steps: [{ step: 'Submit', actor: 'Requester', action: 'Fill form', output: 'Request record', sla: null }], decisionPoints: ['Approved → close', 'Rejected → notify'], exceptionPaths: ['48h no action → escalate'] },
+        dataModel: { primaryEntity: 'Request', fields: [{ name: 'title', label: 'Title', type: 'text', required: true, options: [] }], statusFlow: ['Pending', 'Under Review', 'Approved', 'Rejected'], relationships: [], auditFields: ['created_at', 'created_by'] },
+        automationModel: { triggers: [{ event: 'Request submitted', condition: 'Always', action: 'Notify approver' }], notifications: [{ event: 'Request submitted', recipient: 'Approver', channel: 'Email', template: 'New request waiting' }], escalations: [{ condition: '48h no action', action: 'Escalate', recipient: 'Manager' }], documentGeneration: [], integrations: [] },
+        uxRecommendation: { layoutType: 'split_panel_review', navigationModel: 'Single page', primaryScreens: [{ screen: 'Request Queue', purpose: 'Review requests', keyActions: ['Approve', 'Reject'] }], visualTheme: { mood: 'authoritative', primaryColor: '#4F46E5', colorName: 'deep indigo', rationale: 'Authoritative feel for approval workflows' }, rationale: 'Split panel ideal for review queues' },
+        appSpec: { appTitle: 'Approval Hub', appType: 'Approval Queue', tagline: 'Streamline approvals', purpose: 'Replaces email-based tracking.', workflowType: 'approval_workflow', layoutType: 'split_panel_review', colorTheme: { name: 'deep indigo', primary: '#4F46E5', light: '#EEF2FF', text: '#312E81' }, features: ['Submit requests', 'One-click approve/reject', 'Email notifications', 'Audit trail'], fields: [{ name: 'title', label: 'Title', type: 'text', required: true, options: [] }], statusFlow: ['Pending Review', 'Approved', 'Rejected'], primaryActionLabel: 'Submit Request', integrations: { sharepoint: { enabled: false }, outlook: { enabled: false }, teams: { enabled: false }, documentGeneration: { enabled: false } }, roles: [] },
+        successMetrics: { primaryKPIs: [{ metric: 'Approval cycle time', baseline: '48 hours', target: '24 hours', timeline: '3 months', measurement: 'Average time from submission to decision' }], secondaryMetrics: [{ metric: 'User adoption', target: '90%', measurement: 'Active users / total users' }], leadingIndicators: ['Daily active users'], laggingIndicators: ['Process time reduction'], measurementCadence: 'Weekly', reportingStructure: 'Monthly dashboard', successThreshold: '80% requests in 24h within 60 days' },
+        qaTestPlan: { scope: 'Core approval workflow, notifications, access control', testApproach: 'Manual UAT + automated regression', testEnvironments: ['UAT', 'Staging'], testCases: [{ id: 'TC-01', module: 'Submission', testCase: 'Submit happy path', preconditions: 'Logged in as requester', steps: ['Fill form', 'Submit'], expectedResult: 'Request created, approver notified', priority: 'Critical' }], regressionCases: ['Core workflow after any change'], exitCriteria: ['All critical tests pass', 'UAT sign-off received'], defectManagement: 'P0 blocks release' },
+      },
+    }
+    if (['enterprise', 'full_lifecycle'].includes(pmPackage)) {
+      base.brief.businessCase = { executiveSummary: 'Mock business case', problemStatement: 'Manual process costs time', proposedSolution: 'Build approval portal', strategicAlignment: ['Efficiency goal'], financialSummary: { investmentRequired: '$15,000', expectedSavings: '$50,000/year', paybackPeriod: '4 months', roi: '333%' }, benefits: [{ type: 'Quantitative', benefit: 'Time savings', value: '$50k/year' }], alternatives: [{ option: 'Continue with email', reason: 'No audit trail, errors' }], recommendation: 'Build the portal' }
+      base.brief.costBreakdown = { categories: [{ category: 'Development', items: [{ item: 'Engineering', description: 'Build time', unit: 'Hours', quantity: 80, unitCost: 125, total: 10000, notes: '' }] }], totalCapex: 10000, totalOpex: 5000, grandTotal: 15000, currency: 'USD', assumptions: ['Internal team rates'] }
+      base.brief.roiAnalysis = { timeframe: '24 months', currentCosts: [{ item: 'Manual process', annualCost: 50000, description: 'Staff time on email routing' }], projectedSavings: [{ item: 'Time savings', annualSaving: 40000, description: '80% reduction in routing time', confidence: 'High' }], implementationCost: 15000, ongoingCost: 5000, netBenefit: 55000, roi: '367%', paybackPeriod: '5 months', sensitivity: [{ scenario: 'Base Case', roi: '367%', payback: '5 months' }] }
+    }
+    const { supabase } = await import('./supabase.js')
+    await supabase.from('messages').insert({
+      conversation_id: conversationId,
+      role: 'assistant',
+      content: '',
+      message_type: 'confirmation',
+      metadata: { cardType: 'enterprise_brief', brief: base.brief, buildMode: 'product_manager', pmPackage, artifactIds: {} },
+    })
+    return base
+  }
+
+  return postJSON('/api/pm-brief',
+    { prompt, conversationId, pmPackage, clarificationAnswers, conversationHistory },
+    'generating the PM brief',
+    { timeoutMs: 180_000 },
+    aiModel)
+}
+
+// Get role package selection card or role-specific clarification questions
+export async function getRolePackageOrQuestions(prompt, conversationId, role, rolePackage = null, conversationHistory = [], aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 600))
+    if (!rolePackage) return { type: 'role_package', role, intro: `On it — I'll build a tailored ${role} workflow package for this.` }
+    const roleConfirmQ = {
+      type: 'role_confirm',
+      question: `Just to confirm — you selected **${role}** for this project. Does that sound right?`,
+      role: role,
+      roleLabel: role,
+    }
+    return {
+      type: 'clarification_v2',
+      intro: `Perfect, setting up the ${rolePackage} ${role} package. A few targeted questions:`,
+      buildMode: role,
+      rolePackage,
+      questions: [
+        roleConfirmQ,
+        { type: 'short_answer', question: 'Describe the current process this will replace (tools, manual steps, bottlenecks)', placeholder: 'e.g. email chains, spreadsheet, SharePoint form...' },
+        { type: 'multi_select', question: 'Which integrations are needed?', options: ['Microsoft 365 / Teams', 'Email notifications', 'Slack', 'Existing ERP/HRIS', 'No integrations yet'] },
+        { type: 'yes_no', question: 'Are there compliance or audit requirements?' },
+        { type: 'multiple_choice', question: 'How many people will use this system?', options: ['Under 20', '20-100', '100-500', '500+'] },
+      ],
+    }
+  }
+  const body = { prompt, conversationId, buildMode: role, conversationHistory }
+  if (rolePackage) body.rolePackage = rolePackage
+  return postJSON('/api/generate', body, 'preparing role questions', {}, aiModel)
+}
+
+// Generate a full role-specific brief (ops, it_admin, compliance, finance, hr)
+export async function generateRoleBrief(prompt, conversationId, role, rolePackage, clarificationAnswers = null, conversationHistory = [], aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 2000))
+    const mockBrief = {
+      intakeSummary: { understood: `Mock ${role} brief generated.`, currentProcess: 'Manual process via email and spreadsheets', primaryUsers: ['Primary User', 'Approver'], mainOutcome: 'Automated, auditable workflow' },
+      workflowMap: { trigger: 'User submits request', steps: [{ step: 'Submit', actor: 'Requester', action: 'Fill form', output: 'Request record', sla: null }, { step: 'Review', actor: 'Approver', action: 'Review and decide', output: 'Decision', sla: '24 hours' }], decisionPoints: ['Approved → proceed', 'Rejected → notify'], exceptionPaths: ['48h no action → escalate'] },
+      dataModel: { primaryEntity: 'Request', fields: [{ name: 'title', label: 'Title', type: 'text', required: true, options: [] }, { name: 'status', label: 'Status', type: 'select', required: true, options: ['Pending', 'Approved', 'Rejected'] }], statusFlow: ['Pending', 'Approved', 'Rejected'], auditFields: ['created_at', 'created_by'] },
+      uxRecommendation: { layoutType: 'split_panel_review', primaryScreens: [{ screen: 'Request Queue', purpose: 'Review requests', keyActions: ['Approve', 'Reject'] }], visualTheme: { mood: 'professional', primaryColor: '#4F46E5', colorName: 'indigo', rationale: 'Professional and trustworthy' } },
+      appSpec: { appTitle: `${role} Portal`, appType: 'workflow_automation', tagline: 'Streamline your workflow', purpose: 'Replaces manual process', features: ['Submit requests', 'Approve/reject', 'Notifications', 'Audit trail'], fields: [{ name: 'title', label: 'Title', type: 'text', required: true, options: [] }], statusFlow: ['Pending', 'Approved', 'Rejected'], primaryActionLabel: 'Submit Request' },
+    }
+    return { buildMode: role, rolePackage, brief: mockBrief, artifactIds: {} }
+  }
+  return postJSON('/api/role-brief',
+    { prompt, conversationId, role, rolePackage, clarificationAnswers, conversationHistory },
+    'generating the role brief',
+    { timeoutMs: 180_000 },
+    aiModel)
+}
+
+// Generate a Task-Mode brief (fullstack, automation, dashboard, knowledge, workflow)
+export async function generateTaskBrief(prompt, conversationId, buildMode, clarificationAnswers = null, conversationHistory = [], aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 1800))
+    return {
+      buildMode,
+      brief: {
+        intakeSummary: { understood: `Mock ${buildMode} brief generated.`, primaryUsers: ['Primary User'], mainOutcome: 'Mocked outcome' },
+        appSpec: { appTitle: `${buildMode} App`, appType: buildMode, tagline: 'Mock', purpose: 'Mock', workflowType: 'status_board', layoutType: 'command_center', colorTheme: { name: 'indigo', primary: '#4F46E5', light: '#EEF2FF', text: '#312E81' }, features: ['F1'], fields: [], statusFlow: ['Active'], primaryActionLabel: 'Submit', integrations: { sharepoint: { enabled: false }, outlook: { enabled: false }, teams: { enabled: false }, documentGeneration: { enabled: false } }, roles: [] },
+      },
+      artifactIds: {},
+    }
+  }
+  return postJSON('/api/task-brief',
+    { prompt, conversationId, buildMode, clarificationAnswers, conversationHistory },
+    'generating the task brief',
+    { timeoutMs: 180_000 },
+    aiModel)
+}
+
+// Request an on-demand PM document
+export async function requestPMDocument(conversationId, userRequest, projectContext = null, aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 1200))
+    return { artifact: { id: 'mock-doc-' + Date.now(), artifact_type: 'custom_document', title: userRequest, content: { generated: true, request: userRequest }, status: 'draft' }, docInfo: { type: 'custom', label: userRequest, category: 'custom' } }
+  }
+  return postJSON('/api/pm-document',
+    { conversationId, userRequest, projectContext },
+    'generating the document',
+    { timeoutMs: 120_000 },
+    aiModel)
+}
+
+export async function generateSpec(prompt, conversationId, clarificationAnswers = null, conversationHistory = [], aiModel = 'claude') {
   if (MOCK_MODE) {
     // Mock spec for testing
     await new Promise(r => setTimeout(r, 1500))
@@ -322,109 +497,56 @@ export async function generateSpec(prompt, conversationId, clarificationAnswers 
     return { spec }
   }
 
-  const response = await fetch(`${API_URL}/api/spec`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, clarificationAnswers, conversationHistory }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(err.error || 'Spec generation failed')
-  }
-  return response.json()
+  return postJSON('/api/spec',
+    { prompt, conversationId, clarificationAnswers, conversationHistory },
+    'generating the spec',
+    { timeoutMs: 90_000 },
+    aiModel)
 }
 
-export async function buildApp(prompt, conversationId, spec, clarificationAnswers = null) {
+export async function buildApp(prompt, conversationId, spec, clarificationAnswers = null, aiModel = 'claude') {
   if (MOCK_MODE) return mockGenerate(prompt, conversationId)
-
-  const response = await fetch(`${API_URL}/api/build`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, conversationId, spec, clarificationAnswers }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Request failed' }))
-    throw new Error(err.error || 'Build failed')
-  }
-  return response.json()
+  return postJSON('/api/build',
+    { prompt, conversationId, spec, clarificationAnswers },
+    'building your app',
+    { timeoutMs: 120_000 },
+    aiModel)
 }
 
-export async function editApp(appId, editRequest, conversationId) {
-  const response = await fetch(`${API_URL}/api/edit`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ appId, editRequest, conversationId }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Edit failed' }))
-    throw new Error(err.error || 'Edit failed')
-  }
-  return response.json()
+export async function editApp(appId, editRequest, conversationId, aiModel = 'claude') {
+  return postJSON('/api/edit',
+    { appId, editRequest, conversationId },
+    'updating your app',
+    { timeoutMs: 90_000 },
+    aiModel)
 }
 
 export async function submitForm(appId, formData) {
   if (MOCK_MODE) return mockSubmit(appId, formData)
-
-  const response = await fetch(`${API_URL}/api/submit`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ appId, formData }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Submission failed' }))
-    throw new Error(err.error || 'Submission failed')
-  }
-  return response.json()
+  return postJSON('/api/submit', { appId, formData }, 'submitting your form')
 }
 
 export async function updateStatus(submissionId, newStatus, appId) {
   if (MOCK_MODE) return mockUpdateStatus(submissionId, newStatus, appId)
-
-  const response = await fetch(`${API_URL}/api/update-status`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ submissionId, newStatus, appId }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Update failed' }))
-    throw new Error(err.error || 'Update failed')
-  }
-  return response.json()
+  return postJSON('/api/update-status',
+    { submissionId, newStatus, appId },
+    'updating status')
 }
 
 
 // ─── Artifact API helpers ──────────────────────────────────────────────────────
 export async function listArtifacts(conversationId) {
-  const response = await fetch(`${API_URL}/api/artifacts?conversationId=${conversationId}`)
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Failed to load artifacts' }))
-    throw new Error(err.error || 'Failed to load artifacts')
-  }
-  return response.json()
+  return getJSON(`/api/artifacts?conversationId=${conversationId}`, 'loading artifacts')
 }
 
 export async function updateArtifact(artifactId, updates) {
-  const response = await fetch(`${API_URL}/api/artifacts/${artifactId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Update failed' }))
-    throw new Error(err.error || 'Update failed')
-  }
-  return response.json()
+  return patchJSON(`/api/artifacts/${artifactId}`, updates, 'updating artifact')
 }
 
-export async function aiEditArtifact(artifactId, instruction) {
-  const response = await fetch(`${API_URL}/api/artifacts/ai-edit`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ artifactId, instruction }),
-  })
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'AI edit failed' }))
-    throw new Error(err.error || 'AI edit failed')
-  }
-  return response.json()
+export async function aiEditArtifact(artifactId, instruction, aiModel = 'claude') {
+  return postJSON('/api/artifacts/ai-edit',
+    { artifactId, instruction },
+    'applying AI edit',
+    { timeoutMs: 90_000 },
+    aiModel)
 }

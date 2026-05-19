@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import SystemStatus from './SystemStatus'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -68,7 +69,7 @@ function EditableTitle({ value, placeholder, onSave, dim }) {
   )
 }
 
-export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel, onMenuToggle, isMobile }) {
+export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel, onMenuToggle, isMobile, currentModel, isRunning, phaseLabel, lastError, lastLatencyMs }) {
   const [toast, setToast] = useState('')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2000) }
@@ -152,6 +153,19 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
         {/* Hint when no app yet — hide on mobile */}
         {!app && conversation && !isMobile && (
           <span style={{ fontSize: 11, color: '#2A2A2A', marginLeft: 4 }}>double-click to rename</span>
+        )}
+
+        {/* System status — always visible, command-center texture */}
+        {!isMobile && (
+          <div style={{ marginLeft: app ? 8 : 'auto' }}>
+            <SystemStatus
+              currentModel={currentModel}
+              isRunning={isRunning}
+              phaseLabel={phaseLabel}
+              lastError={lastError}
+              lastLatencyMs={lastLatencyMs}
+            />
+          </div>
         )}
 
         {/* Artifacts toggle — shown when there are artifacts */}

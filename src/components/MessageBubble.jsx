@@ -1,11 +1,12 @@
 import React, { useState } from 'react'
 import GeneratedAppCard from './GeneratedAppCard'
-import ClarificationCard from './ClarificationCard'
 import ClarificationCardV2 from './ClarificationCardV2'
-import BuildModeCard from './BuildModeCard'
 import EnterpriseStagesCard from './EnterpriseStagesCard'
 import SpecCard from './SpecCard'
 import BuildingIndicator from './BuildingIndicator'
+import BuildModeCard from './BuildModeCard'
+import PMPackageCard from './PMPackageCard'
+import RolePackageCard from './RolePackageCard'
 
 function AIIcon() {
   return (
@@ -26,7 +27,6 @@ function AIIcon() {
   )
 }
 
-// ── Copy button ───────────────────────────────────────────────────────────────
 function CopyBtn({ text }) {
   const [copied, setCopied] = useState(false)
   function copy(e) {
@@ -68,7 +68,6 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
   const isUser = message.role === 'user'
   const isError = message.isError
   const meta = message.metadata || {}
-  // cardType in metadata is the canonical type (DB stores 'confirmation'/'clarification' to satisfy constraint)
   const cardType = meta.cardType || message.message_type
 
   // ── User bubble ──────────────────────────────────────────────────────────────
@@ -97,7 +96,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
     )
   }
 
-  // ── Build mode selection card — always shown as card ─────────────────────────
+  // ── Build mode selection card ────────────────────────────────────────────────
   if (cardType === 'build_mode') {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -105,29 +104,42 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
         <BuildModeCard
           recommendedMode={meta.recommendedMode}
           complexityReason={meta.complexityReason}
-          onSelect={message.onModeSelect}   // null = already selected, card shows as read-only
-          selected={!message.onModeSelect ? (meta.selectedMode || meta.recommendedMode) : null}
+          onSelect={message.onModeSelect}
+          selected={meta.selectedMode}
         />
       </div>
     )
   }
 
-  // ── Clarification v1 — always shown as interactive card ───────────────────────
-  if (cardType === 'clarification' && meta.questions) {
+  // ── PM package selection card ────────────────────────────────────────────────
+  if (cardType === 'pm_package') {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
-        <ClarificationCard
-          questions={meta.questions}
-          onSubmit={message.onClarify}
-          onRestart={message.onRestart}
-          answered={!message.onClarify}    // shows "change answers" mode
+        <PMPackageCard
+          intro={meta.intro}
+          onSelect={message.onPMPackageSelect}
+          selected={meta.selectedPackage}
         />
       </div>
     )
   }
 
-  // ── Clarification v2 — always shown as interactive card ──────────────────────
+  // ── Role selection card ──────────────────────────────────────────────────────
+  if (cardType === 'role_package') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <AIIcon />
+        <RolePackageCard
+          intro={meta.intro}
+          onSelect={message.onRoleSelect}
+          selected={meta.selectedRole}
+        />
+      </div>
+    )
+  }
+
+  // ── Clarification v2 — primary intake card ───────────────────────────────────
   if (cardType === 'clarification_v2' && meta.questions) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -137,6 +149,7 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
           buildMode={meta.buildMode}
           onSubmit={message.onClarifyV2}
           onRestart={message.onRestart}
+          onChangeRole={message.onChangeRole}
           answered={!message.onClarifyV2}
         />
       </div>
@@ -151,10 +164,12 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
         <EnterpriseStagesCard
           brief={meta.brief}
           buildMode={meta.buildMode}
+          pmPackage={meta.pmPackage}
           onBuild={message.onBuild}
           onOpenArtifact={message.onOpenArtifact}
           artifactIds={meta.artifactIds}
           artifacts={message.artifacts || []}
+          conversationId={message.conversation_id}
         />
       </div>
     )
@@ -168,6 +183,21 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
         <SpecCard spec={spec} onBuild={message.onBuild} onSpecChange={message.onSpecChange} />
+      </div>
+    )
+  }
+
+  // ── Legacy clarification (v1) ────────────────────────────────────────────────
+  if (cardType === 'clarification') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <AIIcon />
+        <div style={{
+          background: '#141414', border: '0.5px solid #222', borderRadius: 8,
+          padding: '8px 12px', color: '#525252', fontSize: 11, fontStyle: 'italic',
+        }}>
+          Clarification — archived step from an earlier version of this conversation
+        </div>
       </div>
     )
   }

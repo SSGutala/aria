@@ -85,6 +85,26 @@ app.post('/api/brief', async (req, res) => {
   return handler(req, res)
 })
 
+app.post('/api/pm-brief', async (req, res) => {
+  const { default: h } = await import('./api/pm-brief.js')
+  return h(req, res)
+})
+
+app.post('/api/pm-document', async (req, res) => {
+  const { default: h } = await import('./api/pm-document.js')
+  return h(req, res)
+})
+
+app.post('/api/role-brief', async (req, res) => {
+  const { default: h } = await import('./api/role-brief.js')
+  return h(req, res)
+})
+
+app.post('/api/task-brief', async (req, res) => {
+  const { default: h } = await import('./api/task-brief.js')
+  return h(req, res)
+})
+
 // ─── Artifacts ────────────────────────────────────────────────────────────────
 app.get('/api/artifacts', async (req, res) => {
   const handler = await loadHandler('artifacts')

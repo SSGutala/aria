@@ -123,13 +123,15 @@ const TYPE_LABEL = {
   multi_select: 'Select all that apply',
   yes_no: 'Yes / No',
   short_answer: 'Your answer',
+  role_confirm: 'Confirm role',
 }
 
-export default function ClarificationCardV2({ questions, buildMode, onSubmit, onRestart, answered: isAnswered }) {
+export default function ClarificationCardV2({ questions, buildMode, onSubmit, onRestart, onChangeRole, answered: isAnswered }) {
   const [answers, setAnswers] = useState({})
   const [extra, setExtra] = useState('')
   // null = use smart default (collapse when answered); true/false = user's explicit toggle
   const [userCollapse, setUserCollapse] = useState(null)
+  React.useEffect(() => { if (isAnswered) setUserCollapse(null) }, [isAnswered])
   const collapsed = userCollapse !== null ? userCollapse : isAnswered
 
   function setAnswer(idx, val) {
@@ -137,7 +139,9 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
   }
 
   function answeredCount() {
-    return Object.values(answers).filter(v => {
+    return questions.filter((q, i) => {
+      if (q.type === 'role_confirm') return true // always counts as answered once visible
+      const v = answers[i]
       if (Array.isArray(v)) return v.length > 0
       return v !== null && v !== undefined && v !== ''
     }).length
@@ -226,6 +230,36 @@ export default function ClarificationCardV2({ questions, buildMode, onSubmit, on
                 </div>
 
                 <div style={{ paddingLeft: 26 }}>
+                  {q.type === 'role_confirm' && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => setAnswer(i, 'confirmed')}
+                        style={{
+                          padding: '6px 14px', borderRadius: 7, fontSize: 12, cursor: 'pointer',
+                          fontFamily: 'inherit', border: '0.5px solid',
+                          background: answers[i] === 'confirmed' ? '#0D1F16' : '#1A1A1A',
+                          color: answers[i] === 'confirmed' ? '#34D399' : '#A3A3A3',
+                          borderColor: answers[i] === 'confirmed' ? '#34D39966' : '#2E2E2E',
+                        }}
+                      >
+                        ✓ Yes, {q.roleLabel} is correct
+                      </button>
+                      {!isAnswered && onChangeRole && (
+                        <button
+                          onClick={onChangeRole}
+                          style={{
+                            padding: '6px 14px', borderRadius: 7, fontSize: 12, cursor: 'pointer',
+                            fontFamily: 'inherit', border: '0.5px solid #2E2E2E',
+                            background: '#1A1A1A', color: '#737373',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.color = '#F87171'; e.currentTarget.style.borderColor = '#F8717155' }}
+                          onMouseLeave={e => { e.currentTarget.style.color = '#737373'; e.currentTarget.style.borderColor = '#2E2E2E' }}
+                        >
+                          ← Pick a different role
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {q.type === 'multiple_choice' && (
                     <MultipleChoice
                       question={q.question}

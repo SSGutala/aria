@@ -14,7 +14,6 @@ const MODES = [
     forWho: 'Best for: Prototypes, simple workflows, solo teams, urgent needs',
     steps: ['1-2 quick questions', 'App spec', 'Build'],
     accent: '#525252',
-    accentLight: '#1A1A1A',
   },
   {
     id: 'guided',
@@ -32,7 +31,6 @@ const MODES = [
     forWho: 'Best for: Multi-role workflows, approvals, automations, integrations',
     steps: ['Discovery questions', 'Workflow brief', 'Data + automation model', 'UX plan', 'App spec', 'Build'],
     accent: '#C4C4C4',
-    accentLight: '#1C1C1C',
     recommended: true,
   },
   {
@@ -49,14 +47,44 @@ const MODES = [
     forWho: 'Best for: Compliance environments, multi-stakeholder projects, sign-off required',
     steps: ['Discovery questions', 'PRD + workflow map', 'Technical architecture', 'Stakeholder approval', 'Build'],
     accent: '#6B7280',
-    accentLight: '#161616',
+  },
+  {
+    id: 'product_manager',
+    label: 'PM Package',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M2 4h12M2 8h8M2 12h5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+        <circle cx="13" cy="11.5" r="2.5" stroke="currentColor" strokeWidth="1.3"/>
+      </svg>
+    ),
+    tagline: 'Full PM document stack',
+    description: 'Generates PRD, user stories, business case, workflow maps, data model, and QA plan. Enterprise-grade documentation.',
+    forWho: 'Best for: Product managers, enterprise initiatives, stakeholder presentations',
+    steps: ['Package selection', 'Discovery questions', 'Full doc stack', 'Build'],
+    accent: '#818CF8',
+  },
+  {
+    id: 'role',
+    label: 'Role-Specific',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="5" r="3" stroke="currentColor" strokeWidth="1.3"/>
+        <path d="M2 14c0-3.314 2.686-5 6-5s6 1.686 6 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+      </svg>
+    ),
+    tagline: 'Tailored for your function',
+    description: 'Generates role-specific docs for Ops, Finance, HR, Compliance, or IT. Each role gets a domain-tailored document set.',
+    forWho: 'Best for: Operations, Finance, HR, Compliance, IT Admin teams',
+    steps: ['Role selection', 'Discovery questions', 'Role-specific docs', 'Build'],
+    accent: '#34D399',
   },
 ]
 
-export default function BuildModeCard({ recommendedMode, complexityReason, onSelect, selected }) {
+export default function BuildModeCard({ recommendedMode, complexityReason, onSelect, selected, defaultMode }) {
   const [hovered, setHovered] = useState(null)
   const isReadOnly = !onSelect
   const activeMode = selected || (isReadOnly ? recommendedMode : null)
+  const effectiveRecommended = recommendedMode || defaultMode
   const isAnswered = isReadOnly && !!activeMode
 
   const [userCollapse, setUserCollapse] = useState(null)
@@ -71,7 +99,7 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
       overflow: 'hidden',
       maxWidth: '92%',
     }}>
-      {/* Header — always visible, clickable to collapse */}
+      {/* Header */}
       <div
         onClick={() => setUserCollapse(!collapsed)}
         style={{ padding: '14px 18px 12px', borderBottom: collapsed ? 'none' : '0.5px solid #1E1E1E', cursor: 'pointer' }}
@@ -79,7 +107,7 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#D4D4D4' }}>
-              How would you like to build this?
+              How would you like to approach this?
             </p>
             {collapsed && activeModeData ? (
               <span style={{ fontSize: 11, color: '#525252' }}>
@@ -87,9 +115,7 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
                 {isReadOnly && <span style={{ color: '#34D399', marginLeft: 6, fontSize: 10 }}>Selected</span>}
               </span>
             ) : complexityReason ? (
-              <p style={{ margin: 0, fontSize: 11, color: '#525252', lineHeight: 1.5 }}>
-                {complexityReason}
-              </p>
+              <p style={{ margin: 0, fontSize: 11, color: '#525252', lineHeight: 1.5 }}>{complexityReason}</p>
             ) : null}
           </div>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ color: '#525252', transition: 'transform 0.2s', transform: collapsed ? 'rotate(-90deg)' : 'none', flexShrink: 0, marginLeft: 10 }}>
@@ -98,11 +124,10 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
         </div>
       </div>
 
-      {/* Mode options — hidden when collapsed */}
       {!collapsed && (
         <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {MODES.map(mode => {
-            const isRecommended = mode.id === recommendedMode
+            const isRecommended = mode.id === effectiveRecommended
             const isHovered = hovered === mode.id
 
             return (
@@ -120,34 +145,23 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
                   opacity: isReadOnly && activeMode && activeMode !== mode.id ? 0.4 : 1,
                 }}
               >
-                {/* Recommended badge */}
                 {isRecommended && (
                   <div style={{
-                    position: 'absolute',
-                    top: 10,
-                    right: 12,
-                    background: '#1A2A1A',
-                    color: '#34D399',
+                    position: 'absolute', top: 10, right: 12,
+                    background: '#1A2A1A', color: '#34D399',
                     border: '0.5px solid #34D39933',
-                    borderRadius: 4,
-                    fontSize: 9,
-                    fontWeight: 700,
-                    padding: '2px 6px',
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
+                    borderRadius: 4, fontSize: 9, fontWeight: 700,
+                    padding: '2px 6px', letterSpacing: '0.04em', textTransform: 'uppercase',
                   }}>Recommended</div>
                 )}
 
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  {/* Icon */}
                   <div style={{
                     width: 30, height: 30, borderRadius: 7,
-                    background: '#1E1E1E',
-                    border: '0.5px solid #2E2E2E',
+                    background: '#1E1E1E', border: '0.5px solid #2E2E2E',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: isRecommended ? '#D4D4D4' : '#525252',
-                    flexShrink: 0,
-                    transition: 'color 0.12s',
+                    color: isRecommended ? '#D4D4D4' : (mode.accent || '#525252'),
+                    flexShrink: 0, transition: 'color 0.12s',
                   }}>
                     {mode.icon}
                   </div>
@@ -163,19 +177,13 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
                     <p style={{ margin: '0 0 8px', fontSize: 11, color: '#525252', lineHeight: 1.55 }}>
                       {mode.description}
                     </p>
-
-                    {/* Steps flow */}
                     <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
                       {mode.steps.map((step, i) => (
                         <React.Fragment key={i}>
                           <span style={{
-                            fontSize: 9,
-                            color: '#3D3D3D',
-                            background: '#1A1A1A',
-                            border: '0.5px solid #222',
-                            borderRadius: 3,
-                            padding: '2px 6px',
-                            whiteSpace: 'nowrap',
+                            fontSize: 9, color: '#3D3D3D', background: '#1A1A1A',
+                            border: '0.5px solid #222', borderRadius: 3,
+                            padding: '2px 6px', whiteSpace: 'nowrap',
                           }}>{step}</span>
                           {i < mode.steps.length - 1 && (
                             <svg width="8" height="8" viewBox="0 0 8 8" fill="none">
@@ -185,7 +193,6 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
                         </React.Fragment>
                       ))}
                     </div>
-
                     <p style={{ margin: '8px 0 0', fontSize: 10, color: '#3D3D3D', fontStyle: 'italic' }}>
                       {mode.forWho}
                     </p>

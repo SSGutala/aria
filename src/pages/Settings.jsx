@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { API_URL } from '../lib/api'
+import { useProfile, deriveAccountType, getDefaultBuildMode } from '../hooks/useProfile'
 
 const API = API_URL
 
@@ -13,6 +14,12 @@ export default function Settings() {
   const [loadingStatus, setLoadingStatus] = useState(true)
   const [disconnecting, setDisconnecting] = useState(false)
   const [toast, setToast] = useState(null)
+  const { profile, saveProfile } = useProfile()
+  const [jobTitle, setJobTitle] = useState('')
+  const [workCategory, setWorkCategory] = useState('')
+  const [useCases, setUseCases] = useState([])
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -32,6 +39,22 @@ export default function Settings() {
       showToast(msg, 'error')
     }
   }, [searchParams, user])
+
+  useEffect(() => {
+    if (profile) {
+      setJobTitle(profile.job_title || '')
+      setWorkCategory(profile.work_category || '')
+      setUseCases(profile.use_cases || [])
+    }
+  }, [profile])
+
+  async function handleSaveProfile() {
+    setSavingProfile(true)
+    await saveProfile({ job_title: jobTitle, work_category: workCategory, use_cases: useCases })
+    setSavingProfile(false)
+    setProfileSaved(true)
+    setTimeout(() => setProfileSaved(false), 2000)
+  }
 
   async function loadM365Status(userId) {
     setLoadingStatus(true)
@@ -98,11 +121,137 @@ export default function Settings() {
         </button>
         <span style={{ color: '#2A2A2A' }}>·</span>
         <span style={{ fontSize: 14, fontWeight: 600, color: '#E5E5E5' }}>Settings</span>
+        <div style={{ marginLeft: 'auto' }}>
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut()
+              navigate('/login', { replace: true })
+            }}
+            style={{
+              background: 'transparent', border: '0.5px solid #2A2A2A',
+              borderRadius: 7, padding: '6px 14px',
+              color: '#525252', fontSize: 12, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'inherit',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#F87171'; e.currentTarget.style.color = '#F87171' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A2A'; e.currentTarget.style.color = '#525252' }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+              <path d="M5 2H2.5A1.5 1.5 0 001 3.5v6A1.5 1.5 0 002.5 11H5M9 9l3-3-3-3M12 6.5H5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Sign out
+          </button>
+        </div>
       </div>
 
       <div style={{ maxWidth: 680, margin: '40px auto', padding: '0 24px' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F5F5F5', marginBottom: 6, letterSpacing: '-0.4px' }}>Integrations</h1>
         <p style={{ fontSize: 13, color: '#525252', margin: '0 0 32px' }}>Connect external services so Aria-generated apps can write to SharePoint, send via Outlook, and post to Teams.</p>
+
+        {/* Profile section */}
+        <div style={{ background: '#141414', border: '0.5px solid #1E1E1E', borderRadius: 12, padding: 20, marginBottom: 16 }}>
+          <h3 style={{ color: '#D4D4D4', fontSize: 14, fontWeight: 600, margin: '0 0 16px' }}>Your Profile</h3>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Job Title</label>
+              <input
+                type="text"
+                value={jobTitle}
+                onChange={e => setJobTitle(e.target.value)}
+                placeholder="e.g. Product Manager"
+                style={{ width: '100%', background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 7, color: '#F5F5F5', padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Work Category</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {[
+                  { id: 'engineering', label: 'Engineering & Dev', icon: '⚙️' },
+                  { id: 'operations', label: 'Operations', icon: '🔄' },
+                  { id: 'product', label: 'Product & Strategy', icon: '📋' },
+                  { id: 'finance', label: 'Finance & Legal', icon: '💰' },
+                  { id: 'hr', label: 'HR & People', icon: '👥' },
+                  { id: 'leadership', label: 'Leadership', icon: '🎯' },
+                ].map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setWorkCategory(cat.id)}
+                    style={{
+                      background: workCategory === cat.id ? '#1E1E1E' : '#1A1A1A',
+                      border: `0.5px solid ${workCategory === cat.id ? '#3D3D3D' : '#222'}`,
+                      borderRadius: 6, padding: '5px 10px',
+                      fontSize: 11, color: workCategory === cat.id ? '#D4D4D4' : '#525252',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit',
+                    }}
+                  >
+                    <span>{cat.icon}</span>{cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Use Cases</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {[
+                  { id: 'apps', label: '🏗️ Internal tools & apps' },
+                  { id: 'automation', label: '⚙️ Workflow automations' },
+                  { id: 'docs', label: '📄 Product documentation' },
+                  { id: 'dashboards', label: '📊 Dashboards & reporting' },
+                  { id: 'all', label: '🚀 All of the above' },
+                ].map(uc => {
+                  const isSelected = useCases.includes(uc.id)
+                  return (
+                    <button
+                      key={uc.id}
+                      onClick={() => {
+                        if (uc.id === 'all') { setUseCases(prev => prev.includes('all') ? [] : ['all']); return }
+                        setUseCases(prev => {
+                          const next = prev.filter(u => u !== 'all')
+                          return next.includes(uc.id) ? next.filter(u => u !== uc.id) : [...next, uc.id]
+                        })
+                      }}
+                      style={{
+                        background: isSelected ? '#1A1A1A' : '#141414',
+                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#1E1E1E'}`,
+                        borderRadius: 7, padding: '8px 12px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        cursor: 'pointer', fontSize: 12,
+                        color: isSelected ? '#D4D4D4' : '#525252', fontFamily: 'inherit', textAlign: 'left',
+                      }}
+                    >
+                      {uc.label}
+                      {isSelected && <span style={{ color: '#34D399', fontSize: 11 }}>✓</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {profile && (
+              <div style={{ fontSize: 11, color: '#3D3D3D', padding: '6px 10px', background: '#111', borderRadius: 6, border: '0.5px solid #1A1A1A' }}>
+                Account type: <span style={{ color: '#737373', textTransform: 'capitalize' }}>{deriveAccountType(useCases).replace('_', ' ')}</span>
+              </div>
+            )}
+
+            <button
+              onClick={handleSaveProfile}
+              disabled={savingProfile}
+              style={{
+                background: profileSaved ? '#0D2A1A' : '#1C1C1C',
+                color: profileSaved ? '#34D399' : '#A3A3A3',
+                border: `0.5px solid ${profileSaved ? '#34D39933' : '#2A2A2A'}`,
+                borderRadius: 7, padding: '8px 16px',
+                fontSize: 12, cursor: savingProfile ? 'default' : 'pointer',
+                fontFamily: 'inherit', alignSelf: 'flex-start',
+              }}
+            >
+              {profileSaved ? '✓ Saved' : savingProfile ? 'Saving…' : 'Save profile'}
+            </button>
+          </div>
+        </div>
 
         {/* M365 Integration Card */}
         <div style={{ background: '#161616', border: '1px solid #1E1E1E', borderRadius: 14, overflow: 'hidden', marginBottom: 16 }}>

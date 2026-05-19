@@ -1,5 +1,17 @@
-import { createMessage } from './ai-client.js'
+/**
+ * /api/artifacts/ai-edit — Apply an AI-driven edit to a structured artifact.
+ *
+ * The user has an artifact and an instruction like "add an audit trail section"
+ * or "make the compliance risks more detailed". This handler reads the current
+ * artifact content, asks the model to return an updated content object,
+ * supersedes the old artifact, and inserts the new version.
+ *
+ * Refactored 2026-05 to use orchestrator + prompts registry.
+ */
+
 import { createClient } from '@supabase/supabase-js'
+import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
+import { ARTIFACT_EDIT } from './lib/prompts.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -9,40 +21,37 @@ const supabase = createClient(
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { artifactId, instruction } = req.body
-  if (!artifactId || !instruction) return res.status(400).json({ error: 'Missing artifactId or instruction' })
+  const { artifactId, instruction, aiModel } = req.body
+  if (!artifactId || !instruction) {
+    return res.status(400).json({ error: 'Missing artifactId or instruction' })
+  }
 
   // Fetch current artifact
   const { data: artifact, error: fetchErr } = await supabase
     .from('artifacts').select('*').eq('id', artifactId).single()
   if (fetchErr || !artifact) return res.status(404).json({ error: 'Artifact not found' })
 
-  try {
-    const msg = await createMessage({
-      max_tokens: 5000,
-      smart: true,
-      system: `You are an expert enterprise product architect editing a structured JSON artifact.
-The artifact type is "${artifact.artifact_type}" and its title is "${artifact.title}".
-Your job is to apply the user's requested change to the artifact's content and return only the updated JSON content object.
-CRITICAL: Return ONLY valid JSON, no markdown, no explanation. Start with { and end with }.
-Preserve all existing fields and structure. Only change what the user explicitly asked to change.`,
-      messages: [{
-        role: 'user',
-        content: `Current artifact content:\n${JSON.stringify(artifact.content, null, 2)}\n\nInstruction: ${instruction}\n\nReturn the updated content JSON only.`,
-      }],
-    })
+  const orch = createOrchestrator({
+    workflow: 'artifact_edit',
+    aiModel,
+    traceContext: {
+      artifactId,
+      artifactType: artifact.artifact_type,
+      currentVersion: artifact.version,
+      instructionLength: instruction.length,
+    },
+  })
 
-    const responseText = msg.content[0].text
-    let newContent
-    try {
-      const stripped = responseText.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim()
-      newContent = JSON.parse(stripped)
-    } catch {
-      // Try to extract JSON
-      const match = responseText.match(/\{[\s\S]*\}/)
-      if (match) newContent = JSON.parse(match[0])
-      else throw new Error('AI returned invalid JSON')
-    }
+  try {
+    // Compose system: shared ARTIFACT_EDIT contract + per-artifact context
+    const systemPrompt = `${ARTIFACT_EDIT}\n\nArtifact type: "${artifact.artifact_type}"\nArtifact title: "${artifact.title}"`
+
+    const newContent = await orch.json('apply_edit', {
+      tier: 'smart',
+      maxTokens: 5000,
+      system: systemPrompt,
+      prompt: `Current artifact content:\n${JSON.stringify(artifact.content, null, 2)}\n\nInstruction: ${instruction}\n\nReturn the updated content JSON only.`,
+    })
 
     // Mark old as superseded
     await supabase.from('artifacts').update({ status: 'superseded' }).eq('id', artifactId)
@@ -65,9 +74,9 @@ Preserve all existing fields and structure. Only change what the user explicitly
 
     if (insertErr) throw new Error(insertErr.message)
 
-    return res.json({ artifact: newArtifact, supersededId: artifactId })
+    orch.end({ newVersion: newArtifact.version, supersededId: artifactId })
+    return res.json({ artifact: newArtifact, supersededId: artifactId, traceId: orch.traceId })
   } catch (err) {
-    console.error('AI edit error:', err)
-    return res.status(500).json({ error: err.message || 'AI edit failed' })
+    return respondWithError(res, err, orch)
   }
 }

@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase, MOCK_MODE } from '../lib/supabase'
-import { analyzeBuildMode, getModeQuestions, generateSpec, generateBrief, buildApp, editApp } from '../lib/claude'
+import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
 import { useBreakpoint } from '../hooks/useBreakpoint'
+import { useToast } from '../contexts/ToastContext'
+import { logError } from '../utils/errorHandler'
+import { useProfile, getDefaultBuildMode } from '../hooks/useProfile'
 
 function toHistoryMessages(msgs) {
   return msgs
@@ -22,6 +25,22 @@ export default function Workspace() {
   const { convId } = useParams()
   const navigate = useNavigate()
   const { isMobile, isSmall } = useBreakpoint()
+  const toast = useToast()
+
+  // Surface API failures with a typed, user-friendly toast. Logs full error
+  // context for telemetry while keeping the UI free of stack traces.
+  const handleApiError = useCallback((err, { action, onRetry } = {}) => {
+    logError(err, { action })
+    const userMessage = err?.userMessage || err?.message || 'Something went wrong.'
+    const retryable = err?.retryable ?? false
+    // Update command-bar fault state
+    opStartedAtRef.current = null
+    setLastError(action ? `${action}: ${userMessage}` : userMessage)
+    toast.error(userMessage, {
+      title: action ? `Couldn't ${action}` : null,
+      onRetry: retryable && onRetry ? onRetry : null,
+    })
+  }, [toast])
 
   const [user, setUser] = useState(null)
   const [conversations, setConversations] = useState([])
@@ -33,6 +52,12 @@ export default function Workspace() {
   const [buildingLabel, setBuildingLabel] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
+  const [currentModel, setCurrentModel] = useState(import.meta.env.VITE_DEFAULT_AI_MODEL || 'groq')  // 'claude' | 'groq' | 'ollama'
+  const [lastLatencyMs, setLastLatencyMs] = useState(null)
+  const [lastError, setLastError] = useState(null)
+  const opStartedAtRef = useRef(null)
+  const { profile } = useProfile()
+  const defaultBuildMode = profile ? getDefaultBuildMode(profile.account_type, profile.work_category) : null
 
   // ─── Artifact system ──────────────────────────────────────────────────────────
   const [artifacts, setArtifacts] = useState([])
@@ -41,14 +66,17 @@ export default function Workspace() {
 
   // ─── Pending state refs across the multi-stage flow ──────────────────────────
   const pendingPromptRef       = useRef(null)
-  const pendingBuildModeRef    = useRef(null)   // 'quick' | 'guided' | 'docs'
-  const pendingBuildModeMsgId  = useRef(null)
   const pendingClarMsgIdRef    = useRef(null)
   const pendingClarV2MsgIdRef  = useRef(null)
   const pendingSpecMsgIdRef    = useRef(null)
   const pendingSpecRef         = useRef(null)
   const pendingClarAnswersRef  = useRef(null)
   const pendingBriefMsgIdRef   = useRef(null)
+  const pendingBuildModeMsgId  = useRef(null)
+  const pendingPMPackageMsgId  = useRef(null)
+  const pendingPMPackageRef    = useRef(null)  // stores selected pmPackage ('lean'|'enterprise'|'full_lifecycle')
+  const pendingRoleMsgId       = useRef(null)
+  const pendingRoleRef         = useRef(null)  // stores selected role ('operations'|'finance'|etc)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -56,6 +84,18 @@ export default function Workspace() {
       if (localStorage.getItem('aria_new_user')) setShowOnboarding(true)
     })
   }, [])
+
+  // Drive command-bar timing from typing state. When an AI op starts, record
+  // start time + clear last error. When it ends (without error), record latency.
+  useEffect(() => {
+    if (isTyping) {
+      opStartedAtRef.current = Date.now()
+      setLastError(null)
+    } else if (opStartedAtRef.current) {
+      setLastLatencyMs(Date.now() - opStartedAtRef.current)
+      opStartedAtRef.current = null
+    }
+  }, [isTyping])
 
   const loadConversations = useCallback(async () => {
     if (!user) return
@@ -88,18 +128,12 @@ export default function Workspace() {
         const msgs = data || []
         setMessages(msgs)
         // Restore pending refs so interactive handlers re-attach on refresh
-        // Only restore if there are no later messages that would have consumed the card
-        // (i.e. the card is still the "last actionable" item of its type)
-        // cardType helper — DB stores 'confirmation'/'clarification' but real type is in metadata.cardType
         const ct = (m) => m.metadata?.cardType || m.message_type
         const lastOf = (type) => [...msgs].reverse().find(m => ct(m) === type)
         const hasAppCard = msgs.some(m => m.message_type === 'app_card')
         if (!hasAppCard) {
-          const bm = lastOf('build_mode')
-          if (bm && bm.metadata?.selectedMode == null) pendingBuildModeMsgId.current = bm.id
           const clarV2 = lastOf('clarification_v2')
           const clar = lastOf('clarification')
-          // Only restore if no brief/spec came after it (meaning it hasn't been answered)
           const lastBrief = lastOf('enterprise_brief')
           const lastSpec = lastOf('spec')
           if (clarV2 && (!lastBrief || clarV2.created_at > (lastBrief?.created_at || ''))) {
@@ -116,11 +150,8 @@ export default function Workspace() {
             pendingSpecMsgIdRef.current = lastSpec.id
             pendingSpecRef.current = lastSpec.metadata?.spec || null
           }
-          // Restore prompt from last user message
           const lastUser = [...msgs].reverse().find(m => m.role === 'user')
           if (lastUser) pendingPromptRef.current = lastUser.content
-          // Restore build mode
-          if (bm?.metadata?.selectedMode) pendingBuildModeRef.current = bm.metadata.selectedMode
         }
       })
     supabase.from('generated_apps').select('*').eq('conversation_id', convId).single()
@@ -129,8 +160,6 @@ export default function Workspace() {
     loadArtifacts(convId)
     // Reset all pending state on conv change
     pendingPromptRef.current      = null
-    pendingBuildModeRef.current   = null
-    pendingBuildModeMsgId.current = null
     pendingClarMsgIdRef.current   = null
     pendingClarV2MsgIdRef.current = null
     pendingSpecMsgIdRef.current   = null
@@ -206,7 +235,7 @@ export default function Workspace() {
     }, 1800)
 
     try {
-      const result = await buildApp(prompt, convId, spec, clarAnswers)
+      const result = await buildApp(prompt, convId, spec, clarAnswers, currentModel)
       clearInterval(labelInterval)
       setIsTyping(false)
       setBuildingLabel(null)
@@ -224,28 +253,17 @@ export default function Workspace() {
       loadApps()
       loadConversations()
     } catch (err) {
-      clearInterval(labelInterval)
-      setIsTyping(false)
-      setBuildingLabel(null)
-
-      const isRetryable = err.message && (
-        err.message.includes('constraint') || err.message.includes('violates') ||
-        err.message.includes('500') || err.message.includes('fetch')
-      )
-      if (isRetryable && !handleBuildApp._retried) {
-        handleBuildApp._retried = true
-        addMsg('Ran into a snag — retrying automatically...')
-        setTimeout(() => { handleBuildApp._retried = false; handleBuildApp() }, 1500)
-        return
-      }
-      handleBuildApp._retried = false
-      addMsg(err.message || 'Build failed. Please try again.', true)
-
+      handleApiError(err, { action: 'build your app', onRetry: () => handleBuildApp() })
+      // Re-attach the spec card so the user can also retry from the canvas.
       if (pendingSpecRef.current) {
         const retryId = Date.now().toString() + '_spec_retry'
         pendingSpecMsgIdRef.current = retryId
         setMessages(prev => [...prev, { id: retryId, role: 'assistant', content: '', message_type: 'spec', metadata: { spec: pendingSpecRef.current } }])
       }
+    } finally {
+      clearInterval(labelInterval)
+      setIsTyping(false)
+      setBuildingLabel(null)
     }
   }
 
@@ -254,7 +272,7 @@ export default function Workspace() {
     setBuildingLabel('Generating app spec...')
     setIsTyping(true)
     try {
-      const result = await generateSpec(prompt, convId, clarificationAnswers, toHistoryMessages(messages))
+      const result = await generateSpec(prompt, convId, clarificationAnswers, toHistoryMessages(messages), currentModel)
       setIsTyping(false)
       setBuildingLabel(null)
 
@@ -268,9 +286,13 @@ export default function Workspace() {
       setMessages(prev => [...prev, specMsg])
       await persistCardMessages([specMsg])
     } catch (err) {
+      handleApiError(err, {
+        action: 'generate the spec',
+        onRetry: () => runSpec(prompt, clarificationAnswers),
+      })
+    } finally {
       setIsTyping(false)
       setBuildingLabel(null)
-      addMsg(err.message || 'Failed to generate spec. Please try again.', true)
     }
   }
 
@@ -283,7 +305,7 @@ export default function Workspace() {
     const interval = setInterval(() => { idx = (idx + 1) % labels.length; setBuildingLabel(labels[idx]) }, 2200)
 
     try {
-      const result = await generateBrief(prompt, convId, mode, clarAnswers, toHistoryMessages(messages))
+      const result = await generateBrief(prompt, convId, mode, clarAnswers, toHistoryMessages(messages), currentModel)
       clearInterval(interval)
       setIsTyping(false)
       setBuildingLabel(null)
@@ -303,79 +325,136 @@ export default function Workspace() {
       // Refresh artifacts from server
       if (convId) loadArtifacts(convId)
     } catch (err) {
+      handleApiError(err, {
+        action: 'generate the brief',
+        onRetry: () => runBrief(prompt, mode, clarAnswers),
+      })
+    } finally {
       clearInterval(interval)
       setIsTyping(false)
       setBuildingLabel(null)
-      addMsg(err.message || 'Failed to generate brief. Please try again.', true)
     }
   }
 
-  // ─── PHASE 1: Analyze prompt → show build mode card ──────────────────────
-  async function runBuildModeSelection(prompt) {
+  // ─── PHASE 1: Analyze prompt → show BuildModeCard ───────────────────────────
+  async function runAnalyzeAndQuestion(prompt) {
     setIsTyping(true)
     setBuildingLabel('Analyzing your request...')
     try {
-      const result = await analyzeBuildMode(prompt, convId, toHistoryMessages(messages))
+      const result = await analyzeAndQuestion(prompt, convId, toHistoryMessages(messages), currentModel)
       setIsTyping(false)
       setBuildingLabel(null)
 
       pendingPromptRef.current = prompt
 
       const newMsgs = []
-      if (result.intro) {
-        const introId = Date.now().toString() + '_intro'
-        newMsgs.push({ id: introId, role: 'assistant', content: result.intro, message_type: 'text', metadata: {} })
+
+      if (result.type === 'build_mode') {
+        const modeId = Date.now().toString() + '_bm'
+        pendingBuildModeMsgId.current = modeId
+        newMsgs.push({
+          id: modeId, role: 'assistant', content: '', message_type: 'build_mode',
+          metadata: { recommendedMode: result.recommendedMode, complexityReason: result.complexityReason },
+        })
+      } else {
+        // Fallback: if server still returns clarification_v2 directly
+        if (result.intro) {
+          const introId = Date.now().toString() + '_intro'
+          newMsgs.push({ id: introId, role: 'assistant', content: result.intro, message_type: 'text', metadata: {} })
+        }
+        if (result.type === 'clarification_v2' && result.questions?.length > 0) {
+          const clarId = Date.now().toString() + '_cv2'
+          pendingClarV2MsgIdRef.current = clarId
+          newMsgs.push({
+            id: clarId, role: 'assistant', content: '', message_type: 'clarification_v2',
+            metadata: { questions: result.questions, outputType: result.outputType, buildMode: result.buildMode },
+          })
+        }
       }
-      const modeId = Date.now().toString() + '_mode'
-      pendingBuildModeMsgId.current = modeId
-      newMsgs.push({
-        id: modeId, role: 'assistant', content: '', message_type: 'build_mode',
-        metadata: { recommendedMode: result.recommendedMode, complexityReason: result.complexityReason },
-      })
+
       setMessages(prev => [...prev, ...newMsgs])
       await persistCardMessages(newMsgs)
     } catch (err) {
+      handleApiError(err, {
+        action: 'analyze your request',
+        onRetry: () => runAnalyzeAndQuestion(prompt),
+      })
+    } finally {
       setIsTyping(false)
       setBuildingLabel(null)
-      addMsg(err.message || 'Failed to analyze request. Please try again.', true)
     }
   }
 
-  // ─── User picks build mode → get clarification questions ─────────────────
+  // ─── User picks a build mode → get questions for that mode ──────────────────
   async function handleBuildModeSelect(mode) {
-    pendingBuildModeRef.current = mode
     const prompt = pendingPromptRef.current
     if (!prompt) return
 
-    // Mark the build_mode message as selected in DB so it persists correctly on refresh
+    // Mark the build_mode card as answered
     if (pendingBuildModeMsgId.current) {
       const bmId = pendingBuildModeMsgId.current
       pendingBuildModeMsgId.current = null
-      // Update local state so card shows selected mode immediately
       setMessages(prev => prev.map(m =>
-        m.id === bmId
-          ? { ...m, metadata: { ...m.metadata, selectedMode: mode }, onModeSelect: null }
-          : m
+        m.id === bmId ? { ...m, metadata: { ...m.metadata, selectedMode: mode }, onModeSelect: null } : m
       ))
-      // Persist selection to DB (update metadata on the build_mode DB row if it exists)
-      // We don't have the DB row ID, so we query by conversation + type + selecting the latest
-      supabase.from('messages')
-        .select('id')
-        .eq('conversation_id', convId)
-        .eq('message_type', 'confirmation')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .then(({ data }) => {
-          if (data?.[0]) {
-            supabase.from('messages').update({ metadata: { ...data[0].metadata, selectedMode: mode } }).eq('id', data[0].id)
-          }
-        })
     }
 
+    // Role → show RolePackageCard first
+    if (['operations', 'it_admin', 'compliance', 'finance', 'hr'].includes(mode)) {
+      setIsTyping(true)
+      setBuildingLabel('Preparing role package...')
+      try {
+        const result = await getRolePackageOrQuestions(prompt, convId, mode, null, toHistoryMessages(messages), currentModel)
+        setIsTyping(false)
+        setBuildingLabel(null)
+        const roleId = Date.now().toString() + '_role'
+        pendingRoleMsgId.current = roleId
+        pendingRoleRef.current = mode
+        const roleMsg = {
+          id: roleId, role: 'assistant', content: '', message_type: 'role_package',
+          metadata: { intro: result.intro, role: mode },
+        }
+        setMessages(prev => [...prev, roleMsg])
+        await persistCardMessages([roleMsg])
+      } catch (err) {
+        handleApiError(err, { action: 'prepare role package', onRetry: () => handleBuildModeSelect(mode) })
+      } finally {
+        setIsTyping(false)
+        setBuildingLabel(null)
+      }
+      return
+    }
+
+    // PM Package → show PMPackageCard first
+    if (mode === 'product_manager') {
+      setIsTyping(true)
+      setBuildingLabel('Preparing PM package...')
+      try {
+        const result = await getPMPackageOrQuestions(prompt, convId, null, toHistoryMessages(messages), currentModel)
+        setIsTyping(false)
+        setBuildingLabel(null)
+        const pmId = Date.now().toString() + '_pm'
+        pendingPMPackageMsgId.current = pmId
+        const pmMsg = {
+          id: pmId, role: 'assistant', content: '', message_type: 'pm_package',
+          metadata: { intro: result.intro },
+        }
+        setMessages(prev => [...prev, pmMsg])
+        await persistCardMessages([pmMsg])
+      } catch (err) {
+        handleApiError(err, { action: 'prepare PM package', onRetry: () => handleBuildModeSelect(mode) })
+      } finally {
+        setIsTyping(false)
+        setBuildingLabel(null)
+      }
+      return
+    }
+
+    // Quick / Guided / Docs → get clarification questions
     setIsTyping(true)
     setBuildingLabel('Preparing questions...')
     try {
-      const result = await getModeQuestions(prompt, convId, mode, toHistoryMessages(messages))
+      const result = await getModeQuestions(prompt, convId, mode, toHistoryMessages(messages), currentModel)
       setIsTyping(false)
       setBuildingLabel(null)
 
@@ -384,29 +463,245 @@ export default function Workspace() {
         newMsgs.push({ id: Date.now().toString() + '_qi', role: 'assistant', content: result.intro, message_type: 'text', metadata: {} })
       }
 
-      if (result.type === 'clarification' && result.questions?.length > 0) {
-        // Quick build: existing MC clarification card
-        const clarId = Date.now().toString() + '_c'
-        pendingClarMsgIdRef.current = clarId
-        newMsgs.push({ id: clarId, role: 'assistant', content: '', message_type: 'clarification', metadata: { questions: result.questions, buildMode: 'quick' } })
-      } else if (result.type === 'clarification_v2' && result.questions?.length > 0) {
-        // Guided/Docs: richer clarification
-        const clarId = Date.now().toString() + '_cv2'
-        pendingClarV2MsgIdRef.current = clarId
-        newMsgs.push({ id: clarId, role: 'assistant', content: '', message_type: 'clarification_v2', metadata: { questions: result.questions, buildMode: mode } })
-      } else if (result.needsClarification === false) {
-        // Quick build with no questions → go straight to spec
-        setMessages(prev => [...prev, ...newMsgs])
-        await runSpec(prompt, null)
-        return
-      }
+      const clarId = Date.now().toString() + '_cv2'
+      pendingClarV2MsgIdRef.current = clarId
+      newMsgs.push({
+        id: clarId, role: 'assistant', content: '', message_type: 'clarification_v2',
+        metadata: { questions: result.questions, buildMode: mode, outputType: mode === 'quick' ? 'spec' : 'brief' },
+      })
 
       setMessages(prev => [...prev, ...newMsgs])
       await persistCardMessages(newMsgs)
     } catch (err) {
+      handleApiError(err, { action: 'prepare questions', onRetry: () => handleBuildModeSelect(mode) })
+    } finally {
       setIsTyping(false)
       setBuildingLabel(null)
-      addMsg(err.message || 'Failed to prepare questions. Please try again.', true)
+    }
+  }
+
+  // ─── User picks a PM package (lean/enterprise/full_lifecycle) ───────────────
+  async function handlePMPackageSelect(pmPackage) {
+    const prompt = pendingPromptRef.current
+    if (!prompt) return
+
+    if (pendingPMPackageMsgId.current) {
+      const pmId = pendingPMPackageMsgId.current
+      pendingPMPackageMsgId.current = null
+      setMessages(prev => prev.map(m =>
+        m.id === pmId ? { ...m, metadata: { ...m.metadata, selectedPackage: pmPackage }, onPMPackageSelect: null } : m
+      ))
+    }
+
+    pendingPMPackageRef.current = pmPackage
+    setIsTyping(true)
+    setBuildingLabel('Preparing PM questions...')
+    try {
+      const result = await getPMPackageOrQuestions(prompt, convId, pmPackage, toHistoryMessages(messages), currentModel)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const newMsgs = []
+      if (result.intro) {
+        newMsgs.push({ id: Date.now().toString() + '_pmi', role: 'assistant', content: result.intro, message_type: 'text', metadata: {} })
+      }
+
+      const clarId = Date.now().toString() + '_cv2'
+      pendingClarV2MsgIdRef.current = clarId
+      newMsgs.push({
+        id: clarId, role: 'assistant', content: '', message_type: 'clarification_v2',
+        metadata: { questions: result.questions, buildMode: 'product_manager', outputType: 'pm_brief', pmPackage },
+      })
+
+      setMessages(prev => [...prev, ...newMsgs])
+      await persistCardMessages(newMsgs)
+    } catch (err) {
+      handleApiError(err, { action: 'prepare PM questions', onRetry: () => handlePMPackageSelect(pmPackage) })
+    } finally {
+      setIsTyping(false)
+      setBuildingLabel(null)
+    }
+  }
+
+  // ─── User picks a role → get role-specific questions ────────────────────────
+  async function handleRoleSelect(role) {
+    const prompt = pendingPromptRef.current
+    if (!prompt) return
+
+    if (pendingRoleMsgId.current) {
+      const rId = pendingRoleMsgId.current
+      pendingRoleMsgId.current = null
+      setMessages(prev => prev.map(m =>
+        m.id === rId ? { ...m, metadata: { ...m.metadata, selectedRole: role }, onRoleSelect: null } : m
+      ))
+    }
+
+    pendingRoleRef.current = role
+    setIsTyping(true)
+    setBuildingLabel('Preparing role questions...')
+    try {
+      const result = await getRolePackageOrQuestions(prompt, convId, role, 'guided', toHistoryMessages(messages), currentModel)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const newMsgs = []
+      if (result.intro) {
+        newMsgs.push({ id: Date.now().toString() + '_ri', role: 'assistant', content: result.intro, message_type: 'text', metadata: {} })
+      }
+
+      const clarId = Date.now().toString() + '_cv2'
+      pendingClarV2MsgIdRef.current = clarId
+      newMsgs.push({
+        id: clarId, role: 'assistant', content: '', message_type: 'clarification_v2',
+        metadata: { questions: result.questions, buildMode: role, outputType: 'role_brief', rolePackage: 'guided' },
+      })
+
+      setMessages(prev => [...prev, ...newMsgs])
+      await persistCardMessages(newMsgs)
+    } catch (err) {
+      handleApiError(err, { action: 'prepare role questions', onRetry: () => handleRoleSelect(role) })
+    } finally {
+      setIsTyping(false)
+      setBuildingLabel(null)
+    }
+  }
+
+  // ─── PM: generate full brief after clarification ─────────────────────────
+  async function runPMBrief(prompt, pmPackage, clarAnswers) {
+    const labels = [
+      'Mapping the problem space...',
+      'Writing the PRD...',
+      'Building user stories...',
+      'Drafting the business case...',
+      'Modeling data and workflows...',
+      'Finalizing document stack...',
+      'Almost ready...',
+    ]
+    let idx = 0
+    setBuildingLabel(labels[0])
+    setIsTyping(true)
+    const interval = setInterval(() => { idx = (idx + 1) % labels.length; setBuildingLabel(labels[idx]) }, 2400)
+
+    try {
+      const result = await generatePMBrief(prompt, convId, pmPackage, clarAnswers, toHistoryMessages(messages), currentModel)
+      clearInterval(interval)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const briefId = Date.now().toString() + '_pm_brief'
+      pendingBriefMsgIdRef.current = briefId
+      pendingSpecRef.current = result.brief?.appSpec || null
+      pendingPromptRef.current = prompt
+      pendingClarAnswersRef.current = clarAnswers
+
+      const briefMsg = {
+        id: briefId, role: 'assistant', content: '', message_type: 'enterprise_brief',
+        metadata: { brief: result.brief, buildMode: 'product_manager', pmPackage: result.pmPackage, artifactIds: result.artifactIds },
+      }
+      setMessages(prev => [...prev, briefMsg])
+      await persistCardMessages([briefMsg])
+      if (convId) loadArtifacts(convId)
+    } catch (err) {
+      handleApiError(err, {
+        action: 'generate the PM brief',
+        onRetry: () => runPMBrief(prompt, pmPackage, clarAnswers),
+      })
+    } finally {
+      clearInterval(interval)
+      setIsTyping(false)
+      setBuildingLabel(null)
+    }
+  }
+
+  // ─── Role: generate full brief after clarification ───────────────────────
+  async function runRoleBrief(prompt, role, rolePackage, clarAnswers) {
+    const roleLabels = {
+      operations: ['Mapping the current process...', 'Designing automation rules...', 'Building escalation matrix...', 'Generating SOPs...', 'Finalizing integration specs...'],
+      it_admin: ['Analyzing system architecture...', 'Building permissions matrix...', 'Designing provisioning workflow...', 'Writing deployment runbook...', 'Finalizing admin console spec...'],
+      compliance: ['Mapping controls framework...', 'Building risk matrix...', 'Designing evidence workflows...', 'Writing audit trail spec...', 'Finalizing reporting structure...'],
+      finance: ['Mapping approval matrix...', 'Defining threshold rules...', 'Designing financial controls...', 'Building reporting spec...', 'Finalizing ERP integration...'],
+      hr: ['Mapping employee journey...', 'Documenting policies...', 'Building approval workflows...', 'Designing notification plan...', 'Finalizing HRIS integration...'],
+    }
+    const labels = roleLabels[role] || ['Generating role brief...', 'Almost ready...']
+    let idx = 0
+    setBuildingLabel(labels[0])
+    setIsTyping(true)
+    const interval = setInterval(() => { idx = (idx + 1) % labels.length; setBuildingLabel(labels[idx]) }, 2400)
+
+    try {
+      const result = await generateRoleBrief(prompt, convId, role, rolePackage, clarAnswers, toHistoryMessages(messages), currentModel)
+      clearInterval(interval)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const briefId = Date.now().toString() + '_role_brief'
+      pendingBriefMsgIdRef.current = briefId
+      pendingSpecRef.current = result.brief?.appSpec || null
+      pendingPromptRef.current = prompt
+      pendingClarAnswersRef.current = clarAnswers
+
+      const briefMsg = {
+        id: briefId, role: 'assistant', content: '', message_type: 'enterprise_brief',
+        metadata: { brief: result.brief, buildMode: role, rolePackage: result.rolePackage, artifactIds: result.artifactIds || {} },
+      }
+      setMessages(prev => [...prev, briefMsg])
+      await persistCardMessages([briefMsg])
+      if (convId) loadArtifacts(convId)
+    } catch (err) {
+      handleApiError(err, {
+        action: 'generate the role brief',
+        onRetry: () => runRoleBrief(prompt, role, rolePackage, clarAnswers),
+      })
+    } finally {
+      clearInterval(interval)
+      setIsTyping(false)
+      setBuildingLabel(null)
+    }
+  }
+
+  // ─── Task Mode: generate task-mode brief after clarification ─────────────
+  async function runTaskBrief(prompt, mode, clarAnswers) {
+    const taskLabels = {
+      fullstack:  ['Designing data model...', 'Mapping API contracts...', 'Specifying auth model...', 'Drafting integration spec...', 'Finalizing app spec...'],
+      automation: ['Cataloging triggers...', 'Mapping condition logic...', 'Sequencing action chain...', 'Designing error handling...', 'Building notification plan...'],
+      dashboard:  ['Defining KPIs...', 'Mapping data sources...', 'Planning refresh cadence...', 'Designing drill-down paths...', 'Setting access permissions...'],
+      knowledge:  ['Modeling content taxonomy...', 'Designing versioning...', 'Building search spec...', 'Defining access control...', 'Drafting review workflow...'],
+      workflow:   ['Mapping approval chain...', 'Setting SLAs...', 'Designing escalation rules...', 'Building decision logic...', 'Finalizing workflow map...'],
+    }
+    const labels = taskLabels[mode] || ['Generating brief...', 'Almost ready...']
+    let idx = 0
+    setBuildingLabel(labels[0])
+    setIsTyping(true)
+    const interval = setInterval(() => { idx = (idx + 1) % labels.length; setBuildingLabel(labels[idx]) }, 2200)
+
+    try {
+      const result = await generateTaskBrief(prompt, convId, mode, clarAnswers, toHistoryMessages(messages), currentModel)
+      clearInterval(interval)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const briefId = Date.now().toString() + '_task_brief'
+      pendingBriefMsgIdRef.current = briefId
+      pendingSpecRef.current = result.brief?.appSpec || null
+      pendingPromptRef.current = prompt
+      pendingClarAnswersRef.current = clarAnswers
+
+      const briefMsg = {
+        id: briefId, role: 'assistant', content: '', message_type: 'enterprise_brief',
+        metadata: { brief: result.brief, buildMode: mode, artifactIds: result.artifactIds || {}, taskMode: mode },
+      }
+      setMessages(prev => [...prev, briefMsg])
+      await persistCardMessages([briefMsg])
+      if (convId) loadArtifacts(convId)
+    } catch (err) {
+      handleApiError(err, {
+        action: 'generate the task brief',
+        onRetry: () => runTaskBrief(prompt, mode, clarAnswers),
+      })
+    } finally {
+      clearInterval(interval)
+      setIsTyping(false)
+      setBuildingLabel(null)
     }
   }
 
@@ -415,39 +710,52 @@ export default function Workspace() {
     const originalPrompt = pendingPromptRef.current
     if (!originalPrompt) return
     pendingClarMsgIdRef.current = null
-    // Don't echo answers as text — they're already visible in the card
     await runSpec(originalPrompt, answers)
   }
 
   // ─── Restart from clarification ───────────────────────────────────────────
   function handleRestartFromClarification() {
-    // Clear everything after clarification — remove spec/brief messages, restore clarification as active
     setMessages(prev => {
-      // Keep messages up to and including the clarification card
       const clarIdx = prev.findIndex(m =>
         m.id === pendingClarMsgIdRef.current || m.id === pendingClarV2MsgIdRef.current
       )
       if (clarIdx === -1) return prev
       return prev.slice(0, clarIdx + 1)
     })
-    // Reset downstream pending state
     pendingSpecRef.current = null
     pendingSpecMsgIdRef.current = null
     pendingBriefMsgIdRef.current = null
     pendingClarAnswersRef.current = null
-    // Re-activate the clarification card (it already has the right id in ref)
-    // The ref is still set so the card will get its onClarify/onClarifyV2 handler back
   }
 
-  // ─── Guided/Docs clarification answered ───────────────────────────────────
-  async function handleClarificationV2(answers) {
+  // ─── Clarification answered → route based on metadata ──────────────────────
+  async function handleClarificationV2(answers, cardMetadata = {}) {
     const originalPrompt = pendingPromptRef.current
-    const mode = pendingBuildModeRef.current || 'guided'
     if (!originalPrompt) return
     pendingClarV2MsgIdRef.current = null
-    // Don't echo answers as text — they're already visible in the card
     pendingClarAnswersRef.current = answers
-    await runBrief(originalPrompt, mode, answers)
+
+    const outputType = cardMetadata?.outputType || 'brief'
+    const buildMode = cardMetadata?.buildMode || 'general'
+    const pmPackage = cardMetadata?.pmPackage || pendingPMPackageRef.current || 'lean'
+    const rolePackage = cardMetadata?.rolePackage || 'guided'
+
+    if (outputType === 'spec') {
+      await runSpec(originalPrompt, answers)
+      return
+    }
+
+    if (outputType === 'pm_brief') {
+      await runPMBrief(originalPrompt, pmPackage, answers)
+      return
+    }
+
+    if (outputType === 'role_brief') {
+      await runRoleBrief(originalPrompt, buildMode, rolePackage, answers)
+      return
+    }
+
+    await runBrief(originalPrompt, buildMode || 'guided', answers)
   }
 
   // ─── Edit existing app ─────────────────────────────────────────────────────
@@ -455,7 +763,7 @@ export default function Workspace() {
     setIsTyping(true)
     setBuildingLabel('Updating your app...')
     try {
-      const result = await editApp(currentApp.id, editRequest, convId)
+      const result = await editApp(currentApp.id, editRequest, convId, currentModel)
       setIsTyping(false)
       setBuildingLabel(null)
       const { data: freshMsgs } = await supabase.from('messages').select('*').eq('conversation_id', convId).order('created_at')
@@ -465,9 +773,13 @@ export default function Workspace() {
         return [...prev, ...newMsgs]
       })
     } catch (err) {
+      handleApiError(err, {
+        action: 'update your app',
+        onRetry: () => runEdit(editRequest),
+      })
+    } finally {
       setIsTyping(false)
       setBuildingLabel(null)
-      addMsg(err.message || 'Edit failed. Please try again.', true)
     }
   }
 
@@ -475,31 +787,17 @@ export default function Workspace() {
   // In mock mode: frontend saves to localStorage (backend saves to real Supabase which frontend can't read)
   // In real mode: backend already saved; do a fresh DB fetch to sync real IDs into local state
   async function persistCardMessages(newMsgs) {
-    if (MOCK_MODE) {
-      // Save each card message via frontend Supabase client → localStorage
-      for (const m of newMsgs) {
-        if (m.message_type !== 'text') {
-          await supabase.from('messages').insert({
-            id: m.id,
-            conversation_id: convId,
-            role: m.role || 'assistant',
-            content: m.content || '',
-            message_type: m.message_type,
-            metadata: m.metadata || {},
-          })
-        }
-      }
-    } else {
-      // Real Supabase: backend already saved with real UUIDs — fetch fresh and merge
-      const { data: dbMsgs } = await supabase.from('messages').select('*').eq('conversation_id', convId).order('created_at')
-      if (dbMsgs?.length) {
-        setMessages(prev => {
-          // Keep any local-only messages (pending refs, optimistic), merge with DB
-          const dbIds = new Set(dbMsgs.map(m => m.id))
-          const localOnly = prev.filter(m => !dbIds.has(m.id) && m.id.includes('_'))
-          return [...dbMsgs, ...localOnly]
-        })
-      }
+    // Save card messages to DB with their local IDs so they survive refresh
+    // (both MOCK and real mode — avoids fetch-and-merge that causes duplication)
+    for (const m of newMsgs) {
+      await supabase.from('messages').insert({
+        id: m.id,
+        conversation_id: convId,
+        role: m.role || 'assistant',
+        content: m.content || '',
+        message_type: m.message_type || 'text',
+        metadata: m.metadata || {},
+      })
     }
   }
 
@@ -521,7 +819,7 @@ export default function Workspace() {
     setCurrentConv(prev => prev ? { ...prev, title: prompt.slice(0, 60) } : prev)
     loadConversations()
 
-    await runBuildModeSelection(prompt)
+    await runAnalyzeAndQuestion(prompt)
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────
@@ -533,11 +831,48 @@ export default function Workspace() {
     }])
   }
 
+  // ─── On-demand PM document request ────────────────────────────────────────
+  async function handleRequestDocument(userRequest) {
+    if (!convId || !userRequest?.trim()) return
+    const projectContext = messages
+      .filter(m => m.metadata?.brief)
+      .slice(-1)[0]?.metadata?.brief || null
+
+    setIsTyping(true)
+    setBuildingLabel(`Generating ${userRequest}...`)
+    try {
+      const result = await requestPMDocument(convId, userRequest, projectContext)
+      setIsTyping(false)
+      setBuildingLabel(null)
+      // Add a text message confirming creation
+      addMsg(`✓ "${result.artifact.title}" has been added to your project assets.`)
+      // Refresh artifacts
+      if (convId) loadArtifacts(convId)
+    } catch (err) {
+      handleApiError(err, {
+        action: 'generate the document',
+        onRetry: () => handleRequestDocument(userRequest),
+      })
+    } finally {
+      setIsTyping(false)
+      setBuildingLabel(null)
+    }
+  }
+
   // ─── Attach live handlers to messages ─────────────────────────────────────
   const messagesWithHandlers = messages.map(m => {
     const ct = m.metadata?.cardType || m.message_type
-    if (ct === 'build_mode' && m.id === pendingBuildModeMsgId.current && !isTyping) {
-      return { ...m, onModeSelect: handleBuildModeSelect }
+    if (ct === 'build_mode') {
+      const isActive = m.id === pendingBuildModeMsgId.current && !isTyping
+      return { ...m, onModeSelect: isActive ? handleBuildModeSelect : null, defaultMode: defaultBuildMode }
+    }
+    if (ct === 'pm_package') {
+      const isActive = m.id === pendingPMPackageMsgId.current && !isTyping
+      return { ...m, onPMPackageSelect: isActive ? handlePMPackageSelect : null }
+    }
+    if (ct === 'role_package') {
+      const isActive = m.id === pendingRoleMsgId.current && !isTyping
+      return { ...m, onRoleSelect: isActive ? handleRoleSelect : null }
     }
     if (ct === 'clarification') {
       const isActive = m.id === pendingClarMsgIdRef.current && !isTyping
@@ -545,13 +880,20 @@ export default function Workspace() {
     }
     if (ct === 'clarification_v2') {
       const isActive = m.id === pendingClarV2MsgIdRef.current && !isTyping
-      return { ...m, onClarifyV2: isActive ? handleClarificationV2 : null, onRestart: handleRestartFromClarification }
+      if (isActive) {
+        return {
+          ...m,
+          onClarifyV2: (answers) => handleClarificationV2(answers, m.metadata),
+          onRestart: handleRestartFromClarification,
+        }
+      }
+      return { ...m, onClarifyV2: null, onRestart: handleRestartFromClarification }
     }
     if (ct === 'spec' && m.id === pendingSpecMsgIdRef.current && !isTyping) {
       return { ...m, onBuild: handleBuildApp, onSpecChange: (updatedSpec) => { pendingSpecRef.current = updatedSpec } }
     }
     if (ct === 'enterprise_brief') {
-      const handlers = { onOpenArtifact: openArtifact, artifacts }
+      const handlers = { onOpenArtifact: openArtifact, artifacts, onRequestDocument: handleRequestDocument }
       if (m.id === pendingBriefMsgIdRef.current && !isTyping) handlers.onBuild = handleBuildApp
       return { ...m, ...handlers }
     }
@@ -619,13 +961,18 @@ export default function Workspace() {
           showArtifactPanel={showArtifactPanel}
           onMenuToggle={isSmall ? () => setShowSidebar(v => !v) : undefined}
           isMobile={isMobile}
+          currentModel={currentModel}
+          isRunning={isTyping}
+          phaseLabel={buildingLabel}
+          lastError={lastError}
+          lastLatencyMs={lastLatencyMs}
         />
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
           {convId ? (
             <>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                 <ChatArea messages={messagesWithHandlers} isTyping={isTyping} buildingLabel={buildingLabel} />
-                <InputZone onSubmit={handleSubmit} disabled={isTyping} />
+                <InputZone onSubmit={handleSubmit} disabled={isTyping} currentModel={currentModel} onModelChange={setCurrentModel} />
               </div>
               {showArtifactPanel && (
                 isSmall ? (

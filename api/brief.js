@@ -1,137 +1,47 @@
-import { createMessage } from './ai-client.js'
+/**
+ * /api/brief — Generate a full enterprise brief.
+ *
+ * Pipeline:
+ *   1. Generate the 7-stage brief JSON via orchestrator (smart tier)
+ *   2. Normalize workflowType + ensure field names
+ *   3. Persist each stage as an individual artifact row
+ *   4. Persist the enterprise_brief card message
+ *   5. Generate a Mermaid workflow diagram (parallel/fast tier)
+ *   6. Fire-and-forget file generation (PDF/DOCX/XLSX) for each artifact
+ *
+ * Refactored 2026-05 to use orchestrator + prompts registry.
+ */
+
 import { createClient } from '@supabase/supabase-js'
+import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
+import {
+  ENTERPRISE_BRIEF,
+  MERMAID_DIAGRAM,
+  buildHistoryContext,
+  buildAnswersContext,
+} from './lib/prompts.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
 
-function extractJSON(text) {
-  // Strip markdown code fences if present
-  const stripped = text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim()
+const STAGE_MAP = [
+  { type: 'intake_summary',    key: 'intakeSummary',    label: 'Intake Summary' },
+  { type: 'product_brief',     key: 'productBrief',     label: 'Product Brief' },
+  { type: 'workflow_map',      key: 'workflowMap',      label: 'Workflow Map' },
+  { type: 'data_model',        key: 'dataModel',        label: 'Data Model' },
+  { type: 'automation_model',  key: 'automationModel',  label: 'Automation Model' },
+  { type: 'ux_recommendation', key: 'uxRecommendation', label: 'UX Recommendation' },
+  { type: 'app_spec',          key: 'appSpec',          label: 'App Spec' },
+]
 
-  // 1. Try direct parse first
-  try { return JSON.parse(stripped) } catch {}
+const BRIEF_USER_TEMPLATE = `Generate a complete enterprise product brief for this request:
 
-  // 2. Walk character by character to find the outermost complete JSON object
-  let depth = 0
-  let start = -1
-  let inString = false
-  let escape = false
+"{{prompt}}"{{answers}}{{history}}
 
-  for (let i = 0; i < stripped.length; i++) {
-    const ch = stripped[i]
-    if (escape) { escape = false; continue }
-    if (ch === '\\' && inString) { escape = true; continue }
-    if (ch === '"') { inString = !inString; continue }
-    if (inString) continue
-
-    if (ch === '{') {
-      if (depth === 0) start = i
-      depth++
-    } else if (ch === '}') {
-      depth--
-      if (depth === 0 && start !== -1) {
-        try { return JSON.parse(stripped.slice(start, i + 1)) } catch {}
-      }
-    }
-  }
-
-  // 3. Last resort: try to parse whatever we found, even if incomplete
-  if (start !== -1) {
-    const partial = stripped.slice(start)
-    // Try to auto-close truncated JSON by appending closing braces
-    for (let closes = 1; closes <= 10; closes++) {
-      try { return JSON.parse(partial + '}'.repeat(closes)) } catch {}
-    }
-  }
-
-  throw new Error('No valid JSON found in response')
-}
-
-const SYSTEM = `You are Aria — an AI enterprise product architect, workflow consultant, and solutions engineer.
-
-Your job is to produce a comprehensive, structured enterprise product brief that a PM, project lead, or solutions architect can review, edit, and approve before building.
-
-You think like a senior product manager who has shipped 50+ enterprise tools. You know:
-- How enterprise workflows actually work (multi-step approvals, escalations, SLAs, audit trails)
-- What data moves through processes and who owns, modifies, and reviews it
-- Where automation saves real operational time (notifications, routing, escalations, document generation)
-- What makes internal tools succeed (adoption, fit to existing processes, clear ownership, correct permissions)
-
-Use domain-specific language throughout. Name actual roles, business statuses, field names, and automation rules relevant to the specific business context.
-
-CRITICAL: Your entire response must be a single valid JSON object. Start your response with { and end with }. No markdown, no code fences, no explanation before or after the JSON.`
-
-async function generateMermaidDiagram(brief, conversationId) {
-  try {
-    const msg = await createMessage({
-      max_tokens: 1500,
-      messages: [{
-        role: 'user',
-        content: `Based on this workflow brief, generate a Mermaid flowchart diagram.
-
-Brief: ${JSON.stringify(brief?.workflowMap || brief?.productBrief || {}, null, 2)}
-
-Return ONLY valid Mermaid flowchart syntax. Start with "flowchart TD" or "flowchart LR".
-Include all key steps, decision points, and actors.
-Use clear, short node labels.
-Example format:
-flowchart TD
-  A[Start] --> B{Decision?}
-  B -->|Yes| C[Action 1]
-  B -->|No| D[Action 2]
-  C --> E[End]
-  D --> E`
-      }]
-    })
-    const mermaidSource = msg.content[0].text.trim()
-      .replace(/^```mermaid\n?/, '').replace(/```$/, '').trim()
-
-    const { data: artifact } = await supabase.from('artifacts').insert({
-      conversation_id: conversationId,
-      artifact_type: 'workflow_diagram',
-      title: 'Workflow Diagram',
-      content: { mermaid_source: mermaidSource, diagram_type: 'flowchart' },
-      version: 1,
-      status: 'draft',
-    }).select().single()
-
-    return artifact
-  } catch (e) {
-    console.error('Mermaid generation failed:', e)
-    return null
-  }
-}
-
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
-
-  const { prompt, conversationId, buildMode, clarificationAnswers, conversationHistory } = req.body
-  if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing fields' })
-
-  const context = clarificationAnswers ? `\nUser clarifications: ${clarificationAnswers}` : ''
-  const historyCtx = conversationHistory?.length
-    ? `\nPrior context: ${conversationHistory.slice(-4).map(m => `${m.role === 'user' ? 'User' : 'Aria'}: ${m.content}`).filter(l => !l.endsWith(': ')).join(' | ')}`
-    : ''
-  const isDocsMode = buildMode === 'docs'
-
-  try {
-    const msg = await createMessage({
-      max_tokens: 7500,
-      smart: true,
-      system: SYSTEM,
-      messages: [{
-        role: 'user',
-        content: `Generate a complete enterprise product brief for this internal app request:
-
-"${prompt}"${context}${historyCtx}
-
-Build mode: ${buildMode || 'guided'}
-${isDocsMode ? 'Documentation First: emphasize stakeholders, approval chain, compliance requirements, and document outputs. Include a PRD-style framing.' : ''}
+Build mode: {{buildMode}}
+{{docsNote}}
 
 Think through:
 1. What business problem is being solved?
@@ -142,121 +52,68 @@ Think through:
 6. What should be automated?
 7. What layout and structure best fits this workflow?
 
-Return this exact JSON structure. Every section must be specific to this domain — no generic placeholders:
+Return this exact JSON structure. Every section must be specific to this domain:
 
 {
   "intakeSummary": {
-    "understood": "1-2 sentence summary of what was understood — domain-specific, precise",
-    "businessProblem": "The exact operational problem this solves",
+    "understood": "1-2 sentence domain-specific summary",
+    "businessProblem": "The exact operational problem",
     "primaryUsers": ["Role 1", "Role 2"],
     "secondaryUsers": ["Role 3"],
-    "currentProcess": "The specific manual process being replaced — name the spreadsheet, email chain, or SharePoint form",
-    "mainOutcome": "The primary measurable operational improvement"
+    "currentProcess": "Specific manual process being replaced",
+    "mainOutcome": "Primary measurable operational improvement"
   },
   "productBrief": {
     "objective": "Single clear sentence",
-    "userRoles": [
-      { "role": "Role name", "access": "What they can see and do", "estimated": "Approx how many users" }
-    ],
-    "coreWorkflows": [
-      "Primary workflow: step-by-step description",
-      "Secondary workflow: exception or alternate path"
-    ],
-    "businessRules": [
-      "Specific rule 1 that must be enforced in the system",
-      "Specific rule 2"
-    ],
-    "successCriteria": [
-      "Measurable outcome 1",
-      "Measurable outcome 2"
-    ],
-    "assumptions": [
-      "Assumption made during design"
-    ],
-    "openQuestions": [
-      "Question that still needs a business decision"
-    ]
+    "userRoles": [{ "role": "Role name", "access": "What they can do", "estimated": "Approx user count" }],
+    "coreWorkflows": ["Primary workflow", "Secondary workflow or exception"],
+    "businessRules": ["Specific enforceable rule 1", "Rule 2"],
+    "successCriteria": ["Measurable outcome 1", "Outcome 2"],
+    "assumptions": ["Design assumption 1"],
+    "openQuestions": ["Unresolved business decision 1"]
   },
   "workflowMap": {
-    "trigger": "What initiates the workflow — who does what",
-    "steps": [
-      {
-        "step": "Step name",
-        "actor": "Role performing this",
-        "action": "What they do specifically",
-        "output": "What this produces or changes",
-        "sla": "Time expectation if applicable, else null"
-      }
-    ],
-    "decisionPoints": [
-      "Decision: [condition] → [outcome A] or [outcome B]"
-    ],
-    "exceptionPaths": [
-      "Exception: [when] → [what happens]"
-    ]
+    "trigger": "What initiates the workflow",
+    "steps": [{ "step": "Step name", "actor": "Role", "action": "What they do", "output": "What this produces", "sla": "Time expectation or null" }],
+    "decisionPoints": ["Decision: [condition] → [outcome A] or [outcome B]"],
+    "exceptionPaths": ["Exception: [when] → [what happens]"]
   },
   "dataModel": {
     "primaryEntity": "Main business object name",
-    "fields": [
-      { "name": "snake_case_name", "label": "Human Label", "type": "text|number|email|date|select|textarea", "required": true, "options": [] }
-    ],
-    "statusFlow": ["Domain-specific status 1", "Status 2", "Status 3", "Status 4"],
+    "fields": [{ "name": "snake_case", "label": "Human Label", "type": "text|number|email|date|select|textarea", "required": true, "options": [] }],
+    "statusFlow": ["Domain status 1", "Status 2", "Status 3", "Status 4"],
     "relationships": ["Relationship description"],
     "auditFields": ["created_at", "created_by", "updated_at", "last_action_by"]
   },
   "automationModel": {
-    "triggers": [
-      { "event": "Trigger event description", "condition": "When this condition is met", "action": "What happens automatically" }
-    ],
-    "notifications": [
-      { "event": "Event name", "recipient": "Who is notified", "channel": "Email|Teams|In-app", "template": "What the notification says" }
-    ],
-    "escalations": [
-      { "condition": "Escalation trigger", "action": "What happens", "recipient": "Who is escalated to" }
-    ],
-    "documentGeneration": [
-      { "document": "Document name", "trigger": "When it is generated", "format": "PDF|Word|Email" }
-    ],
-    "integrations": [
-      { "system": "System name", "type": "Read|Write|Sync", "purpose": "What data is exchanged" }
-    ]
+    "triggers": [{ "event": "Trigger event", "condition": "When this is met", "action": "What happens" }],
+    "notifications": [{ "event": "Event name", "recipient": "Who is notified", "channel": "Email|Teams|In-app", "template": "Message" }],
+    "escalations": [{ "condition": "Escalation trigger", "action": "What happens", "recipient": "Who is escalated to" }],
+    "documentGeneration": [{ "document": "Document name", "trigger": "When generated", "format": "PDF|Word|Email" }],
+    "integrations": [{ "system": "System name", "type": "Read|Write|Sync", "purpose": "What data is exchanged" }]
   },
   "uxRecommendation": {
     "layoutType": "split_panel_review|queue_detail|kanban_board|table_admin|wizard_flow|workflow_pipeline|command_center|timeline_view|form_first_admin|document_workspace|calendar_scheduler",
     "navigationModel": "Single page|Tabbed|Sidebar nav|Wizard steps",
-    "primaryScreens": [
-      { "screen": "Screen name", "purpose": "What users accomplish here", "keyActions": ["Action 1", "Action 2"] }
-    ],
+    "primaryScreens": [{ "screen": "Screen name", "purpose": "What users accomplish", "keyActions": ["Action 1", "Action 2"] }],
     "visualTheme": {
       "mood": "authoritative|warm|operational|technical|clinical|compliance",
-      "primaryColor": "#hexcode — domain-appropriate",
-      "colorName": "Descriptive name like midnight indigo or clinical teal",
-      "rationale": "Why this visual direction fits this domain"
+      "primaryColor": "#hexcode",
+      "colorName": "Descriptive name",
+      "rationale": "Why this fits"
     },
-    "rationale": "Why this layout fits the workflow — specific reasoning"
+    "rationale": "Why this layout fits the workflow"
   },
   "appSpec": {
     "appTitle": "2-4 word domain-specific name",
-    "appType": "Specific type e.g. Procurement Approval Queue",
-    "tagline": "One line — what it does and who benefits",
-    "purpose": "2-3 sentences on the problem, replacement, and value",
+    "appType": "Specific type",
+    "tagline": "One line",
+    "purpose": "2-3 sentences",
     "workflowType": "approval_workflow|intake_tracker|status_board",
     "layoutType": "same as uxRecommendation.layoutType",
-    "colorTheme": {
-      "name": "color name",
-      "primary": "#hexcode",
-      "light": "#hexcode — very pale tint 5-10% opacity",
-      "text": "#hexcode — very dark, readable on white"
-    },
-    "features": [
-      "Verb-led feature specific to this domain",
-      "Feature 2",
-      "Feature 3",
-      "Feature 4"
-    ],
-    "fields": [
-      { "name": "snake_case", "label": "Domain-specific label", "type": "text|number|email|date|select|textarea", "required": true, "options": [] }
-    ],
+    "colorTheme": { "name": "color name", "primary": "#hex", "light": "#hex", "text": "#hex" },
+    "features": ["Verb-led feature 1", "Feature 2", "Feature 3", "Feature 4"],
+    "fields": [{ "name": "snake_case", "label": "Domain label", "type": "text|number|email|date|select|textarea", "required": true, "options": [] }],
     "statusFlow": ["Domain-specific status names"],
     "primaryActionLabel": "Action verb + noun",
     "integrations": {
@@ -270,124 +127,153 @@ Return this exact JSON structure. Every section must be specific to this domain 
 }
 
 QUALITY CHECKS:
-- Every field name, status, role, and screen name must be specific to this domain
-- statusFlow must have 3-5 domain-specific states, not generic Active/Inactive
-- fields must be 5-8 domain-specific fields, not generic Name/Description
-- workflowMap.steps must show the actual business steps, not abstract ones
-- automationModel must show real automation opportunities, not placeholders`
-      }]
-    })
+- Every field name, status, role, screen name is domain-specific
+- statusFlow has 3-5 domain-specific states (no Active/Inactive)
+- fields have 5-8 domain-specific entries (no generic Name/Description)
+- workflowMap.steps shows actual business steps
+- automationModel shows real automation opportunities`
 
-    const brief = extractJSON(msg.content[0].text)
+function buildBriefPrompt({ prompt, buildMode, clarificationAnswers, conversationHistory }) {
+  return BRIEF_USER_TEMPLATE
+    .replace('{{prompt}}', prompt)
+    .replace('{{answers}}', buildAnswersContext(clarificationAnswers))
+    .replace('{{history}}', buildHistoryContext(conversationHistory, 4))
+    .replace('{{buildMode}}', buildMode || 'guided')
+    .replace('{{docsNote}}', buildMode === 'docs'
+      ? 'Documentation First: emphasize stakeholders, approval chain, compliance, document outputs.'
+      : '')
+}
 
-    // Normalize workflowType
-    if (brief.appSpec) {
-      const validTypes = ['approval_workflow', 'intake_tracker', 'status_board']
-      if (!validTypes.includes(brief.appSpec.workflowType)) {
-        const wf = (brief.appSpec.workflowType || '').toLowerCase()
-        if (wf.includes('approv') || wf.includes('review') || wf.includes('request') || wf.includes('procure') || wf.includes('budget')) {
-          brief.appSpec.workflowType = 'approval_workflow'
-        } else if (wf.includes('intake') || wf.includes('ticket') || wf.includes('incident') || wf.includes('support') || wf.includes('case')) {
-          brief.appSpec.workflowType = 'intake_tracker'
-        } else {
-          brief.appSpec.workflowType = 'status_board'
-        }
-      }
+function normalizeBrief(brief) {
+  if (!brief?.appSpec) return brief
+  const validTypes = ['approval_workflow', 'intake_tracker', 'status_board']
+  if (!validTypes.includes(brief.appSpec.workflowType)) {
+    const wf = (brief.appSpec.workflowType || '').toLowerCase()
+    if (/approv|review|request|procure|budget/.test(wf))         brief.appSpec.workflowType = 'approval_workflow'
+    else if (/intake|ticket|incident|support|case/.test(wf))     brief.appSpec.workflowType = 'intake_tracker'
+    else                                                          brief.appSpec.workflowType = 'status_board'
+  }
+  if (brief.appSpec.fields) {
+    brief.appSpec.fields = brief.appSpec.fields.map(f => ({
+      ...f,
+      name: f.name || (f.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
+    }))
+  }
+  return brief
+}
 
-      if (brief.appSpec.fields) {
-        brief.appSpec.fields = brief.appSpec.fields.map(f => ({
-          ...f,
-          name: f.name || f.label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
-        }))
-      }
+async function persistArtifacts(brief, { conversationId, userId, prompt, sourcePrompt }) {
+  const appTitle = brief.appSpec?.appTitle || 'App'
+  const artifactIds = {}
+  const created = []
+  for (const stage of STAGE_MAP) {
+    if (!brief[stage.key]) continue
+    const { data: artifact, error } = await supabase.from('artifacts').insert({
+      conversation_id: conversationId,
+      user_id: userId,
+      artifact_type: stage.type,
+      title: `${appTitle} — ${stage.label}`,
+      content: brief[stage.key],
+      source_prompt: sourcePrompt || prompt,
+      version: 1,
+      status: 'draft',
+      file_urls: {},
+    }).select().single()
+    if (!error && artifact) {
+      artifactIds[stage.type] = artifact.id
+      created.push(artifact)
     }
+  }
+  return { artifactIds, created }
+}
 
-    // ── Get userId from conversation ─────────────────────────────────────────
-    const { data: conv } = await supabase
-      .from('conversations').select('user_id').eq('id', conversationId).single()
+async function generateAndPersistDiagram(orch, brief, conversationId) {
+  try {
+    const mermaidSource = (await orch.text('workflow_diagram', {
+      tier: 'fast',
+      maxTokens: 1500,
+      system: MERMAID_DIAGRAM,
+      prompt: `Workflow brief:\n${JSON.stringify(brief?.workflowMap || brief?.productBrief || {}, null, 2)}`,
+    })).trim().replace(/^```mermaid\n?/, '').replace(/```$/, '').trim()
+
+    const { data: artifact } = await supabase.from('artifacts').insert({
+      conversation_id: conversationId,
+      artifact_type: 'workflow_diagram',
+      title: 'Workflow Diagram',
+      content: { mermaid_source: mermaidSource, diagram_type: 'flowchart' },
+      version: 1,
+      status: 'draft',
+    }).select().single()
+    return artifact
+  } catch (e) {
+    // Diagram generation is non-critical — log but don't fail the whole brief
+    return null
+  }
+}
+
+function fireAndForgetFileGen(artifacts) {
+  if (!artifacts?.length) return
+  Promise.all(artifacts.map(async (artifact) => {
+    try {
+      const { default: genFiles } = await import('./artifacts-generate-files.js')
+      const fakeReq = { method: 'POST', params: { id: artifact.id }, url: `/api/artifacts/${artifact.id}/files` }
+      const fakeRes = { status: () => ({ json: () => {} }), json: () => {}, redirect: () => {} }
+      await genFiles(fakeReq, fakeRes)
+    } catch {}
+  })).catch(() => {})
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const { prompt, conversationId, buildMode, clarificationAnswers, conversationHistory, aiModel } = req.body
+  if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing fields: prompt, conversationId' })
+
+  const orch = createOrchestrator({
+    workflow: 'enterprise_brief',
+    aiModel,
+    traceContext: { conversationId, buildMode },
+  })
+
+  try {
+    // ─── Generate the 7-stage brief ──────────────────────────────────────────
+    const rawBrief = await orch.json('generate_brief', {
+      tier: 'smart',
+      maxTokens: 7500,
+      system: ENTERPRISE_BRIEF,
+      prompt: buildBriefPrompt({ prompt, buildMode, clarificationAnswers, conversationHistory }),
+    })
+    const brief = normalizeBrief(rawBrief)
+
+    // ─── Get userId for artifact ownership ───────────────────────────────────
+    const { data: conv } = await supabase.from('conversations').select('user_id').eq('id', conversationId).single()
     const userId = conv?.user_id || null
 
-    // ── Persist each stage as an individual artifact row ─────────────────────
-    const appTitle = brief.appSpec?.appTitle || 'App'
-    const STAGE_MAP = [
-      { type: 'intake_summary',   key: 'intakeSummary',    label: 'Intake Summary' },
-      { type: 'product_brief',    key: 'productBrief',     label: 'Product Brief' },
-      { type: 'workflow_map',     key: 'workflowMap',      label: 'Workflow Map' },
-      { type: 'data_model',       key: 'dataModel',        label: 'Data Model' },
-      { type: 'automation_model', key: 'automationModel',  label: 'Automation Model' },
-      { type: 'ux_recommendation',key: 'uxRecommendation', label: 'UX Recommendation' },
-      { type: 'app_spec',         key: 'appSpec',          label: 'App Spec' },
-    ]
+    // ─── Persist artifacts (one per stage) ───────────────────────────────────
+    const { artifactIds, created } = await persistArtifacts(brief, { conversationId, userId, prompt })
 
-    const artifactIds = {}
-    const createdArtifacts = []
-    for (const stage of STAGE_MAP) {
-      if (!brief[stage.key]) continue
-      const { data: artifact, error: artErr } = await supabase
-        .from('artifacts')
-        .insert({
-          conversation_id: conversationId,
-          user_id: userId,
-          artifact_type: stage.type,
-          title: `${appTitle} — ${stage.label}`,
-          content: brief[stage.key],
-          source_prompt: prompt,
-          version: 1,
-          status: 'draft',
-          file_urls: {},
-        })
-        .select()
-        .single()
-      if (!artErr && artifact) {
-        artifactIds[stage.type] = artifact.id
-        createdArtifacts.push(artifact)
-      }
-    }
-
-    // ── Persist enterprise_brief message with artifact IDs ────────────────────
-    const { error: briefInsertErr } = await supabase.from('messages').insert({
+    // ─── Persist the brief message card ──────────────────────────────────────
+    await supabase.from('messages').insert({
       conversation_id: conversationId,
       role: 'assistant',
       content: '',
       message_type: 'confirmation',
-      metadata: { cardType: 'enterprise_brief', brief, buildMode, artifactIds },
+      metadata: { cardType: 'enterprise_brief', brief, buildMode, artifactIds, traceId: orch.traceId },
     })
-    if (briefInsertErr) console.error('DB insert error (enterprise_brief):', briefInsertErr)
 
-    // ── Generate Mermaid workflow diagram ────────────────────────────────────
-    let diagramArtifact = null
-    try {
-      diagramArtifact = await generateMermaidDiagram(brief, conversationId)
-      if (diagramArtifact) {
-        artifactIds['workflow_diagram'] = diagramArtifact.id
-        createdArtifacts.push(diagramArtifact)
-      }
-    } catch (e) {
-      console.error('Mermaid diagram generation failed:', e)
+    // ─── Generate workflow diagram (parallel, fast tier) ─────────────────────
+    const diagramArtifact = await generateAndPersistDiagram(orch, brief, conversationId)
+    if (diagramArtifact) {
+      artifactIds.workflow_diagram = diagramArtifact.id
+      created.push(diagramArtifact)
     }
 
-    // ── Fire-and-forget file generation for each artifact ─────────────────────
-    // Do not await — return response immediately, files generate in background
-    Promise.all(createdArtifacts.map(async artifact => {
-      try {
-        const { default: genFiles } = await import('./artifacts-generate-files.js')
-        // Build a fake req/res to reuse the handler
-        const fakeReq = { method: 'POST', params: { id: artifact.id }, url: `/api/artifacts/${artifact.id}/files` }
-        const fakeRes = {
-          status: (c) => ({ json: () => {} }),
-          json: () => {},
-          redirect: () => {},
-        }
-        await genFiles(fakeReq, fakeRes)
-      } catch (e) {
-        console.error(`File gen failed for ${artifact.id}:`, e.message)
-      }
-    })).catch(() => {})
+    // ─── Kick off file generation in the background ──────────────────────────
+    fireAndForgetFileGen(created)
 
-    return res.json({ brief, buildMode, artifactIds })
-
+    orch.end({ stageCount: Object.keys(artifactIds).length, hasDiagram: !!diagramArtifact })
+    return res.json({ brief, buildMode, artifactIds, traceId: orch.traceId })
   } catch (err) {
-    console.error('Brief error:', err)
-    return res.status(500).json({ error: err.message || 'Failed to generate brief. Please try again.' })
+    return respondWithError(res, err, orch)
   }
 }

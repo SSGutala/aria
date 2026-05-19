@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
+import { ToastProvider } from './contexts/ToastContext'
 import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Workspace from './pages/Workspace'
 import GeneratedApp from './pages/GeneratedApp'
 import Settings from './pages/Settings'
+import SignupProfile from './pages/SignupProfile'
 
 function ProtectedRoute({ children, session }) {
   if (session === undefined) return null
@@ -27,10 +29,19 @@ export default function App() {
   }, [])
 
   return (
+    <ToastProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login session={session} />} />
+        <Route
+          path="/signup/profile"
+          element={
+            <ProtectedRoute session={session}>
+              <SignupProfile />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/workspace"
           element={
@@ -58,5 +69,6 @@ export default function App() {
         />
       </Routes>
     </BrowserRouter>
+    </ToastProvider>
   )
 }

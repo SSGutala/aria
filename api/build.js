@@ -1555,6 +1555,9 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('Build error:', err)
-    return res.status(500).json({ error: err.message || 'Build failed. Please try again.' })
+    const userMessage = err.message?.includes('timeout')
+      ? 'Request timed out. The AI service is busy. Please try again.'
+      : err.message || 'Build failed. Please try again.'
+    return res.status(500).json({ error: userMessage, userMessage })
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 
-export default function InputZone({ onSubmit, disabled }) {
+export default function InputZone({ onSubmit, disabled, currentModel, onModelChange }) {
   const [value, setValue] = useState('')
   const textareaRef = useRef(null)
 
@@ -87,6 +87,7 @@ export default function InputZone({ onSubmit, disabled }) {
         alignItems: 'center',
         gap: 8,
         marginTop: 7,
+        justifyContent: 'space-between',
       }}>
         <div style={{ display: 'flex', gap: 6, flex: 1 }}>
           <span style={{
@@ -110,7 +111,29 @@ export default function InputZone({ onSubmit, disabled }) {
             View history
           </span>
         </div>
-        <span style={{ color: '#2A2A2A', fontSize: 10 }}>Enter to send · Shift+Enter for new line</span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <select
+            value={currentModel || 'claude'}
+            onChange={(e) => onModelChange && onModelChange(e.target.value)}
+            style={{
+              background: 'transparent',
+              color: '#6B7280',
+              fontSize: 10,
+              border: '0.5px solid #3D3D3D',
+              borderRadius: 4,
+              padding: '4px 8px',
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+          >
+            <option value="claude">Claude (Anthropic)</option>
+            <option value="groq">Groq</option>
+            <option value="ollama">Ollama (Local)</option>
+          </select>
+
+          <span style={{ color: '#2A2A2A', fontSize: 10, whiteSpace: 'nowrap' }}>Enter to send · Shift+Enter for new line</span>
+        </div>
       </div>
     </div>
   )
