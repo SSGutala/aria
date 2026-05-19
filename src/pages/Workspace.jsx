@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase, MOCK_MODE } from '../lib/supabase'
-import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions } from '../lib/claude'
+import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
 import { useBreakpoint } from '../hooks/useBreakpoint'
@@ -23,6 +23,8 @@ import ChatArea from '../components/ChatArea'
 import InputZone from '../components/InputZone'
 import OnboardingFlow from '../components/OnboardingFlow'
 import HomeScreen from '../components/HomeScreen'
+import EngineIntakeCard from '../components/EngineIntakeCard'
+import DocsTypeCard from '../components/DocsTypeCard'
 
 export default function Workspace() {
   const { convId } = useParams()
@@ -83,6 +85,10 @@ export default function Workspace() {
   const pendingPMPackageRef    = useRef(null)  // stores selected pmPackage ('lean'|'enterprise'|'full_lifecycle')
   const pendingRoleMsgId       = useRef(null)
   const pendingRoleRef         = useRef(null)  // stores selected role ('operations'|'finance'|etc)
+  const pendingEngineIntakeMsgId = useRef(null)   // engine_intake card
+  const pendingDocTypeMsgId    = useRef(null)     // doc_type_picker card
+  const pendingEngineRef       = useRef(null)     // current engine ('software'|'docs'|'automation'|'analytics')
+  const pendingDocTypeRef      = useRef(null)     // selected doc type
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -201,9 +207,12 @@ export default function Workspace() {
   // ─── Auto-fire pending prompt from home screen suggestion ────────────────
   useEffect(() => {
     const pending = location.state?.pendingPrompt
+    const pendingEngine = location.state?.pendingEngine
     if (!pending || !convId || !user) return
     // Clear the state so it doesn't re-fire on refresh
     navigate(location.pathname, { replace: true, state: {} })
+    // If engine known upfront, set it before submit
+    if (pendingEngine) pendingEngineRef.current = pendingEngine
     // Small delay to let the conversation load first
     const t = setTimeout(() => handleSubmit(pending), 200)
     return () => clearTimeout(t)
@@ -386,8 +395,18 @@ export default function Workspace() {
     }
   }
 
-  // ─── PHASE 1: Analyze prompt → show BuildModeCard ───────────────────────────
-  async function runAnalyzeAndQuestion(prompt) {
+  // ─── PHASE 1: Analyze prompt → classify engine and show EngineIntakeCard ──────
+  async function runAnalyzeAndQuestion(prompt, engineHint = null) {
+    // If engine already known from home screen, skip classification entirely
+    if (engineHint) {
+      pendingEngineRef.current = engineHint
+      pendingPromptRef.current = prompt
+      setIsTyping(false)
+      setBuildingLabel(null)
+      await runEngineQuestions(prompt, engineHint, null)
+      return
+    }
+
     setIsTyping(true)
     setBuildingLabel('Analyzing your request...')
     try {
@@ -399,8 +418,22 @@ export default function Workspace() {
 
       const newMsgs = []
 
-      if (result.type === 'build_mode') {
-        // Show natural greeting as a text bubble first
+      if (result.type === 'engine_intake') {
+        if (result.greeting) {
+          newMsgs.push({
+            id: Date.now().toString() + '_greet', role: 'assistant',
+            content: result.greeting, message_type: 'text', metadata: {},
+          })
+        }
+        const intakeId = (Date.now() + 1).toString() + '_ei'
+        pendingEngineIntakeMsgId.current = intakeId
+        pendingEngineRef.current = result.engine
+        newMsgs.push({
+          id: intakeId, role: 'assistant', content: '', message_type: 'engine_intake',
+          metadata: { engine: result.engine, engineFocus: result.engineFocus, confirmed: false },
+        })
+      } else if (result.type === 'build_mode') {
+        // Legacy fallback — server returned old format
         if (result.greeting) {
           newMsgs.push({
             id: Date.now().toString() + '_greet', role: 'assistant',
@@ -767,6 +800,84 @@ export default function Workspace() {
     }
   }
 
+  // ─── Engine: run questions for a given engine (and optional docType) ─────────
+  async function runEngineQuestions(prompt, engine, docType) {
+    if (!prompt) return
+    setIsTyping(true)
+    setBuildingLabel('Preparing questions...')
+    try {
+      const result = await getEngineQuestions(prompt, convId, engine, docType, toHistoryMessages(messages), currentModel)
+      setIsTyping(false)
+      setBuildingLabel(null)
+
+      const newMsgs = []
+
+      if (result.type === 'doc_type_picker') {
+        // Docs engine: show doc type picker first
+        const dtId = Date.now().toString() + '_dt'
+        pendingDocTypeMsgId.current = dtId
+        newMsgs.push({
+          id: dtId, role: 'assistant', content: '', message_type: 'doc_type_picker',
+          metadata: { engine: 'docs' },
+        })
+      } else if (result.type === 'engine_questions') {
+        if (result.intro) {
+          newMsgs.push({
+            id: Date.now().toString() + '_intro', role: 'assistant',
+            content: result.intro, message_type: 'text', metadata: {},
+          })
+        }
+        const clarId = (Date.now() + 1).toString() + '_cv2'
+        pendingClarV2MsgIdRef.current = clarId
+        newMsgs.push({
+          id: clarId, role: 'assistant', content: '', message_type: 'clarification_v2',
+          metadata: {
+            questions: result.questions,
+            outputType: result.outputType,
+            engine: result.engine,
+            docType: result.docType || null,
+          },
+        })
+      }
+
+      setMessages(prev => [...prev, ...newMsgs])
+      await persistCardMessages(newMsgs)
+    } catch (err) {
+      handleApiError(err, { action: 'prepare questions', onRetry: () => runEngineQuestions(prompt, engine, docType) })
+    } finally {
+      setIsTyping(false)
+      setBuildingLabel(null)
+    }
+  }
+
+  // ─── User confirms the engine (clicks "Start with X Engine") ─────────────────
+  async function handleEngineConfirm(engine) {
+    pendingEngineRef.current = engine
+    logAction('engine.confirmed', { engine, conversationId: convId })
+    // Mark intake card as confirmed
+    if (pendingEngineIntakeMsgId.current) {
+      const intakeId = pendingEngineIntakeMsgId.current
+      setMessages(prev => prev.map(m =>
+        m.id === intakeId ? { ...m, metadata: { ...m.metadata, confirmed: true } } : m
+      ))
+    }
+    await runEngineQuestions(pendingPromptRef.current, engine, null)
+  }
+
+  // ─── User selects doc type (docs engine only) ─────────────────────────────────
+  async function handleDocTypeSelect(docType) {
+    pendingDocTypeRef.current = docType
+    logAction('docs_engine.type_selected', { docType, conversationId: convId })
+    // Mark doc type card as selected
+    if (pendingDocTypeMsgId.current) {
+      const dtId = pendingDocTypeMsgId.current
+      setMessages(prev => prev.map(m =>
+        m.id === dtId ? { ...m, metadata: { ...m.metadata, selectedDocType: docType } } : m
+      ))
+    }
+    await runEngineQuestions(pendingPromptRef.current, 'docs', docType)
+  }
+
   // ─── Quick clarification answered ─────────────────────────────────────────
   async function handleClarification(answers) {
     const originalPrompt = pendingPromptRef.current
@@ -799,10 +910,33 @@ export default function Workspace() {
 
     const outputType = cardMetadata?.outputType || 'brief'
     const buildMode = cardMetadata?.buildMode || 'general'
+    const engine = cardMetadata?.engine || pendingEngineRef.current || null
     const pmPackage = cardMetadata?.pmPackage || pendingPMPackageRef.current || 'lean'
     const rolePackage = cardMetadata?.rolePackage || 'guided'
-    logAction('clarification.answered', { outputType, buildMode, conversationId: convId })
+    logAction('clarification.answered', { outputType, buildMode, engine, conversationId: convId })
 
+    // Engine-specific routing
+    if (engine === 'software' || outputType === 'software_spec' || outputType === 'analytics_spec') {
+      await runSpec(originalPrompt, answers)
+      return
+    }
+
+    if (engine === 'docs' || outputType === 'doc_brief') {
+      await runBrief(originalPrompt, 'docs', answers)
+      return
+    }
+
+    if (engine === 'automation' || outputType === 'automation_brief') {
+      await runBrief(originalPrompt, 'operations', answers)
+      return
+    }
+
+    if (engine === 'analytics') {
+      await runSpec(originalPrompt, answers)
+      return
+    }
+
+    // Legacy routing
     if (outputType === 'spec') {
       await runSpec(originalPrompt, answers)
       return
@@ -899,13 +1033,15 @@ export default function Workspace() {
     setCurrentConv(prev => prev ? { ...prev, title: prompt.slice(0, 60) } : prev)
     loadConversations()
 
-    await runAnalyzeAndQuestion(prompt)
+    const engineHint = pendingEngineRef.current
+    pendingEngineRef.current = null
+    await runAnalyzeAndQuestion(prompt, engineHint)
   }
 
   // ─── Home screen: start a new conversation from a suggestion ────────────────
-  async function handleStartFromHome(promptText) {
+  async function handleStartFromHome(promptText, engine = null) {
     if (!user) return
-    logAction('home.suggestion_started', { promptLength: promptText.length })
+    logAction('home.suggestion_started', { promptLength: promptText.length, engine })
     const { data, error } = await supabase
       .from('conversations')
       .insert({ user_id: user.id, title: promptText.slice(0, 60) })
@@ -913,7 +1049,7 @@ export default function Workspace() {
     if (error || !data) return
     loadConversations()
     // Navigate first, then submit after navigation renders the new convId
-    navigate(`/workspace/${data.id}`, { state: { pendingPrompt: promptText } })
+    navigate(`/workspace/${data.id}`, { state: { pendingPrompt: promptText, pendingEngine: engine } })
   }
 
   // Detect short follow-up / continuation messages that don't need re-analysis
@@ -965,6 +1101,14 @@ export default function Workspace() {
   // ─── Attach live handlers to messages ─────────────────────────────────────
   const messagesWithHandlers = messages.map(m => {
     const ct = m.metadata?.cardType || m.message_type
+    if (ct === 'engine_intake') {
+      const isActive = m.id === pendingEngineIntakeMsgId.current && !isTyping
+      return { ...m, onEngineConfirm: isActive && !m.metadata?.confirmed ? handleEngineConfirm : null }
+    }
+    if (ct === 'doc_type_picker') {
+      const isActive = m.id === pendingDocTypeMsgId.current && !isTyping
+      return { ...m, onDocTypeSelect: isActive ? handleDocTypeSelect : null }
+    }
     if (ct === 'build_mode') {
       const isActive = m.id === pendingBuildModeMsgId.current && !isTyping
       const hideRoleSpecific = !!(profile?.work_category && profile.work_category.length > 0)

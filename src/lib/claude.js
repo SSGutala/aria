@@ -214,7 +214,14 @@ export async function generateApp(prompt, conversationId, messages, clarificatio
     aiModel)
 }
 
-// Phase 1: analyze prompt and return clarification_v2 directly (no intermediate mode card)
+// Engine-specific question generation
+export async function getEngineQuestions(prompt, conversationId, engine, docType = null, conversationHistory = [], aiModel = 'claude') {
+  const body = { prompt, conversationId, engine, conversationHistory }
+  if (docType) body.docType = docType
+  return postJSON('/api/generate', body, 'preparing questions', {}, aiModel)
+}
+
+// Phase 1: analyze prompt and return engine_intake (engine classification)
 export async function analyzeAndQuestion(prompt, conversationId, conversationHistory = [], aiModel = 'claude', userMemories = []) {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 1000))

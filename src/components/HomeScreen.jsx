@@ -6,6 +6,7 @@ const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 
 const SUGGESTIONS = [
   {
     category: 'Build a tool',
+    engine: 'software',
     color: '#818CF8',
     bg: '#0F0F1A',
     border: '#1E1E3A',
@@ -16,6 +17,7 @@ const SUGGESTIONS = [
   },
   {
     category: 'Generate docs',
+    engine: 'docs',
     color: '#34D399',
     bg: '#0A1A14',
     border: '#1A3A28',
@@ -26,6 +28,7 @@ const SUGGESTIONS = [
   },
   {
     category: 'Automate a process',
+    engine: 'automation',
     color: '#F59E0B',
     bg: '#1A1400',
     border: '#3A2E00',
@@ -36,6 +39,7 @@ const SUGGESTIONS = [
   },
   {
     category: 'Analyse & report',
+    engine: 'analytics',
     color: '#60A5FA',
     bg: '#0A0F1A',
     border: '#1A2A3A',
@@ -52,9 +56,9 @@ export default function HomeScreen({ user, onStartConversation }) {
   const firstName = user?.user_metadata?.full_name?.split(' ')[0] ||
     user?.email?.split('@')[0] || null
 
-  function handleSuggestion(promptText, label) {
-    logAction('home.suggestion_clicked', { label })
-    onStartConversation(promptText)
+  function handleSuggestion(promptText, label, engine) {
+    logAction('home.suggestion_clicked', { label, engine })
+    onStartConversation(promptText, engine)
   }
 
   return (
@@ -125,7 +129,7 @@ export default function HomeScreen({ user, onStartConversation }) {
               return (
                 <button
                   key={p.label}
-                  onClick={() => handleSuggestion(p.text, p.label)}
+                  onClick={() => handleSuggestion(p.text, p.label, group.engine)}
                   onMouseEnter={() => setHoveredPrompt(key)}
                   onMouseLeave={() => setHoveredPrompt(null)}
                   style={{

@@ -7,6 +7,8 @@ import BuildingIndicator from './BuildingIndicator'
 import BuildModeCard from './BuildModeCard'
 import PMPackageCard from './PMPackageCard'
 import RolePackageCard from './RolePackageCard'
+import EngineIntakeCard from './EngineIntakeCard'
+import DocsTypeCard from './DocsTypeCard'
 
 function AIIcon() {
   return (
@@ -92,6 +94,34 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
         <GeneratedAppCard schema={meta.schema} slug={meta.slug} appId={meta.appId} />
+      </div>
+    )
+  }
+
+  // ── Engine intake card ───────────────────────────────────────────────────────
+  if (cardType === 'engine_intake') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <AIIcon />
+        <EngineIntakeCard
+          engine={meta.engine}
+          engineFocus={meta.engineFocus}
+          onConfirm={message.onEngineConfirm}
+          confirmed={meta.confirmed}
+        />
+      </div>
+    )
+  }
+
+  // ── Doc type picker card ─────────────────────────────────────────────────────
+  if (cardType === 'doc_type_picker') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <AIIcon />
+        <DocsTypeCard
+          onSelect={message.onDocTypeSelect}
+          selected={meta.selectedDocType}
+        />
       </div>
     )
   }

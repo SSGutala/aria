@@ -19,6 +19,10 @@
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
 import { INTAKE_TRIAGE, buildHistoryContext } from './lib/prompts.js'
 import { devlog } from './lib/devlog.js'
+import softwareEngineHandler from './engines/software.js'
+import docsEngineHandler from './engines/docs.js'
+import automationEngineHandler from './engines/automation.js'
+import analyticsEngineHandler from './engines/analytics.js'
 
 const ROLE_MODES = ['operations', 'it_admin', 'compliance', 'finance', 'hr']
 
@@ -31,6 +35,7 @@ export default async function handler(req, res) {
     clarificationAnswers,
     outputType,
     buildMode,
+    engine,
     pmPackage,
     rolePackage,
     conversationHistory,
@@ -56,7 +61,19 @@ export default async function handler(req, res) {
     return downstreamHandler(req, res)
   }
 
-  // ─── STAGE 1.5: buildMode set, get questions ─────────────────────────────────
+  // ─── ENGINE ROUTING: engine selected → route to engine handler ───────────────
+  if (engine) {
+    const engineMap = {
+      software: softwareEngineHandler,
+      docs: docsEngineHandler,
+      automation: automationEngineHandler,
+      analytics: analyticsEngineHandler,
+    }
+    const handler = engineMap[engine]
+    if (handler) return handler(req, res)
+  }
+
+  // ─── STAGE 1.5: buildMode set, get questions (legacy fallback) ───────────────
   if (buildMode) {
     const orch = createOrchestrator({
       workflow: 'mode_questions',
@@ -206,35 +223,30 @@ Generate ${isQuick ? '2-3 focused' : '4-5 deep'} discovery questions. Return JSO
       system: INTAKE_TRIAGE,
       prompt: `User request: "${prompt}"${historyContext}${memoriesContext}
 
-Analyze and respond. Return JSON:
+Analyze and classify this request. Return JSON:
 {
-  "greeting": "1-2 sentence natural acknowledgment. Name what you understood they want to build. Be direct and specific — no 'Great idea!' or 'Sure!' openers. Never repeat their words back verbatim. Show you understood the real problem. End with a forward-moving statement about what you'll need.",
-  "recommendedMode": "quick | guided | docs | product_manager | operations | finance | hr | compliance | it_admin",
-  "complexityReason": "Under 12 words: why this mode fits (shown as subtitle under the card)"
+  "engine": "software | docs | automation | analytics",
+  "greeting": "1-2 sentence natural acknowledgment. Name what you understood they want to build/create/automate/analyse. Be direct and specific. Show you understood the real need. Never start with 'Sure', 'Great', 'Absolutely'. Never parrot their words back.",
+  "engineFocus": "Under 12 words describing what this engine will do for them"
 }
 
-Mode rules:
-- quick: simple CRUD, single table, solo tool, no approvals
-- guided: multi-role workflows, approvals, automations, integrations
-- docs: compliance required, multi-stakeholder sign-off needed
-- product_manager: user explicitly mentions PRD, product brief, or PM deliverables
-- operations/finance/hr/compliance/it_admin: request is clearly from or for that specific function
+Engine classification rules:
+- software: building an internal app, tool, portal, system, CRUD, admin console, form, tracker, CRM
+- docs: generating documents, PRDs, SOPs, business cases, architecture docs, roadmaps, reports (text/docs, not dashboards)
+- automation: automating a process, workflow routing, approvals, escalations, notifications, triggers, scheduled tasks
+- analytics: dashboards, KPI tracking, reporting, metrics, data visualization, business intelligence, monitoring
 
-Greeting rules:
-- Never start with "Sure", "Great", "Absolutely", "Of course", "Got it" alone
-- Never parrot the user's prompt back word-for-word
-- Be specific about what you understood (name the real domain, the actual workflow)
-- 1-2 sentences max. Professional and direct.
-- Example good greeting: "Resume screening with per-session scoring criteria — the key workflow is file ingestion, criteria input, and ranked output. Before I scope this out, a couple of things to nail down."`,
+When ambiguous between software and analytics: if primary goal is DISPLAYING data → analytics. If primary goal is MANAGING/OPERATING → software.
+When ambiguous between docs and others: if output is a document to be read/reviewed → docs. If output is a working system → software/automation.`,
     })
 
-    orch.end({ recommendedMode: parsed.recommendedMode })
-    devlog('intake.analyzed', { recommendedMode: parsed.recommendedMode, conversationId })
+    orch.end({ engine: parsed.engine })
+    devlog('intake.analyzed', { engine: parsed.engine, conversationId })
     return res.json({
-      type: 'build_mode',
+      type: 'engine_intake',
+      engine: parsed.engine || 'software',
       greeting: parsed.greeting || '',
-      recommendedMode: parsed.recommendedMode || 'guided',
-      complexityReason: parsed.complexityReason || '',
+      engineFocus: parsed.engineFocus || '',
     })
   } catch (err) {
     return respondWithError(res, err, orch)
