@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase, MOCK_MODE } from '../lib/supabase'
 import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
@@ -22,10 +22,12 @@ import Topbar from '../components/Topbar'
 import ChatArea from '../components/ChatArea'
 import InputZone from '../components/InputZone'
 import OnboardingFlow from '../components/OnboardingFlow'
+import HomeScreen from '../components/HomeScreen'
 
 export default function Workspace() {
   const { convId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { isMobile, isSmall } = useBreakpoint()
   const toast = useToast()
 
@@ -195,6 +197,17 @@ export default function Workspace() {
     setViewingArtifact(null)
     setShowArtifactPanel(false)
   }, [convId])
+
+  // ─── Auto-fire pending prompt from home screen suggestion ────────────────
+  useEffect(() => {
+    const pending = location.state?.pendingPrompt
+    if (!pending || !convId || !user) return
+    // Clear the state so it doesn't re-fire on refresh
+    navigate(location.pathname, { replace: true, state: {} })
+    // Small delay to let the conversation load first
+    const t = setTimeout(() => handleSubmit(pending), 200)
+    return () => clearTimeout(t)
+  }, [convId, user, location.state?.pendingPrompt])
 
   // ─── Load artifacts for a conversation ────────────────────────────────────
   async function loadArtifacts(cid) {
@@ -889,6 +902,20 @@ export default function Workspace() {
     await runAnalyzeAndQuestion(prompt)
   }
 
+  // ─── Home screen: start a new conversation from a suggestion ────────────────
+  async function handleStartFromHome(promptText) {
+    if (!user) return
+    logAction('home.suggestion_started', { promptLength: promptText.length })
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert({ user_id: user.id, title: promptText.slice(0, 60) })
+      .select().single()
+    if (error || !data) return
+    loadConversations()
+    // Navigate first, then submit after navigation renders the new convId
+    navigate(`/workspace/${data.id}`, { state: { pendingPrompt: promptText } })
+  }
+
   // Detect short follow-up / continuation messages that don't need re-analysis
   function isFollowUpIntent(text) {
     const t = text.trim().toLowerCase().replace(/[^a-z0-9 ]/g, '')
@@ -1076,14 +1103,9 @@ export default function Workspace() {
               )}
             </>
           ) : (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12, color: '#2A2A2A', fontSize: 13 }}>
-              <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                <rect x="2" y="2" width="17" height="17" rx="3" fill="#2A2A2A" />
-                <rect x="21" y="2" width="17" height="17" rx="3" fill="#333" />
-                <rect x="2" y="21" width="17" height="17" rx="3" fill="#222" />
-                <rect x="21" y="21" width="17" height="17" rx="3" fill="#2E2E2E" />
-              </svg>
-              <span>Select a conversation or create a new app</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <HomeScreen user={user} onStartConversation={handleStartFromHome} />
+              <InputZone onSubmit={handleStartFromHome} disabled={isTyping} currentModel={currentModel} onModelChange={setCurrentModel} />
             </div>
           )}
         </div>
