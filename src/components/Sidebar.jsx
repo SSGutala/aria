@@ -279,7 +279,7 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
               <div style={{ padding: '6px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 10, color: '#3D3D3D', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Chats</span>
                 <button
-                  onClick={() => setConfirmClearAll('chats')}
+                  onClick={() => { logAction('conversations.clear_all_initiated', {}); setConfirmClearAll('chats') }}
                   style={{ background: 'none', border: 'none', fontSize: 9, color: '#3D3D3D', cursor: 'pointer', padding: '1px 4px', borderRadius: 3, fontFamily: 'inherit', letterSpacing: '0.03em' }}
                   onMouseEnter={e => e.currentTarget.style.color = '#F87171'}
                   onMouseLeave={e => e.currentTarget.style.color = '#3D3D3D'}
@@ -298,7 +298,7 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
                     onMouseEnter={() => setHoveredId(conv.id)}
                     onMouseLeave={() => setHoveredId(null)}
                     onClick={() => { if (!isRenaming) { logAction('conversation.opened', { conversationId: conv.id }); navigate(`/workspace/${conv.id}`) } }}
-                    onDoubleClick={() => setRenamingId(conv.id)}
+                    onDoubleClick={() => { logAction('conversation.rename_started', { conversationId: conv.id }); setRenamingId(conv.id) }}
                     style={{
                       padding: '7px 10px', borderRadius: 6, fontSize: 12,
                       display: 'flex', alignItems: 'center', gap: 8,
@@ -356,8 +356,8 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
                     key={app.id}
                     onMouseEnter={() => setHoveredId(`app-${app.id}`)}
                     onMouseLeave={() => setHoveredId(null)}
-                    onClick={() => !isRenaming && window.open(`/app/${app.slug}`, '_blank')}
-                    onDoubleClick={() => setRenamingId(`app-${app.id}`)}
+                    onClick={() => { if (!isRenaming) { logAction('app.opened', { appId: app.id, slug: app.slug }); window.open(`/app/${app.slug}`, '_blank') } }}
+                    onDoubleClick={() => { logAction('app.rename_started', { appId: app.id }); setRenamingId(`app-${app.id}`) }}
                     style={{
                       padding: '7px 10px', borderRadius: 6, fontSize: 12,
                       display: 'flex', alignItems: 'center', gap: 8,
@@ -397,7 +397,7 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
         {/* Trash */}
         <div style={{ padding: '0 8px 4px' }}>
           <button
-            onClick={() => { setShowTrash(v => !v); if (!showTrash) loadTrash() }}
+            onClick={() => { logAction('trash.toggled', { open: !showTrash }); setShowTrash(v => !v); if (!showTrash) loadTrash() }}
             style={{ width: '100%', background: 'transparent', border: 'none', borderRadius: 6, padding: '7px 10px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: '#3D3D3D', fontSize: 12, fontFamily: 'inherit' }}
             onMouseEnter={e => { e.currentTarget.style.background = '#141414'; e.currentTarget.style.color = '#737373' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#3D3D3D' }}
@@ -427,13 +427,13 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
                         <span style={{ fontSize: 10, color: '#3D3D3D' }}>{daysLeft(item.deleted_at)}d left</span>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button
-                            onClick={() => restoreItem(item)}
+                            onClick={() => { logAction('trash.item_restored', { itemId: item.id, type: item.type }); restoreItem(item) }}
                             style={{ background: 'transparent', border: 'none', color: '#525252', fontSize: 10, cursor: 'pointer', padding: '1px 4px', fontFamily: 'inherit' }}
                             onMouseEnter={e => e.currentTarget.style.color = '#34D399'}
                             onMouseLeave={e => e.currentTarget.style.color = '#525252'}
                           >Restore</button>
                           <button
-                            onClick={() => setConfirmPermDelete(item)}
+                            onClick={() => { logAction('trash.item_permanently_deleted', { itemId: item.id, type: item.type }); setConfirmPermDelete(item) }}
                             style={{ background: 'transparent', border: 'none', color: '#525252', fontSize: 10, cursor: 'pointer', padding: '1px 4px', fontFamily: 'inherit' }}
                             onMouseEnter={e => e.currentTarget.style.color = '#F87171'}
                             onMouseLeave={e => e.currentTarget.style.color = '#525252'}
@@ -443,7 +443,7 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
                     </div>
                   ))}
                   <button
-                    onClick={() => setConfirmClearTrash(true)}
+                    onClick={() => { logAction('trash.cleared', {}); setConfirmClearTrash(true) }}
                     style={{ width: '100%', background: 'transparent', border: '0.5px solid #2A2A2A', borderRadius: 5, color: '#F87171', fontSize: 10, cursor: 'pointer', padding: '6px', marginTop: 4, fontFamily: 'inherit' }}
                   >
                     Clear Trash
@@ -457,7 +457,7 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
         {/* Settings link */}
         <div style={{ padding: '0 8px 6px' }}>
           <button
-            onClick={() => window.location.href = '/settings'}
+            onClick={() => { logAction('settings.opened', {}); window.location.href = '/settings' }}
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: 'none', borderRadius: 7, padding: '7px 8px', cursor: 'pointer', color: '#525252', fontSize: 12, fontFamily: 'inherit', textAlign: 'left' }}
             onMouseEnter={e => { e.currentTarget.style.background = '#1A1A1A'; e.currentTarget.style.color = '#A3A3A3' }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#525252' }}

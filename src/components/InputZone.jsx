@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import { logAction } from '../lib/devlog'
 
 export default function InputZone({ onSubmit, disabled, currentModel, onModelChange }) {
   const [value, setValue] = useState('')
@@ -115,7 +116,7 @@ export default function InputZone({ onSubmit, disabled, currentModel, onModelCha
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <select
             value={currentModel || 'claude'}
-            onChange={(e) => onModelChange && onModelChange(e.target.value)}
+            onChange={(e) => { logAction('model.changed', { model: e.target.value }); onModelChange && onModelChange(e.target.value) }}
             style={{
               background: 'transparent',
               color: '#6B7280',

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import mermaid from 'mermaid'
+import { logAction } from '../lib/devlog'
 
 mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' })
 
@@ -62,17 +63,17 @@ export default function DiagramViewer({ diagram, onClose, onUpdate }) {
         <span style={{ fontSize:10,color:'#525252',background:'#1A1A1A',border:'0.5px solid #2A2A2A',borderRadius:4,padding:'2px 8px' }}>Diagram</span>
         {mode === 'view' ? (
           <>
-            <button onClick={() => setMode('edit')} style={btnStyle('#1E1E1E','#A3A3A3')}>✏ Edit</button>
-            <button onClick={exportSVG} style={btnStyle('#1E1E1E','#A3A3A3')}>↓ SVG</button>
-            <button onClick={exportMermaid} style={btnStyle('#1E1E1E','#A3A3A3')}>↓ Mermaid</button>
+            <button onClick={() => { logAction('diagram.edit_mode_entered', {}); setMode('edit') }} style={btnStyle('#1E1E1E','#A3A3A3')}>✏ Edit</button>
+            <button onClick={() => { logAction('diagram.exported', { format: 'svg' }); exportSVG() }} style={btnStyle('#1E1E1E','#A3A3A3')}>↓ SVG</button>
+            <button onClick={() => { logAction('diagram.exported', { format: 'mermaid' }); exportMermaid() }} style={btnStyle('#1E1E1E','#A3A3A3')}>↓ Mermaid</button>
           </>
         ) : (
           <>
-            <button onClick={() => setMode('view')} style={btnStyle('#1E1E1E','#737373')}>Cancel</button>
-            <button onClick={save} disabled={saving} style={btnStyle('#1A2A1A','#34D399')}>{saving ? 'Saving...' : 'Save'}</button>
+            <button onClick={() => { logAction('diagram.edit_cancelled', {}); setMode('view') }} style={btnStyle('#1E1E1E','#737373')}>Cancel</button>
+            <button onClick={() => { logAction('diagram.saved', {}); save() }} disabled={saving} style={btnStyle('#1A2A1A','#34D399')}>{saving ? 'Saving...' : 'Save'}</button>
           </>
         )}
-        <button onClick={onClose} style={{ background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:18,padding:'0 4px' }}>✕</button>
+        <button onClick={() => { logAction('diagram.viewer_closed', {}); onClose() }} style={{ background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:18,padding:'0 4px' }}>✕</button>
       </div>
 
       {/* Body */}

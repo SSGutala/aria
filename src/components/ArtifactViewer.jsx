@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { API_URL as API } from '../lib/api'
+import { logAction } from '../lib/devlog'
 
 const TYPE_META = {
   intake_summary:    { label: 'Intake Summary',    icon: '📋', color: '#60A5FA', accent: '#1E3A5F' },
@@ -598,6 +599,7 @@ function AIEditPane({ artifact, onDone }) {
 
   async function submit() {
     if (!instruction.trim() || loading) return
+    logAction('artifact.ai_edit_submitted', { artifactId: artifact?.id, instructionLength: instruction.length })
     setLoading(true); setError('')
     try {
       const res = await fetch(`${API}/api/artifacts/ai-edit`, {
@@ -665,6 +667,7 @@ function ManualEditor({ artifact, onSaved, onCancel }) {
   }
 
   async function handleSave() {
+    logAction('artifact.manual_edit_saved', { artifactId: artifact?.id })
     clearTimeout(debounceRef.current)
     await doSave(text)
   }
@@ -688,7 +691,7 @@ function ManualEditor({ artifact, onSaved, onCancel }) {
       {/* Editor header bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 24px', borderBottom: '1px solid #D1D5DB', background: '#F9FAFB', flexShrink: 0 }}>
         <span style={{ fontSize: 11, color: statusColor, flex: 1 }}>{statusLabel}</span>
-        <button onClick={onCancel}
+        <button onClick={() => { logAction('artifact.manual_edit_cancelled', { artifactId: artifact?.id }); onCancel() }}
           style={{ background: 'transparent', color: '#374151', border: '1px solid #D1D5DB', borderRadius: 5, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
           Cancel
         </button>
@@ -733,6 +736,7 @@ function ExportDropdown({ artifact, formats, fileUrls, onRegenFiles, generatingF
   }, [])
 
   async function handleFormat(fmt) {
+    logAction('artifact.exported', { artifactId: artifact?.id, format: fmt })
     const url = fileUrls[fmt]
     if (url) {
       window.open(url, '_blank')
@@ -871,7 +875,7 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
       position: 'fixed', inset: 0, zIndex: 9000,
       display: 'flex', alignItems: 'stretch', justifyContent: 'center',
       background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)',
-    }} onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    }} onClick={e => { if (e.target === e.currentTarget) { logAction('artifact.viewer_closed', { artifactId: artifact?.id, via: 'backdrop' }); onClose() } }}>
 
       <div style={{
         width: 'min(880px, 96vw)', margin: '24px auto',
@@ -899,16 +903,16 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
             {/* Header action buttons — view mode */}
             {mode === 'view' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <button onClick={() => setMode('ai')}
+                <button onClick={() => { logAction('artifact.ai_edit_mode_entered', { artifactId: artifact?.id }); setMode('ai') }}
                   style={{ background: '#1A0D2A', color: '#A78BFA', border: '0.5px solid #3A1E5F', borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
                   ✦ Ask Aria
                 </button>
-                <button onClick={() => setMode('manual')}
+                <button onClick={() => { logAction('artifact.manual_edit_mode_entered', { artifactId: artifact?.id }); setMode('manual') }}
                   style={{ background: '#1A1A1A', color: '#D4D4D4', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
                   ✏ Edit
                 </button>
                 {artifact.status !== 'approved' ? (
-                  <button onClick={handleApprove}
+                  <button onClick={() => { logAction('artifact.approved', { artifactId: artifact?.id }); handleApprove() }}
                     style={{ background: '#0D1F16', color: '#34D399', border: '0.5px solid #34D39944', borderRadius: 5, padding: '5px 10px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
                     ✓ Approve
                   </button>
@@ -925,24 +929,24 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
                   onRegenFiles={urls => { setFileUrls(urls); setArtifact(prev => ({ ...prev, file_urls: urls })) }}
                   generatingFiles={generatingFiles}
                 />
-                <button onClick={onClose} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
+                <button onClick={() => { logAction('artifact.viewer_closed', { artifactId: artifact?.id }); onClose() }} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
               </div>
             )}
 
             {/* Header buttons — AI mode */}
             {mode === 'ai' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <button onClick={() => setMode('view')}
+                <button onClick={() => { logAction('artifact.ai_edit_mode_exited', { artifactId: artifact?.id }); setMode('view') }}
                   style={{ background: 'transparent', color: '#737373', border: '0.5px solid #2A2A2A', borderRadius: 5, padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
                   ← Back
                 </button>
-                <button onClick={onClose} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
+                <button onClick={() => { logAction('artifact.viewer_closed', { artifactId: artifact?.id }); onClose() }} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
               </div>
             )}
 
             {/* Header buttons shown inside ManualEditor itself (close only here) */}
             {mode === 'manual' && (
-              <button onClick={onClose} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
+              <button onClick={() => { logAction('artifact.viewer_closed', { artifactId: artifact?.id }); onClose() }} style={{ background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 6, color: '#525252', cursor: 'pointer', fontSize: 16, padding: '4px 8px', lineHeight: 1 }}>✕</button>
             )}
           </div>
         </div>

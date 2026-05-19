@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { logAction } from '../lib/devlog'
 
 const THEME_ICONS = {
   ocean: '🌊', forest: '🌿', violet: '✦', rose: '◆', amber: '⬡', slate: '▣',
@@ -52,7 +53,7 @@ function ColorPicker({ current, onChange, onClose }) {
         {COLOR_PRESETS.map(preset => (
           <button
             key={preset.name}
-            onClick={() => { onChange(preset); onClose() }}
+            onClick={() => { logAction('spec.color_changed', { colorName: preset.name, primary: preset.primary }); onChange(preset); onClose() }}
             title={preset.name}
             style={{
               width: 24, height: 24, borderRadius: 6,
@@ -74,6 +75,7 @@ function ColorPicker({ current, onChange, onClose }) {
             defaultValue={current.primary}
             onChange={e => {
               const hex = e.target.value
+              logAction('spec.color_changed', { colorName: 'custom', primary: hex })
               onChange({ name: 'custom', primary: hex, light: hex + '18', text: '#111827' })
             }}
             style={{ width: 32, height: 28, border: '1px solid #E5E7EB', borderRadius: 6, cursor: 'pointer', padding: 2 }}
@@ -102,6 +104,7 @@ export default function SpecCard({ spec, onBuild, onSpecChange }) {
   }
 
   async function handleBuild() {
+    logAction('spec.build_requested', {})
     setBuilding(true)
     await onBuild()
   }
@@ -192,7 +195,7 @@ export default function SpecCard({ spec, onBuild, onSpecChange }) {
           <div style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Color theme</div>
           <div style={{ display: 'flex', gap: 5, position: 'relative' }}>
             <button
-              onClick={() => setShowPicker(v => !v)}
+              onClick={() => { logAction('spec.color_picker_toggled', {}); setShowPicker(v => !v) }}
               title="Click to change color theme"
               style={{ display: 'flex', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0, alignItems: 'center' }}
             >

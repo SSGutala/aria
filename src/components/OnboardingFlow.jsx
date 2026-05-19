@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { logAction } from '../lib/devlog'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -65,7 +66,7 @@ export default function OnboardingFlow({ onComplete }) {
                 <span style={{ color: '#3D3D3D', fontSize: 12 }}>Product walkthrough coming soon</span>
               </div>
               <button
-                onClick={() => setStep(2)}
+                onClick={() => { logAction('onboarding.step_advanced', { step: 2 }); setStep(2) }}
                 style={{
                   background: glareGradient,
                   color: '#111111',
@@ -90,7 +91,7 @@ export default function OnboardingFlow({ onComplete }) {
                 Your generated apps will live inside your existing Microsoft environment: SharePoint, Outlook, Teams, and Azure AD.
               </p>
               <button
-                onClick={() => showToast('M365 integration coming soon. Skip for now.')}
+                onClick={() => { logAction('onboarding.m365_connect_clicked', {}); showToast('M365 integration coming soon. Skip for now.') }}
                 style={{
                   background: glareGradient,
                   color: '#111111',
@@ -105,7 +106,7 @@ export default function OnboardingFlow({ onComplete }) {
                 Connect Microsoft 365
               </button>
               <button
-                onClick={() => setStep(3)}
+                onClick={() => { logAction('onboarding.m365_skipped', {}); setStep(3) }}
                 style={{
                   background: '#1A1A1A',
                   color: '#525252',
@@ -128,7 +129,7 @@ export default function OnboardingFlow({ onComplete }) {
                 Describe any internal tool in plain English and Aria will build and deploy it instantly.
               </p>
               <button
-                onClick={handleComplete}
+                onClick={() => { logAction('onboarding.completed', {}); handleComplete() }}
                 style={{
                   background: glareGradient,
                   color: '#111111',
