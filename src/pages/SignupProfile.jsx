@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { deriveAccountType, useProfile } from '../hooks/useProfile'
 import { logAction } from '../lib/devlog'
 
@@ -116,6 +117,7 @@ export default function SignupProfile() {
   const navigate = useNavigate()
   const { saveProfile } = useProfile()
   const [step, setStep] = useState(1)
+  const [fullName, setFullName] = useState('')
   const [jobTitle, setJobTitle] = useState('')
   const [workCategory, setWorkCategory] = useState([])
   const [useCases, setUseCases] = useState([])
@@ -137,7 +139,10 @@ export default function SignupProfile() {
     setSaving(true)
     setError('')
     try {
+      // Save full_name to Supabase auth user metadata so it's accessible anywhere
+      await supabase.auth.updateUser({ data: { full_name: fullName.trim() } })
       await saveProfile({
+        full_name: fullName.trim(),
         job_title: jobTitle.trim(),
         work_category: workCategory.join(','),
         use_cases: useCases,
@@ -179,7 +184,7 @@ export default function SignupProfile() {
         <div style={{ background: '#0D0D0D', border: '0.5px solid #2A2A2A', borderRadius: 14, padding: 28 }}>
           <StepIndicator current={step} total={3} />
 
-          {/* Step 1: Job title + work category */}
+          {/* Step 1: Name + job title + work category */}
           {step === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div>
@@ -187,6 +192,20 @@ export default function SignupProfile() {
                 <p style={{ color: '#525252', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
                   This helps Aria tailor the experience to how you actually work.
                 </p>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 11, color: '#A3A3A3', marginBottom: 6, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  Your name
+                </label>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
+                  placeholder="First and last name"
+                  style={inputStyle}
+                  autoFocus
+                />
               </div>
 
               <div>
@@ -199,7 +218,6 @@ export default function SignupProfile() {
                   onChange={e => setJobTitle(e.target.value)}
                   placeholder="e.g. Product Manager, Operations Lead, CTO..."
                   style={inputStyle}
-                  autoFocus
                 />
               </div>
 
@@ -240,14 +258,14 @@ export default function SignupProfile() {
 
               <button
                 onClick={() => setStep(2)}
-                disabled={!jobTitle.trim() || !workCategory.length}
+                disabled={!fullName.trim() || !jobTitle.trim() || !workCategory.length}
                 style={{
-                  background: jobTitle.trim() && workCategory.length ? glareGradient : '#1C1C1C',
-                  color: jobTitle.trim() && workCategory.length ? '#111111' : '#3D3D3D',
-                  border: `0.5px solid ${jobTitle.trim() && workCategory.length ? '#484848' : '#2A2A2A'}`,
+                  background: fullName.trim() && jobTitle.trim() && workCategory.length ? glareGradient : '#1C1C1C',
+                  color: fullName.trim() && jobTitle.trim() && workCategory.length ? '#111111' : '#3D3D3D',
+                  border: `0.5px solid ${fullName.trim() && jobTitle.trim() && workCategory.length ? '#484848' : '#2A2A2A'}`,
                   borderRadius: 7, padding: '9px',
                   fontSize: 13, fontWeight: 500,
-                  cursor: jobTitle.trim() && workCategory.length ? 'pointer' : 'default',
+                  cursor: fullName.trim() && jobTitle.trim() && workCategory.length ? 'pointer' : 'default',
                   marginTop: 4, fontFamily: 'inherit',
                 }}
               >
@@ -341,7 +359,9 @@ export default function SignupProfile() {
           {step === 3 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               <div>
-                <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>Your Aria is ready</h2>
+                <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>
+                  {fullName.trim() ? `${fullName.trim().split(' ')[0]}, your Aria is ready.` : 'Your Aria is ready'}
+                </h2>
                 <p style={{ color: '#525252', fontSize: 13, margin: 0 }}>
                   Based on your answers, here's how Aria is set up for you.
                 </p>
