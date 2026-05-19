@@ -9,6 +9,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
+import { devlog, devlogError } from './lib/devlog.js'
 import { APP_SPEC, buildHistoryContext, buildAnswersContext } from './lib/prompts.js'
 
 const supabase = createClient(
@@ -105,8 +106,10 @@ export default async function handler(req, res) {
     })
 
     orch.end({ workflowType: spec?.workflowType, layoutType: spec?.layoutType })
+    devlog('spec.generated', { conversationId, traceId: orch.traceId })
     return res.json({ spec, traceId: orch.traceId })
   } catch (err) {
+    devlogError('spec.generation_failed', { conversationId, error: err.message })
     return respondWithError(res, err, orch)
   }
 }

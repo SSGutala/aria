@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { deriveAccountType, useProfile } from '../hooks/useProfile'
+import { logAction } from '../lib/devlog'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -141,6 +142,7 @@ export default function SignupProfile() {
         work_category: workCategory.join(','),
         use_cases: useCases,
       })
+      logAction('user.profile_completed', { accountType: deriveAccountType(useCases), jobTitle: jobTitle.trim() })
       localStorage.removeItem('aria_new_user')
       navigate('/workspace', { replace: true })
     } catch (err) {

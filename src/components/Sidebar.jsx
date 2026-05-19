@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { logAction } from '../lib/devlog'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -122,7 +123,11 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
 
   async function createConversation() {
     const { data, error } = await supabase.from('conversations').insert({ user_id: user.id, title: 'New conversation' }).select().single()
-    if (!error && data) { onConversationsChange(); navigate(`/workspace/${data.id}`) }
+    if (!error && data) {
+      logAction('conversation.new_created', { conversationId: data.id })
+      onConversationsChange()
+      navigate(`/workspace/${data.id}`)
+    }
   }
 
   function requestDelete(id, title, type) {
@@ -136,9 +141,11 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
     const table = type === 'app' ? 'generated_apps' : 'conversations'
     await supabase.from(table).update({ deleted: true, deleted_at: new Date().toISOString() }).eq('id', id)
     if (type === 'chat') {
+      logAction('conversation.deleted', { conversationId: id })
       if (convId === id) navigate('/workspace')
       onConversationsChange()
     } else {
+      logAction('app.deleted', { appId: id })
       onAppsChange()
     }
   }
@@ -290,7 +297,7 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
                     key={conv.id}
                     onMouseEnter={() => setHoveredId(conv.id)}
                     onMouseLeave={() => setHoveredId(null)}
-                    onClick={() => !isRenaming && navigate(`/workspace/${conv.id}`)}
+                    onClick={() => { if (!isRenaming) { logAction('conversation.opened', { conversationId: conv.id }); navigate(`/workspace/${conv.id}`) } }}
                     onDoubleClick={() => setRenamingId(conv.id)}
                     style={{
                       padding: '7px 10px', borderRadius: 6, fontSize: 12,

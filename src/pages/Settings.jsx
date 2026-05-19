@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { API_URL } from '../lib/api'
 import { useProfile, deriveAccountType, getDefaultBuildMode } from '../hooks/useProfile'
+import { logAction } from '../lib/devlog'
 
 const API = API_URL
 
@@ -53,6 +54,7 @@ export default function Settings() {
     await saveProfile({ job_title: jobTitle, work_category: workCategory, use_cases: useCases })
     setSavingProfile(false)
     setProfileSaved(true)
+    logAction('settings.profile_saved', { accountType: deriveAccountType(useCases) })
     setTimeout(() => setProfileSaved(false), 2000)
   }
 
@@ -124,6 +126,7 @@ export default function Settings() {
         <div style={{ marginLeft: 'auto' }}>
           <button
             onClick={async () => {
+              logAction('user.signed_out', { userId: user?.id })
               await supabase.auth.signOut()
               navigate('/login', { replace: true })
             }}

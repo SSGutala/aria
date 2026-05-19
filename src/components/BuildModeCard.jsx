@@ -80,11 +80,12 @@ const MODES = [
   },
 ]
 
-export default function BuildModeCard({ recommendedMode, complexityReason, onSelect, selected, defaultMode }) {
+export default function BuildModeCard({ recommendedMode, complexityReason, onSelect, selected, defaultMode, hideRoleSpecific }) {
   const [hovered, setHovered] = useState(null)
   const isReadOnly = !onSelect
   const activeMode = selected || (isReadOnly ? recommendedMode : null)
   const effectiveRecommended = recommendedMode || defaultMode
+  const visibleModes = hideRoleSpecific ? MODES.filter(m => m.id !== 'role') : MODES
   const isAnswered = isReadOnly && !!activeMode
 
   const [userCollapse, setUserCollapse] = useState(null)
@@ -126,7 +127,7 @@ export default function BuildModeCard({ recommendedMode, complexityReason, onSel
 
       {!collapsed && (
         <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {MODES.map(mode => {
+          {visibleModes.map(mode => {
             const isRecommended = mode.id === effectiveRecommended
             const isHovered = hovered === mode.id
 

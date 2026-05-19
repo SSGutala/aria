@@ -215,7 +215,7 @@ export async function generateApp(prompt, conversationId, messages, clarificatio
 }
 
 // Phase 1: analyze prompt and return clarification_v2 directly (no intermediate mode card)
-export async function analyzeAndQuestion(prompt, conversationId, conversationHistory = [], aiModel = 'claude') {
+export async function analyzeAndQuestion(prompt, conversationId, conversationHistory = [], aiModel = 'claude', userMemories = []) {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 1000))
     return {
@@ -232,7 +232,7 @@ export async function analyzeAndQuestion(prompt, conversationId, conversationHis
     }
   }
   return postJSON('/api/generate',
-    { prompt, conversationId, conversationHistory },
+    { prompt, conversationId, conversationHistory, userMemories },
     'analyzing your request',
     {},
     aiModel)

@@ -7,7 +7,9 @@ import ArtifactPanel from '../components/ArtifactPanel'
 import { useBreakpoint } from '../hooks/useBreakpoint'
 import { useToast } from '../contexts/ToastContext'
 import { logError } from '../utils/errorHandler'
+import { logAction, logFailed } from '../lib/devlog'
 import { useProfile, getDefaultBuildMode } from '../hooks/useProfile'
+import { saveConversationMemory, loadUserMemories, formatMemoriesForPrompt } from '../lib/memory'
 
 function toHistoryMessages(msgs) {
   return msgs
@@ -36,6 +38,7 @@ export default function Workspace() {
     // Update command-bar fault state
     opStartedAtRef.current = null
     setLastError(action ? `${action}: ${userMessage}` : userMessage)
+    logFailed('action.failed', { action, error: userMessage })
     toast.error(userMessage, {
       title: action ? `Couldn't ${action}` : null,
       onRetry: retryable && onRetry ? onRetry : null,
@@ -58,6 +61,7 @@ export default function Workspace() {
   const opStartedAtRef = useRef(null)
   const { profile } = useProfile()
   const defaultBuildMode = profile ? getDefaultBuildMode(profile.account_type, profile.work_category) : null
+  const [userMemories, setUserMemories] = useState([])
 
   // ─── Artifact system ──────────────────────────────────────────────────────────
   const [artifacts, setArtifacts] = useState([])
@@ -82,6 +86,9 @@ export default function Workspace() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       setUser(user)
       if (localStorage.getItem('aria_new_user')) setShowOnboarding(true)
+      if (user) {
+        loadUserMemories(user.id).then(setUserMemories)
+      }
     })
   }, [])
 
@@ -136,6 +143,10 @@ export default function Workspace() {
           const clar = lastOf('clarification')
           const lastBrief = lastOf('enterprise_brief')
           const lastSpec = lastOf('spec')
+          const lastBuildMode = lastOf('build_mode')
+          const lastPMPackage = lastOf('pm_package')
+          const lastRolePackage = lastOf('role_package')
+
           if (clarV2 && (!lastBrief || clarV2.created_at > (lastBrief?.created_at || ''))) {
             pendingClarV2MsgIdRef.current = clarV2.id
           }
@@ -149,6 +160,20 @@ export default function Workspace() {
           if (lastSpec) {
             pendingSpecMsgIdRef.current = lastSpec.id
             pendingSpecRef.current = lastSpec.metadata?.spec || null
+          }
+          // Restore build mode / PM / role pending refs if no downstream card yet
+          if (lastBuildMode && !lastBrief && !lastSpec && !clarV2 && !clar) {
+            pendingBuildModeMsgId.current = lastBuildMode.id
+          }
+          if (lastPMPackage && !clarV2) {
+            pendingPMPackageMsgId.current = lastPMPackage.id
+          }
+          if (lastRolePackage && !clarV2) {
+            pendingRoleMsgId.current = lastRolePackage.id
+          }
+          // Restore clarification answers if a brief was already generated
+          if (lastBrief?.metadata?.clarificationAnswers) {
+            pendingClarAnswersRef.current = lastBrief.metadata.clarificationAnswers
           }
           const lastUser = [...msgs].reverse().find(m => m.role === 'user')
           if (lastUser) pendingPromptRef.current = lastUser.content
@@ -248,6 +273,7 @@ export default function Workspace() {
         return [...prev, ...newMsgs]
       })
       setCurrentApp({ slug: result.slug, id: result.appId, title: result.schema?.appTitle })
+      logAction('app.built', { conversationId: convId, appId: result.appId })
       pendingSpecRef.current  = null
       pendingPromptRef.current = null
       loadApps()
@@ -285,6 +311,11 @@ export default function Workspace() {
       const specMsg = { id: specId, role: 'assistant', content: '', message_type: 'spec', metadata: { spec: result.spec } }
       setMessages(prev => [...prev, specMsg])
       await persistCardMessages([specMsg])
+      // Save cross-conversation memory
+      saveConversationMemory(convId, {
+        summary: result.spec?.slice(0, 300) || prompt.slice(0, 200),
+        prompt, outputType: 'spec', buildMode: 'quick',
+      }).then(() => loadUserMemories(user?.id).then(setUserMemories))
     } catch (err) {
       handleApiError(err, {
         action: 'generate the spec',
@@ -318,10 +349,16 @@ export default function Workspace() {
 
       const briefMsg = {
         id: briefId, role: 'assistant', content: '', message_type: 'enterprise_brief',
-        metadata: { brief: result.brief, buildMode: mode, artifactIds: result.artifactIds },
+        metadata: { brief: result.brief, buildMode: mode, artifactIds: result.artifactIds, clarificationAnswers: clarAnswers },
       }
       setMessages(prev => [...prev, briefMsg])
+      logAction('brief.generated', { conversationId: convId, buildMode: mode })
       await persistCardMessages([briefMsg])
+      // Save cross-conversation memory
+      saveConversationMemory(convId, {
+        summary: result.brief?.executiveSummary || result.brief?.overview || result.brief?.appSpec?.slice(0, 300) || prompt.slice(0, 200),
+        prompt, outputType: 'brief', buildMode: mode,
+      }).then(() => loadUserMemories(user?.id).then(setUserMemories))
       // Refresh artifacts from server
       if (convId) loadArtifacts(convId)
     } catch (err) {
@@ -341,7 +378,7 @@ export default function Workspace() {
     setIsTyping(true)
     setBuildingLabel('Analyzing your request...')
     try {
-      const result = await analyzeAndQuestion(prompt, convId, toHistoryMessages(messages), currentModel)
+      const result = await analyzeAndQuestion(prompt, convId, toHistoryMessages(messages), currentModel, userMemories)
       setIsTyping(false)
       setBuildingLabel(null)
 
@@ -398,6 +435,7 @@ export default function Workspace() {
         m.id === bmId ? { ...m, metadata: { ...m.metadata, selectedMode: mode }, onModeSelect: null } : m
       ))
     }
+    logAction('build_mode.selected', { mode, conversationId: convId })
 
     // Role → show RolePackageCard first
     if (['operations', 'it_admin', 'compliance', 'finance', 'hr'].includes(mode)) {
@@ -492,6 +530,7 @@ export default function Workspace() {
         m.id === pmId ? { ...m, metadata: { ...m.metadata, selectedPackage: pmPackage }, onPMPackageSelect: null } : m
       ))
     }
+    logAction('pm_package.selected', { pmPackage, conversationId: convId })
 
     pendingPMPackageRef.current = pmPackage
     setIsTyping(true)
@@ -535,6 +574,7 @@ export default function Workspace() {
         m.id === rId ? { ...m, metadata: { ...m.metadata, selectedRole: role }, onRoleSelect: null } : m
       ))
     }
+    logAction('role.selected', { role, conversationId: convId })
 
     pendingRoleRef.current = role
     setIsTyping(true)
@@ -599,6 +639,7 @@ export default function Workspace() {
         metadata: { brief: result.brief, buildMode: 'product_manager', pmPackage: result.pmPackage, artifactIds: result.artifactIds },
       }
       setMessages(prev => [...prev, briefMsg])
+      logAction('pm_brief.generated', { conversationId: convId, pmPackage })
       await persistCardMessages([briefMsg])
       if (convId) loadArtifacts(convId)
     } catch (err) {
@@ -645,6 +686,7 @@ export default function Workspace() {
         metadata: { brief: result.brief, buildMode: role, rolePackage: result.rolePackage, artifactIds: result.artifactIds || {} },
       }
       setMessages(prev => [...prev, briefMsg])
+      logAction('role_brief.generated', { conversationId: convId, role })
       await persistCardMessages([briefMsg])
       if (convId) loadArtifacts(convId)
     } catch (err) {
@@ -739,6 +781,7 @@ export default function Workspace() {
     const buildMode = cardMetadata?.buildMode || 'general'
     const pmPackage = cardMetadata?.pmPackage || pendingPMPackageRef.current || 'lean'
     const rolePackage = cardMetadata?.rolePackage || 'guided'
+    logAction('clarification.answered', { outputType, buildMode, conversationId: convId })
 
     if (outputType === 'spec') {
       await runSpec(originalPrompt, answers)
@@ -808,6 +851,7 @@ export default function Workspace() {
     const userMsg = { id: Date.now().toString(), role: 'user', content: prompt, message_type: 'text', metadata: {} }
     setMessages(prev => [...prev, userMsg])
     await supabase.from('messages').insert({ conversation_id: convId, role: 'user', content: prompt, message_type: 'text' })
+    logAction('chat.message_sent', { conversationId: convId, promptLength: prompt.length })
 
     if (currentApp) {
       await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
@@ -864,7 +908,8 @@ export default function Workspace() {
     const ct = m.metadata?.cardType || m.message_type
     if (ct === 'build_mode') {
       const isActive = m.id === pendingBuildModeMsgId.current && !isTyping
-      return { ...m, onModeSelect: isActive ? handleBuildModeSelect : null, defaultMode: defaultBuildMode }
+      const hideRoleSpecific = !!(profile?.work_category && profile.work_category.length > 0)
+      return { ...m, onModeSelect: isActive ? handleBuildModeSelect : null, defaultMode: defaultBuildMode, hideRoleSpecific }
     }
     if (ct === 'pm_package') {
       const isActive = m.id === pendingPMPackageMsgId.current && !isTyping

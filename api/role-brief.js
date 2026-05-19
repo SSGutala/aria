@@ -15,6 +15,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
+import { devlog, devlogError } from './lib/devlog.js'
 import { ROLE_BRIEF, buildHistoryContext } from './lib/prompts.js'
 
 const supabase = createClient(
@@ -416,6 +417,7 @@ export default async function handler(req, res) {
     if (insertErr) console.error('DB insert error (role-brief):', insertErr)
 
     orch.end({ role, rolePackage: rolePackage || 'guided', stageCount: Object.keys(brief).length })
+    devlog('role_brief.generated', { conversationId, role, traceId: orch.traceId })
     return res.json({
       buildMode: role,
       rolePackage: rolePackage || 'guided',
@@ -424,6 +426,7 @@ export default async function handler(req, res) {
       traceId: orch.traceId,
     })
   } catch (err) {
+    devlogError('role_brief.generation_failed', { conversationId, role, error: err.message })
     return respondWithError(res, err, orch)
   }
 }

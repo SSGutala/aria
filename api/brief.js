@@ -14,6 +14,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
+import { devlog, devlogError } from './lib/devlog.js'
 import {
   ENTERPRISE_BRIEF,
   MERMAID_DIAGRAM,
@@ -272,8 +273,10 @@ export default async function handler(req, res) {
     fireAndForgetFileGen(created)
 
     orch.end({ stageCount: Object.keys(artifactIds).length, hasDiagram: !!diagramArtifact })
+    devlog('brief.generated', { conversationId, buildMode, traceId: orch.traceId })
     return res.json({ brief, buildMode, artifactIds, traceId: orch.traceId })
   } catch (err) {
+    devlogError('brief.generation_failed', { conversationId, error: err.message })
     return respondWithError(res, err, orch)
   }
 }

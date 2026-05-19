@@ -20,6 +20,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
+import { devlog, devlogError } from './lib/devlog.js'
 import { PM_BRIEF, buildHistoryContext, buildAnswersContext } from './lib/prompts.js'
 
 const supabase = createClient(
@@ -648,6 +649,7 @@ export default async function handler(req, res) {
       stageGroupCount: stages.length,
       artifactCount: created.length,
     })
+    devlog('pm_brief.generated', { conversationId, pmPackage, traceId: orch.traceId })
 
     return res.json({
       brief,
@@ -657,6 +659,7 @@ export default async function handler(req, res) {
       traceId: orch.traceId,
     })
   } catch (err) {
+    devlogError('pm_brief.generation_failed', { conversationId, error: err.message })
     return respondWithError(res, err, orch)
   }
 }

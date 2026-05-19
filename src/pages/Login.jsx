@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { logAction } from '../lib/devlog'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -62,6 +63,7 @@ export default function Login({ session }) {
         // Check if they've completed profile setup
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
+          logAction('user.signed_in', { email })
           const { data: profile } = await supabase.from('profiles').select('id').eq('id', user.id).single()
           if (!profile) {
             navigate('/signup/profile', { replace: true })
@@ -72,6 +74,7 @@ export default function Login({ session }) {
       } else {
         const { error } = await supabase.auth.signUp({ email, password })
         if (error) throw error
+        logAction('user.signed_up', { email })
         // Go straight into profile setup — no email confirmation required in dev
         navigate('/signup/profile', { replace: true })
       }

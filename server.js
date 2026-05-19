@@ -22,6 +22,8 @@ try {
 
 import express from 'express'
 import cors from 'cors'
+import { devlogApi, devlog } from './api/lib/devlog.js'
+import logHandler from './api/log.js'
 
 const app = express()
 const allowedOrigins = [
@@ -54,11 +56,23 @@ app.use(cors({
 }))
 app.use(express.json())
 
+// Developer request logger — logs every non-GET API call to terminal
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api/')) return next()
+  const start = Date.now()
+  res.on('finish', () => {
+    devlogApi(req.method, req.path, res.statusCode, Date.now() - start)
+  })
+  next()
+})
+
 // Dynamically load each API handler
 async function loadHandler(name) {
   const mod = await import(`./api/${name}.js`)
   return mod.default
 }
+
+app.post('/api/log', (req, res) => logHandler(req, res))
 
 app.post('/api/generate', async (req, res) => {
   const handler = await loadHandler('generate')
@@ -192,4 +206,5 @@ app.post('/api/integrations/execute', async (req, res) => {
 const PORT = 3001
 app.listen(PORT, () => {
   console.log(`API server running on http://localhost:${PORT}`)
+  devlog('server.started', { port: PORT, env: process.env.NODE_ENV || 'development' })
 })

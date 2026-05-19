@@ -106,6 +106,8 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
           complexityReason={meta.complexityReason}
           onSelect={message.onModeSelect}
           selected={meta.selectedMode}
+          defaultMode={message.defaultMode}
+          hideRoleSpecific={message.hideRoleSpecific}
         />
       </div>
     )

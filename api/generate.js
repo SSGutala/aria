@@ -18,6 +18,7 @@
 
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
 import { INTAKE_TRIAGE, buildHistoryContext } from './lib/prompts.js'
+import { devlog } from './lib/devlog.js'
 
 const ROLE_MODES = ['operations', 'it_admin', 'compliance', 'finance', 'hr']
 
@@ -33,6 +34,7 @@ export default async function handler(req, res) {
     pmPackage,
     rolePackage,
     conversationHistory,
+    userMemories,
     aiModel,
   } = req.body
 
@@ -67,6 +69,7 @@ export default async function handler(req, res) {
       if (!pmPackage) {
         // Return PM package selection card
         orch.end({ stage: 'pm_package_selection' })
+        devlog('pm_package.card_shown', { conversationId })
         return res.json({
           type: 'pm_package',
           intro: `I'll generate a full PM document stack for this project. Which depth do you need?`,
@@ -109,6 +112,7 @@ Generate 4-5 targeted PM discovery questions. Return JSON:
       if (!rolePackage) {
         // Return role selection card (they already picked the role, so show confirm + domain questions)
         orch.end({ stage: 'role_package_selection' })
+        devlog('role.card_shown', { role: buildMode, conversationId })
         const roleLabels = { operations: 'Operations', it_admin: 'IT Admin', compliance: 'Compliance/Risk', finance: 'Finance', hr: 'HR' }
         return res.json({
           type: 'role_package',
@@ -151,12 +155,15 @@ Generate 4-5 targeted discovery questions for a ${buildMode} role. Return JSON:
     // Quick / Guided / Docs → clarification questions
     try {
       const historyContext = buildHistoryContext(conversationHistory)
+      const memoriesCtx = (userMemories?.length)
+        ? `\n\nUser's previous projects (skip questions already answered by prior context):\n${userMemories.map(m => `- ${m.summary}`).join('\n')}`
+        : ''
       const isQuick = buildMode === 'quick'
       const parsed = await orch.json('mode_questions', {
         tier: 'fast',
         maxTokens: isQuick ? 600 : 1000,
         system: INTAKE_TRIAGE,
-        prompt: `User request: "${prompt}"${historyContext}
+        prompt: `User request: "${prompt}"${historyContext}${memoriesCtx}
 Build mode: ${buildMode}
 
 Generate ${isQuick ? '2-3 focused' : '4-5 deep'} discovery questions. Return JSON:
@@ -189,12 +196,15 @@ Generate ${isQuick ? '2-3 focused' : '4-5 deep'} discovery questions. Return JSO
 
   try {
     const historyContext = buildHistoryContext(conversationHistory)
+    const memoriesContext = (userMemories?.length)
+      ? `\n\nUser's previous Aria projects (for context, do NOT re-ask about these):\n${userMemories.map(m => `- ${m.summary}`).join('\n')}`
+      : ''
 
     const parsed = await orch.json('analyze_complexity', {
       tier: 'fast',
       maxTokens: 400,
       system: INTAKE_TRIAGE,
-      prompt: `User request: "${prompt}"${historyContext}
+      prompt: `User request: "${prompt}"${historyContext}${memoriesContext}
 
 Analyze the complexity and recommend a build mode. Return JSON:
 {
@@ -211,6 +221,7 @@ Rules:
     })
 
     orch.end({ recommendedMode: parsed.recommendedMode })
+    devlog('intake.analyzed', { recommendedMode: parsed.recommendedMode, conversationId })
     return res.json({
       type: 'build_mode',
       recommendedMode: parsed.recommendedMode || 'guided',

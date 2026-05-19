@@ -16,6 +16,7 @@
 
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
 import { logWarn } from './lib/observability.js'
+import { devlog, devlogError } from './lib/devlog.js'
 import {
   getUserId,
   normalizeAppSpec,
@@ -94,6 +95,7 @@ export default async function handler(req, res) {
     fireForgetFileGen(createdArtifacts)
 
     orch.end({ taskMode: buildMode, artifactCount: createdArtifacts.length, hasAppSpec: !!brief.appSpec })
+    devlog('task_brief.generated', { conversationId, buildMode, traceId: orch.traceId })
 
     // Surface a perf warning if total wall time creeps high (preserved from prior behavior)
     return res.json({
@@ -107,6 +109,7 @@ export default async function handler(req, res) {
     if (err?.message?.includes('malformed JSON') || err?.message?.includes('No valid JSON')) {
       orch.fail(err)
       logWarn('task_brief.json_parse_error', { traceId: orch.traceId, taskMode: buildMode })
+      devlogError('task_brief.generation_failed', { conversationId, buildMode, error: err.message })
       return res.status(502).json({
         error: 'AI returned malformed JSON',
         userMessage: 'The AI returned an unparseable response. Try rephrasing your request more concretely.',
@@ -115,6 +118,7 @@ export default async function handler(req, res) {
         retryable: true,
       })
     }
+    devlogError('task_brief.generation_failed', { conversationId, buildMode, error: err.message })
     return respondWithError(res, err, orch)
   }
 }
