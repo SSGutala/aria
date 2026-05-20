@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { logAction } from '../lib/devlog'
+import { useProfile } from '../hooks/useProfile'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
@@ -93,6 +94,7 @@ function InlineRename({ value, onSave, onCancel }) {
 export default function Sidebar({ user, conversations, apps, onConversationsChange, onAppsChange, onConversationRename, onAppRename, onClose }) {
   const navigate = useNavigate()
   const { convId } = useParams()
+  const { profile } = useProfile()
 
   const [hoveredId, setHoveredId]       = useState(null)
   const [renamingId, setRenamingId]     = useState(null)
@@ -122,9 +124,20 @@ export default function Sidebar({ user, conversations, apps, onConversationsChan
   }
 
   async function createConversation() {
-    const { data, error } = await supabase.from('conversations').insert({ user_id: user.id, title: 'New conversation' }).select().single()
+    // Freeze the user's current role context onto the new chat so it stays
+    // consistent even if they later change their profile role.
+    const roleSnapshot = profile ? {
+      role_context: profile.selected_role || null,
+      custom_role_context: profile.custom_role || null,
+      seniority_context: profile.seniority_level || null,
+      intended_use_cases: profile.intended_use_cases || profile.use_cases || [],
+      role_overridden: false,
+    } : {}
+    const { data, error } = await supabase.from('conversations')
+      .insert({ user_id: user.id, title: 'New conversation', ...roleSnapshot })
+      .select().single()
     if (!error && data) {
-      logAction('conversation.new_created', { conversationId: data.id })
+      logAction('conversation.new_created', { conversationId: data.id, role: profile?.selected_role })
       onConversationsChange()
       navigate(`/workspace/${data.id}`)
     }

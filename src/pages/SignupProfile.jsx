@@ -3,101 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { deriveAccountType, useProfile } from '../hooks/useProfile'
 import { logAction } from '../lib/devlog'
+import { ROLES, SENIORITY_LEVELS, INTENDED_USE_CASES, mapCustomRoleToSupported } from '../lib/roles'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
-
-const WORK_CATEGORIES = [
-  { id: 'engineering', label: 'Engineering & Development', icon: '⚙️' },
-  { id: 'operations', label: 'Operations & Process', icon: '🔄' },
-  { id: 'product', label: 'Product & Strategy', icon: '📋' },
-  { id: 'finance', label: 'Finance & Legal', icon: '💰' },
-  { id: 'hr', label: 'HR & People', icon: '👥' },
-  { id: 'leadership', label: 'Leadership / General', icon: '🎯' },
-]
-
-const USE_CASES = [
-  {
-    id: 'apps',
-    icon: '🏗️',
-    label: 'Internal tools & apps',
-    description: 'Build and deploy web apps for your team',
-  },
-  {
-    id: 'automation',
-    icon: '⚙️',
-    label: 'Workflow automations',
-    description: 'Automate manual processes and approvals',
-  },
-  {
-    id: 'docs',
-    icon: '📄',
-    label: 'Product documentation',
-    description: 'PRDs, briefs, specs, user stories',
-  },
-  {
-    id: 'dashboards',
-    icon: '📊',
-    label: 'Dashboards & reporting',
-    description: 'Data views, KPI trackers, report tools',
-  },
-  {
-    id: 'all',
-    icon: '🚀',
-    label: 'All of the above / Exploring',
-    description: 'Show me everything Aria can do',
-  },
-]
-
-const ACCOUNT_LABELS = {
-  builder: {
-    icon: '🏗️',
-    name: 'App Builder',
-    tagline: 'Build and ship internal tools fast',
-    unlocks: [
-      'Quick Build — go from prompt to app in minutes',
-      'Guided Build — deep scoping for complex tools',
-      'Full-stack, dashboard, and automation app types',
-      'App spec generation and live code output',
-    ],
-    accent: '#60A5FA',
-  },
-  automator: {
-    icon: '⚙️',
-    name: 'Workflow Automator',
-    tagline: 'Automate and systemize your processes',
-    unlocks: [
-      'Guided Build with automation framing',
-      'Workflow maps, SOP generation, escalation matrices',
-      'Operations and IT Admin role-specific docs',
-      'Integration specs for your existing tools',
-    ],
-    accent: '#F59E0B',
-  },
-  strategist: {
-    icon: '📄',
-    name: 'PM Strategist',
-    tagline: 'Turn ideas into stakeholder-ready documents',
-    unlocks: [
-      'PM Package — Lean, Enterprise, or Full Lifecycle',
-      'Role-specific docs for Finance, HR, Compliance, and more',
-      'PRDs, user stories, business cases, and QA plans',
-      'Artifact panel for managing your document workspace',
-    ],
-    accent: '#818CF8',
-  },
-  full_access: {
-    icon: '🚀',
-    name: 'Full Access',
-    tagline: 'Everything Aria can build, all in one place',
-    unlocks: [
-      'All build modes — Quick, Guided, Docs, PM Package, Role-Specific',
-      'Full-stack apps, automations, dashboards, and documentation',
-      'AI-recommended mode per project',
-      'Complete artifact workspace',
-    ],
-    accent: '#34D399',
-  },
-}
 
 function StepIndicator({ current, total }) {
   return (
@@ -116,22 +24,36 @@ function StepIndicator({ current, total }) {
 export default function SignupProfile() {
   const navigate = useNavigate()
   const { profile, loading, saveProfile } = useProfile()
-  const [step, setStep] = useState(1)
 
   // If profile already exists, skip straight to workspace
   useEffect(() => {
-    if (!loading && profile) {
+    if (!loading && profile?.onboarding_completed) {
       navigate('/workspace', { replace: true })
     }
   }, [profile, loading, navigate])
+
+  // Step 1: identity
   const [fullName, setFullName] = useState('')
   const [jobTitle, setJobTitle] = useState('')
-  const [workCategory, setWorkCategory] = useState([])
+  const [company, setCompany] = useState('')
+  const [department, setDepartment] = useState('')
+
+  // Step 2: primary role
+  const [selectedRole, setSelectedRole] = useState('')
+  const [customRole, setCustomRole] = useState('')
+
+  // Step 3: seniority
+  const [seniority, setSeniority] = useState('')
+
+  // Step 4: use cases
   const [useCases, setUseCases] = useState([])
+
+  const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   function toggleUseCase(id) {
+    if (id === 'agentic') return // coming soon
     if (id === 'all') {
       setUseCases(prev => prev.includes('all') ? [] : ['all'])
       return
@@ -146,15 +68,37 @@ export default function SignupProfile() {
     setSaving(true)
     setError('')
     try {
-      // Save full_name to Supabase auth user metadata so it's accessible anywhere
+      const resolvedRole = selectedRole === 'other'
+        ? (mapCustomRoleToSupported(customRole) || 'other')
+        : selectedRole
+      const finalCustomRole = selectedRole === 'other' ? customRole.trim() : null
+
+      // Persist name to auth user metadata so it's readable anywhere.
       await supabase.auth.updateUser({ data: { full_name: fullName.trim() } })
+
+      // Derive a work_category-ish label from the role so legacy code still works.
+      const legacyWorkCategory = selectedRoleToLegacyCategory(resolvedRole)
+
       await saveProfile({
         full_name: fullName.trim(),
         job_title: jobTitle.trim(),
-        work_category: workCategory.join(','),
-        use_cases: useCases,
+        company: company.trim() || null,
+        department: department.trim() || null,
+        selected_role: resolvedRole,
+        custom_role: finalCustomRole,
+        seniority_level: seniority,
+        intended_use_cases: useCases,
+        use_cases: useCases,            // mirror to legacy column
+        work_category: legacyWorkCategory,
+        onboarding_completed: true,
       })
-      logAction('user.profile_completed', { accountType: deriveAccountType(useCases), jobTitle: jobTitle.trim() })
+
+      logAction('user.onboarding_completed', {
+        role: resolvedRole,
+        seniority,
+        useCases,
+        accountType: deriveAccountType(useCases),
+      })
       localStorage.removeItem('aria_new_user')
       navigate('/workspace', { replace: true })
     } catch (err) {
@@ -163,9 +107,6 @@ export default function SignupProfile() {
     }
   }
 
-  const accountType = deriveAccountType(useCases)
-  const accountInfo = ACCOUNT_LABELS[accountType]
-
   const inputStyle = {
     width: '100%', background: '#141414', border: '0.5px solid #2A2A2A',
     borderRadius: 7, color: '#F5F5F5', padding: '9px 12px',
@@ -173,12 +114,50 @@ export default function SignupProfile() {
     fontFamily: 'inherit',
   }
 
+  const primaryButton = (enabled, label, onClick, options = {}) => (
+    <button
+      onClick={onClick}
+      disabled={!enabled || options.disabled}
+      style={{
+        flex: options.flex ?? 1,
+        background: enabled && !options.disabled ? glareGradient : '#1C1C1C',
+        color: enabled && !options.disabled ? '#111111' : '#3D3D3D',
+        border: `0.5px solid ${enabled && !options.disabled ? '#484848' : '#2A2A2A'}`,
+        borderRadius: 7, padding: '9px',
+        fontSize: 13, fontWeight: 500,
+        cursor: enabled && !options.disabled ? 'pointer' : 'default',
+        fontFamily: 'inherit',
+      }}
+    >
+      {label}
+    </button>
+  )
+
+  const backButton = (
+    <button
+      onClick={() => setStep(s => Math.max(1, s - 1))}
+      style={{
+        background: 'transparent', color: '#525252',
+        border: '0.5px solid #2A2A2A', borderRadius: 7,
+        padding: '9px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+      }}
+    >
+      Back
+    </button>
+  )
+
+  // Step validations
+  const canAdvanceStep1 = fullName.trim() && jobTitle.trim()
+  const canAdvanceStep2 = selectedRole && (selectedRole !== 'other' || customRole.trim().length >= 2)
+  const canAdvanceStep3 = !!seniority
+  const canAdvanceStep4 = useCases.length > 0
+
   return (
     <div style={{
       background: '#111111', minHeight: '100vh',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     }}>
-      <div style={{ width: '100%', maxWidth: 480, padding: '0 16px' }}>
+      <div style={{ width: '100%', maxWidth: 520, padding: '0 16px' }}>
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <span style={{
@@ -189,128 +168,181 @@ export default function SignupProfile() {
         </div>
 
         <div style={{ background: '#0D0D0D', border: '0.5px solid #2A2A2A', borderRadius: 14, padding: 28 }}>
-          <StepIndicator current={step} total={3} />
+          <StepIndicator current={step} total={5} />
 
-          {/* Step 1: Name + job title + work category */}
+          {/* ── Step 1: Tell us about yourself ───────────────────────────── */}
           {step === 1 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               <div>
                 <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>Tell us about yourself</h2>
                 <p style={{ color: '#525252', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
-                  This helps Aria tailor the experience to how you actually work.
+                  Helps Aria speak to you the way you actually work.
                 </p>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 11, color: '#A3A3A3', marginBottom: 6, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                  Your name
-                </label>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={e => setFullName(e.target.value)}
-                  placeholder="First and last name"
-                  style={inputStyle}
-                  autoFocus
-                />
+              <Field label="First and last name" required>
+                <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+                  placeholder="e.g. Sri Gutala" autoFocus style={inputStyle} />
+              </Field>
+
+              <Field label="Job title" required>
+                <input type="text" value={jobTitle} onChange={e => setJobTitle(e.target.value)}
+                  placeholder="e.g. Senior Product Manager" style={inputStyle} />
+              </Field>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Field label="Company (optional)" flex={1}>
+                  <input type="text" value={company} onChange={e => setCompany(e.target.value)}
+                    placeholder="e.g. Acme Inc" style={inputStyle} />
+                </Field>
+                <Field label="Department (optional)" flex={1}>
+                  <input type="text" value={department} onChange={e => setDepartment(e.target.value)}
+                    placeholder="e.g. Platform" style={inputStyle} />
+                </Field>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: 11, color: '#A3A3A3', marginBottom: 6, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                  Job title
-                </label>
-                <input
-                  type="text"
-                  value={jobTitle}
-                  onChange={e => setJobTitle(e.target.value)}
-                  placeholder="e.g. Product Manager, Operations Lead, CTO..."
-                  style={inputStyle}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 11, color: '#A3A3A3', marginBottom: 10, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-                  What kind of work do you do?
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {WORK_CATEGORIES.map(cat => {
-                    const isSelected = workCategory.includes(cat.id)
-                    return (
-                      <button
-                        key={cat.id}
-                        onClick={() => setWorkCategory(prev =>
-                          prev.includes(cat.id) ? prev.filter(c => c !== cat.id) : [...prev, cat.id]
-                        )}
-                        style={{
-                          background: isSelected ? '#1A1A1A' : '#141414',
-                          border: `0.5px solid ${isSelected ? '#3D3D3D' : '#222'}`,
-                          borderRadius: 8, padding: '10px 14px',
-                          display: 'flex', alignItems: 'center', gap: 10,
-                          cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        <span style={{ fontSize: 16, lineHeight: 1 }}>{cat.icon}</span>
-                        <span style={{ fontSize: 13, color: isSelected ? '#E5E5E5' : '#737373', fontWeight: isSelected ? 500 : 400 }}>
-                          {cat.label}
-                        </span>
-                        {isSelected && (
-                          <span style={{ marginLeft: 'auto', color: '#34D399', fontSize: 12 }}>✓</span>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <button
-                onClick={() => setStep(2)}
-                disabled={!fullName.trim() || !jobTitle.trim() || !workCategory.length}
-                style={{
-                  background: fullName.trim() && jobTitle.trim() && workCategory.length ? glareGradient : '#1C1C1C',
-                  color: fullName.trim() && jobTitle.trim() && workCategory.length ? '#111111' : '#3D3D3D',
-                  border: `0.5px solid ${fullName.trim() && jobTitle.trim() && workCategory.length ? '#484848' : '#2A2A2A'}`,
-                  borderRadius: 7, padding: '9px',
-                  fontSize: 13, fontWeight: 500,
-                  cursor: fullName.trim() && jobTitle.trim() && workCategory.length ? 'pointer' : 'default',
-                  marginTop: 4, fontFamily: 'inherit',
-                }}
-              >
-                Continue
-              </button>
+              {primaryButton(canAdvanceStep1, 'Continue', () => setStep(2))}
             </div>
           )}
 
-          {/* Step 2: Use cases */}
+          {/* ── Step 2: Primary role ─────────────────────────────────────── */}
           {step === 2 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
-                <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>What will you use Aria for?</h2>
+                <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>Select your primary role</h2>
                 <p style={{ color: '#525252', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
-                  Select all that apply. This determines what Aria focuses on for you.
+                  Aria tailors questions, artifacts, and flows to this role.
+                </p>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {ROLES.map(role => {
+                  const isSelected = selectedRole === role.id
+                  return (
+                    <button
+                      key={role.id}
+                      onClick={() => setSelectedRole(role.id)}
+                      style={{
+                        background: isSelected ? '#1A1A1A' : '#141414',
+                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#222'}`,
+                        borderRadius: 8, padding: '10px 12px',
+                        display: 'flex', alignItems: 'center', gap: 9,
+                        cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                        transition: 'all 0.12s',
+                      }}
+                    >
+                      <span style={{ fontSize: 15, lineHeight: 1 }}>{role.icon}</span>
+                      <span style={{ fontSize: 12, color: isSelected ? '#E5E5E5' : '#737373', fontWeight: isSelected ? 500 : 400 }}>
+                        {role.label}
+                      </span>
+                      {isSelected && <span style={{ marginLeft: 'auto', color: '#34D399', fontSize: 11 }}>✓</span>}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {selectedRole === 'other' && (
+                <Field label="Describe your role">
+                  <input
+                    type="text" value={customRole} onChange={e => setCustomRole(e.target.value)}
+                    placeholder="e.g. Revenue Operations Lead"
+                    style={inputStyle} autoFocus
+                  />
+                  <p style={{ margin: '6px 0 0', fontSize: 11, color: '#3D3D3D', lineHeight: 1.5 }}>
+                    We'll map this to the closest supported flow when possible.
+                  </p>
+                </Field>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                {backButton}
+                {primaryButton(canAdvanceStep2, 'Continue', () => setStep(3))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3: Seniority ────────────────────────────────────────── */}
+          {step === 3 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>Select your seniority level</h2>
+                <p style={{ color: '#525252', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                  Determines question depth and artifact depth. Senior roles get strategic framing, junior roles get execution support.
                 </p>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {USE_CASES.map(uc => {
-                  const isSelected = useCases.includes(uc.id)
+                {SENIORITY_LEVELS.map(s => {
+                  const isSelected = seniority === s.id
                   return (
                     <button
-                      key={uc.id}
-                      onClick={() => toggleUseCase(uc.id)}
+                      key={s.id}
+                      onClick={() => setSeniority(s.id)}
                       style={{
                         background: isSelected ? '#141414' : '#0D0D0D',
                         border: `0.5px solid ${isSelected ? '#3D3D3D' : '#1E1E1E'}`,
                         borderRadius: 10, padding: '12px 14px',
                         display: 'flex', alignItems: 'center', gap: 12,
-                        cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left',
-                        fontFamily: 'inherit',
+                        cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: isSelected ? '#E5E5E5' : '#737373' }}>{s.label}</div>
+                        <div style={{ fontSize: 11, color: '#3D3D3D', marginTop: 2 }}>{s.description}</div>
+                      </div>
+                      <div style={{
+                        width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+                        border: `0.5px solid ${isSelected ? '#34D399' : '#2A2A2A'}`,
+                        background: isSelected ? '#0D2A1A' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {isSelected && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#34D399' }} />}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                {backButton}
+                {primaryButton(canAdvanceStep3, 'Continue', () => setStep(4))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 4: Use cases ────────────────────────────────────────── */}
+          {step === 4 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>What will you use Aria for?</h2>
+                <p style={{ color: '#525252', fontSize: 13, margin: 0, lineHeight: 1.5 }}>
+                  Select all that apply. Influences what Aria offers first.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {INTENDED_USE_CASES.map(uc => {
+                  const isSelected = useCases.includes(uc.id)
+                  const disabled = uc.comingSoon
+                  return (
+                    <button
+                      key={uc.id}
+                      onClick={() => toggleUseCase(uc.id)}
+                      disabled={disabled}
+                      style={{
+                        background: isSelected ? '#141414' : '#0D0D0D',
+                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#1E1E1E'}`,
+                        borderRadius: 10, padding: '12px 14px',
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        cursor: disabled ? 'default' : 'pointer',
+                        textAlign: 'left', fontFamily: 'inherit', opacity: disabled ? 0.5 : 1,
                       }}
                     >
                       <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{uc.icon}</span>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, color: isSelected ? '#E5E5E5' : '#737373', marginBottom: 2 }}>
                           {uc.label}
+                          {uc.comingSoon && <span style={{ marginLeft: 6, fontSize: 10, color: '#525252' }}>· Coming soon</span>}
                         </div>
                         <div style={{ fontSize: 11, color: '#3D3D3D' }}>{uc.description}</div>
                       </div>
@@ -331,114 +363,42 @@ export default function SignupProfile() {
                 })}
               </div>
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => setStep(1)}
-                  style={{
-                    background: 'transparent', color: '#525252',
-                    border: '0.5px solid #2A2A2A', borderRadius: 7,
-                    padding: '9px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-                  }}
-                >
-                  Back
-                </button>
-                <button
-                  onClick={() => setStep(3)}
-                  disabled={!useCases.length}
-                  style={{
-                    flex: 1,
-                    background: useCases.length ? glareGradient : '#1C1C1C',
-                    color: useCases.length ? '#111111' : '#3D3D3D',
-                    border: `0.5px solid ${useCases.length ? '#484848' : '#2A2A2A'}`,
-                    borderRadius: 7, padding: '9px',
-                    fontSize: 13, fontWeight: 500,
-                    cursor: useCases.length ? 'pointer' : 'default',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  Continue
-                </button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                {backButton}
+                {primaryButton(canAdvanceStep4, 'Continue', () => setStep(5))}
               </div>
             </div>
           )}
 
-          {/* Step 3: Account summary */}
-          {step === 3 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* ── Step 5: Confirmation ─────────────────────────────────────── */}
+          {step === 5 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               <div>
                 <h2 style={{ color: '#F5F5F5', fontSize: 20, fontWeight: 500, margin: '0 0 6px' }}>
                   {fullName.trim() ? `${fullName.trim().split(' ')[0]}, your Aria is ready.` : 'Your Aria is ready'}
                 </h2>
                 <p style={{ color: '#525252', fontSize: 13, margin: 0 }}>
-                  Based on your answers, here's how Aria is set up for you.
+                  Here's how Aria will work for you. You can change any of this in Settings.
                 </p>
               </div>
 
-              {/* Account type card */}
-              <div style={{
-                background: '#141414', border: `0.5px solid ${accountInfo.accent}33`,
-                borderRadius: 12, padding: '18px 20px',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: 10,
-                    background: `${accountInfo.accent}11`,
-                    border: `0.5px solid ${accountInfo.accent}33`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 20,
-                  }}>
-                    {accountInfo.icon}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 600, color: '#F5F5F5' }}>{accountInfo.name}</div>
-                    <div style={{ fontSize: 12, color: '#525252' }}>{accountInfo.tagline}</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {accountInfo.unlocks.map((item, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
-                        <path d="M2.5 7l3 3 6-6" stroke={accountInfo.accent} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                      <span style={{ fontSize: 12, color: '#A3A3A3', lineHeight: 1.5 }}>{item}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <p style={{ margin: 0, fontSize: 11, color: '#3D3D3D', lineHeight: 1.5 }}>
-                You can change your role and preferences anytime in Settings.
-              </p>
+              <SummaryRow label="Role"
+                value={selectedRole === 'other' ? (customRole || 'Custom role') : (ROLES.find(r => r.id === selectedRole)?.label || '—')} />
+              <SummaryRow label="Seniority"
+                value={SENIORITY_LEVELS.find(s => s.id === seniority)?.label || '—'} />
+              <SummaryRow label="Job title" value={jobTitle || '—'} />
+              {(company || department) && (
+                <SummaryRow label="Organization" value={[company, department].filter(Boolean).join(' · ')} />
+              )}
+              <SummaryRow label="Use cases" value={
+                useCases.map(id => INTENDED_USE_CASES.find(u => u.id === id)?.label).filter(Boolean).join(', ') || '—'
+              } />
 
               {error && <p style={{ fontSize: 12, color: '#F87171', margin: 0 }}>{error}</p>}
 
               <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => setStep(2)}
-                  style={{
-                    background: 'transparent', color: '#525252',
-                    border: '0.5px solid #2A2A2A', borderRadius: 7,
-                    padding: '9px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
-                  }}
-                >
-                  Back
-                </button>
-                <button
-                  onClick={handleFinish}
-                  disabled={saving}
-                  style={{
-                    flex: 1,
-                    background: saving ? '#1C1C1C' : glareGradient,
-                    color: saving ? '#3D3D3D' : '#111111',
-                    border: `0.5px solid ${saving ? '#2A2A2A' : '#484848'}`,
-                    borderRadius: 7, padding: '9px',
-                    fontSize: 13, fontWeight: 500,
-                    cursor: saving ? 'default' : 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {saving ? 'Setting up your workspace…' : 'Enter Aria →'}
-                </button>
+                {backButton}
+                {primaryButton(true, saving ? 'Setting up your workspace…' : 'Enter Aria →', handleFinish, { disabled: saving })}
               </div>
             </div>
           )}
@@ -446,4 +406,48 @@ export default function SignupProfile() {
       </div>
     </div>
   )
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────────────
+function Field({ label, required, flex, children }) {
+  return (
+    <div style={{ flex: flex ?? undefined }}>
+      <label style={{
+        display: 'block', fontSize: 11, color: '#A3A3A3', marginBottom: 6,
+        letterSpacing: '0.04em', textTransform: 'uppercase',
+      }}>
+        {label}{required && <span style={{ color: '#525252', marginLeft: 4 }}>*</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function SummaryRow({ label, value }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'baseline', gap: 12,
+      padding: '8px 0', borderBottom: '0.5px solid #1A1A1A',
+    }}>
+      <div style={{ width: 92, fontSize: 11, color: '#525252', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ flex: 1, fontSize: 13, color: '#E5E5E5' }}>{value}</div>
+    </div>
+  )
+}
+
+// Map a role id to the legacy work_category string used by older code paths.
+function selectedRoleToLegacyCategory(roleId) {
+  const map = {
+    product_manager: 'product',
+    technical_product_manager: 'product',
+    project_manager: 'operations',
+    program_manager: 'operations',
+    software_engineer: 'engineering',
+    it_systems_admin: 'engineering',
+    it_support: 'operations',
+    solutions_architect: 'engineering',
+    sales_account_executive: 'leadership',
+    other: 'leadership',
+  }
+  return map[roleId] || 'leadership'
 }

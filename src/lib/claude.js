@@ -5,8 +5,20 @@ const MOCK_MODE = !import.meta.env.VITE_SUPABASE_URL ||
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
+// ─── Active role context ──────────────────────────────────────────────────
+// Workspace sets this whenever a conversation is loaded so the backend can
+// tailor every prompt to the user's role/seniority/use-cases without us
+// having to thread the context through every API function signature.
+let _activeRoleContext = null
+export function setActiveRoleContext(ctx) { _activeRoleContext = ctx || null }
+export function getActiveRoleContext() { return _activeRoleContext }
+
 async function postJSON(path, body, action, config = {}, aiModel = 'claude') {
-  const bodyWithModel = { ...body, aiModel }
+  const bodyWithModel = {
+    ...body,
+    aiModel,
+    ...(_activeRoleContext ? { roleContext: _activeRoleContext } : {}),
+  }
   const res = await apiCall(`${API_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

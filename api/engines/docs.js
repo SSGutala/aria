@@ -1,5 +1,6 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
+import { buildRoleContextPrompt } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const DOC_TYPES = [
@@ -25,7 +26,8 @@ const DOC_QUESTION_FOCUS = {
 }
 
 export default async function docsEngineHandler(req, res) {
-  const { prompt, conversationId, clarificationAnswers, docType, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, clarificationAnswers, docType, conversationHistory, aiModel, roleContext } = req.body
+  const rolePreface = buildRoleContextPrompt(roleContext)
 
   // No docType yet — show the picker
   if (!docType) {
@@ -59,7 +61,7 @@ export default async function docsEngineHandler(req, res) {
 You think like a senior business analyst and technical writer who has produced hundreds of enterprise documents.
 Your questions extract the exact information needed to produce a complete, professional ${docMeta.label}.
 Tone: precise, business-focused, no software development language.
-NEVER suggest building an app or generating code. This is a document workspace.`,
+NEVER suggest building an app or generating code. This is a document workspace.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to generate a ${docMeta.label} for: "${prompt}"${historyContext}
 
 Generate 4-5 targeted questions to gather everything needed for a complete, professional ${docMeta.label}.

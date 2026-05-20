@@ -1,11 +1,13 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
+import { buildRoleContextPrompt } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const AUTOMATION_ENGINE_STEPS = ['Current process', 'Trigger & events', 'Conditions & routing', 'Integrations', 'Escalations & SLAs', 'Automation workflow', 'Deploy']
 
 export default async function automationEngineHandler(req, res) {
-  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
+  const rolePreface = buildRoleContextPrompt(roleContext)
 
   if (clarificationAnswers) {
     const { default: briefHandler } = await import('../brief.js')
@@ -23,7 +25,7 @@ export default async function automationEngineHandler(req, res) {
 You think like a senior process architect who has automated hundreds of enterprise workflows.
 Your questions uncover: triggers, conditions, routing logic, integrations, SLAs, escalations, and exception handling.
 Tone: process-focused, operational, precise.
-NEVER use app-building language. This is about automating workflows, not building CRUD apps.`,
+NEVER use app-building language. This is about automating workflows, not building CRUD apps.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to automate: "${prompt}"${historyContext}
 
 Generate 4-5 targeted questions to design the automation workflow.

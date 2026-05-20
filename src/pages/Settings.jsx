@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { API_URL } from '../lib/api'
 import { useProfile, deriveAccountType, getDefaultBuildMode } from '../hooks/useProfile'
 import { logAction } from '../lib/devlog'
+import { ROLES, SENIORITY_LEVELS, INTENDED_USE_CASES, mapCustomRoleToSupported } from '../lib/roles'
 
 const API = API_URL
 
@@ -16,8 +17,13 @@ export default function Settings() {
   const [disconnecting, setDisconnecting] = useState(false)
   const [toast, setToast] = useState(null)
   const { profile, saveProfile } = useProfile()
+  const [fullName, setFullName] = useState('')
   const [jobTitle, setJobTitle] = useState('')
-  const [workCategory, setWorkCategory] = useState('')
+  const [company, setCompany] = useState('')
+  const [department, setDepartment] = useState('')
+  const [selectedRole, setSelectedRole] = useState('')
+  const [customRole, setCustomRole] = useState('')
+  const [seniority, setSeniority] = useState('')
   const [useCases, setUseCases] = useState([])
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
@@ -43,18 +49,56 @@ export default function Settings() {
 
   useEffect(() => {
     if (profile) {
+      setFullName(profile.full_name || '')
       setJobTitle(profile.job_title || '')
-      setWorkCategory(profile.work_category || '')
-      setUseCases(profile.use_cases || [])
+      setCompany(profile.company || '')
+      setDepartment(profile.department || '')
+      setSelectedRole(profile.selected_role || '')
+      setCustomRole(profile.custom_role || '')
+      setSeniority(profile.seniority_level || '')
+      setUseCases(profile.intended_use_cases || profile.use_cases || [])
     }
   }, [profile])
 
+  function toggleUseCase(id) {
+    if (id === 'agentic') return // coming soon
+    if (id === 'all') {
+      setUseCases(prev => prev.includes('all') ? [] : ['all'])
+      return
+    }
+    setUseCases(prev => {
+      const next = prev.filter(u => u !== 'all')
+      return next.includes(id) ? next.filter(u => u !== id) : [...next, id]
+    })
+  }
+
   async function handleSaveProfile() {
     setSavingProfile(true)
-    await saveProfile({ job_title: jobTitle, work_category: workCategory, use_cases: useCases })
+    const resolvedRole = selectedRole === 'other'
+      ? (mapCustomRoleToSupported(customRole) || 'other')
+      : selectedRole
+    const finalCustomRole = selectedRole === 'other' ? (customRole?.trim() || null) : null
+
+    if (fullName.trim()) {
+      await supabase.auth.updateUser({ data: { full_name: fullName.trim() } })
+    }
+
+    await saveProfile({
+      full_name: fullName.trim() || null,
+      job_title: jobTitle.trim() || null,
+      company: company.trim() || null,
+      department: department.trim() || null,
+      selected_role: resolvedRole || null,
+      custom_role: finalCustomRole,
+      seniority_level: seniority || null,
+      intended_use_cases: useCases,
+      use_cases: useCases, // mirror to legacy column
+    })
     setSavingProfile(false)
     setProfileSaved(true)
-    logAction('settings.profile_saved', { accountType: deriveAccountType(useCases) })
+    logAction('settings.profile_saved', {
+      role: resolvedRole, seniority, accountType: deriveAccountType(useCases),
+    })
     setTimeout(() => setProfileSaved(false), 2000)
   }
 
@@ -151,87 +195,124 @@ export default function Settings() {
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#F5F5F5', marginBottom: 6, letterSpacing: '-0.4px' }}>Integrations</h1>
         <p style={{ fontSize: 13, color: '#525252', margin: '0 0 32px' }}>Connect external services so Aria-generated apps can write to SharePoint, send via Outlook, and post to Teams.</p>
 
-        {/* Profile section */}
+        {/* Profile & Role Preferences */}
         <div style={{ background: '#141414', border: '0.5px solid #1E1E1E', borderRadius: 12, padding: 20, marginBottom: 16 }}>
-          <h3 style={{ color: '#D4D4D4', fontSize: 14, fontWeight: 600, margin: '0 0 16px' }}>Your Profile</h3>
+          <h3 style={{ color: '#D4D4D4', fontSize: 14, fontWeight: 600, margin: '0 0 4px' }}>Profile & Role Preferences</h3>
+          <p style={{ color: '#525252', fontSize: 12, margin: '0 0 18px' }}>
+            Aria uses these to tailor questions, artifacts, and workflows. Changes apply to new chats — existing chats keep the role they started with.
+          </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Job Title</label>
-              <input
-                type="text"
-                value={jobTitle}
-                onChange={e => setJobTitle(e.target.value)}
-                placeholder="e.g. Product Manager"
-                style={{ width: '100%', background: '#1A1A1A', border: '0.5px solid #2A2A2A', borderRadius: 7, color: '#F5F5F5', padding: '8px 12px', fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-              />
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            <div>
-              <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Work Category</label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {[
-                  { id: 'engineering', label: 'Engineering & Dev', icon: '⚙️' },
-                  { id: 'operations', label: 'Operations', icon: '🔄' },
-                  { id: 'product', label: 'Product & Strategy', icon: '📋' },
-                  { id: 'finance', label: 'Finance & Legal', icon: '💰' },
-                  { id: 'hr', label: 'HR & People', icon: '👥' },
-                  { id: 'leadership', label: 'Leadership', icon: '🎯' },
-                ].map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setWorkCategory(cat.id)}
-                    style={{
-                      background: workCategory === cat.id ? '#1E1E1E' : '#1A1A1A',
-                      border: `0.5px solid ${workCategory === cat.id ? '#3D3D3D' : '#222'}`,
-                      borderRadius: 6, padding: '5px 10px',
-                      fontSize: 11, color: workCategory === cat.id ? '#D4D4D4' : '#525252',
-                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'inherit',
-                    }}
-                  >
-                    <span>{cat.icon}</span>{cat.label}
-                  </button>
-                ))}
+            {/* Identity */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <SettingsField label="Full name">
+                <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+                  placeholder="Your name" style={settingsInputStyle} />
+              </SettingsField>
+              <SettingsField label="Job title">
+                <input type="text" value={jobTitle} onChange={e => setJobTitle(e.target.value)}
+                  placeholder="e.g. Senior Product Manager" style={settingsInputStyle} />
+              </SettingsField>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <SettingsField label="Company" flex={1}>
+                  <input type="text" value={company} onChange={e => setCompany(e.target.value)}
+                    placeholder="Optional" style={settingsInputStyle} />
+                </SettingsField>
+                <SettingsField label="Department" flex={1}>
+                  <input type="text" value={department} onChange={e => setDepartment(e.target.value)}
+                    placeholder="Optional" style={settingsInputStyle} />
+                </SettingsField>
               </div>
             </div>
 
-            <div>
-              <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Use Cases</label>
+            {/* Primary role */}
+            <SettingsField label="Primary role">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {ROLES.map(role => {
+                  const isSelected = selectedRole === role.id
+                  return (
+                    <button
+                      key={role.id}
+                      onClick={() => setSelectedRole(role.id)}
+                      style={{
+                        background: isSelected ? '#1A1A1A' : '#141414',
+                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#222'}`,
+                        borderRadius: 7, padding: '8px 10px',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+                      }}
+                    >
+                      <span style={{ fontSize: 13 }}>{role.icon}</span>
+                      <span style={{ fontSize: 12, color: isSelected ? '#E5E5E5' : '#737373', fontWeight: isSelected ? 500 : 400 }}>
+                        {role.label}
+                      </span>
+                      {isSelected && <span style={{ marginLeft: 'auto', color: '#34D399', fontSize: 11 }}>✓</span>}
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedRole === 'other' && (
+                <input
+                  type="text" value={customRole} onChange={e => setCustomRole(e.target.value)}
+                  placeholder="Describe your role"
+                  style={{ ...settingsInputStyle, marginTop: 8 }}
+                />
+              )}
+            </SettingsField>
+
+            {/* Seniority */}
+            <SettingsField label="Seniority level">
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {SENIORITY_LEVELS.map(s => {
+                  const isSelected = seniority === s.id
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => setSeniority(s.id)}
+                      style={{
+                        background: isSelected ? '#1E1E1E' : '#1A1A1A',
+                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#222'}`,
+                        borderRadius: 6, padding: '6px 12px',
+                        fontSize: 12, color: isSelected ? '#D4D4D4' : '#737373',
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      {s.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </SettingsField>
+
+            {/* Use cases */}
+            <SettingsField label="Intended use cases">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {[
-                  { id: 'apps', label: '🏗️ Internal tools & apps' },
-                  { id: 'automation', label: '⚙️ Workflow automations' },
-                  { id: 'docs', label: '📄 Product documentation' },
-                  { id: 'dashboards', label: '📊 Dashboards & reporting' },
-                  { id: 'all', label: '🚀 All of the above' },
-                ].map(uc => {
+                {INTENDED_USE_CASES.map(uc => {
                   const isSelected = useCases.includes(uc.id)
+                  const disabled = uc.comingSoon
                   return (
                     <button
                       key={uc.id}
-                      onClick={() => {
-                        if (uc.id === 'all') { setUseCases(prev => prev.includes('all') ? [] : ['all']); return }
-                        setUseCases(prev => {
-                          const next = prev.filter(u => u !== 'all')
-                          return next.includes(uc.id) ? next.filter(u => u !== uc.id) : [...next, uc.id]
-                        })
-                      }}
+                      onClick={() => toggleUseCase(uc.id)}
+                      disabled={disabled}
                       style={{
                         background: isSelected ? '#1A1A1A' : '#141414',
                         border: `0.5px solid ${isSelected ? '#3D3D3D' : '#1E1E1E'}`,
                         borderRadius: 7, padding: '8px 12px',
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        cursor: 'pointer', fontSize: 12,
+                        cursor: disabled ? 'default' : 'pointer', fontSize: 12,
                         color: isSelected ? '#D4D4D4' : '#525252', fontFamily: 'inherit', textAlign: 'left',
+                        opacity: disabled ? 0.5 : 1,
                       }}
                     >
-                      {uc.label}
+                      <span>{uc.icon} {uc.label}{uc.comingSoon && <span style={{ marginLeft: 6, fontSize: 10, color: '#525252' }}>· Coming soon</span>}</span>
                       {isSelected && <span style={{ color: '#34D399', fontSize: 11 }}>✓</span>}
                     </button>
                   )
                 })}
               </div>
-            </div>
+            </SettingsField>
 
             {profile && (
               <div style={{ fontSize: 11, color: '#3D3D3D', padding: '6px 10px', background: '#111', borderRadius: 6, border: '0.5px solid #1A1A1A' }}>
@@ -381,6 +462,24 @@ function InfoField({ label, value }) {
     <div>
       <div style={{ fontSize: 9, fontWeight: 700, color: '#2A2A2A', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 12, color: '#A3A3A3', fontWeight: 500 }}>{value}</div>
+    </div>
+  )
+}
+
+const settingsInputStyle = {
+  width: '100%', background: '#1A1A1A', border: '0.5px solid #2A2A2A',
+  borderRadius: 7, color: '#F5F5F5', padding: '8px 12px',
+  fontSize: 13, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit',
+}
+
+function SettingsField({ label, flex, children }) {
+  return (
+    <div style={{ flex: flex ?? undefined }}>
+      <label style={{
+        display: 'block', fontSize: 11, color: '#737373', marginBottom: 6,
+        textTransform: 'uppercase', letterSpacing: '0.04em',
+      }}>{label}</label>
+      {children}
     </div>
   )
 }

@@ -56,8 +56,15 @@ export function useProfile() {
   const saveProfile = useCallback(async (updates) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return null
-    const accountType = deriveAccountType(updates.use_cases)
-    const payload = { id: user.id, ...updates, account_type: accountType, updated_at: new Date().toISOString() }
+    // account_type is still derived from use_cases for backwards compat;
+    // accept either intended_use_cases (new) or use_cases (legacy) as the source.
+    const sourceUseCases = updates.intended_use_cases ?? updates.use_cases
+    const payload = {
+      id: user.id,
+      ...updates,
+      ...(sourceUseCases ? { account_type: deriveAccountType(sourceUseCases) } : {}),
+      updated_at: new Date().toISOString(),
+    }
     const { data, error } = await supabase.from('profiles').upsert(payload).select().single()
     if (!error) setProfile(data)
     return error ? null : data

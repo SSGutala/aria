@@ -1,11 +1,13 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
+import { buildRoleContextPrompt } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const ANALYTICS_ENGINE_STEPS = ['Business objective', 'Key metrics & KPIs', 'Data sources', 'Audience & access', 'Visualization design', 'Dashboard spec', 'Build']
 
 export default async function analyticsEngineHandler(req, res) {
-  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
+  const rolePreface = buildRoleContextPrompt(roleContext)
 
   if (clarificationAnswers) {
     const { default: specHandler } = await import('../spec.js')
@@ -22,7 +24,7 @@ export default async function analyticsEngineHandler(req, res) {
 You think like a senior BI architect who has designed executive dashboards and operational command centers.
 Your questions uncover: metrics, data sources, audience, visualization requirements, drill-downs, and alert thresholds.
 Tone: analytical, data-focused, precise.
-NEVER use generic app-building language. This is about business intelligence and operational visibility.`,
+NEVER use generic app-building language. This is about business intelligence and operational visibility.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to build: "${prompt}"${historyContext}
 
 Generate 4-5 targeted questions to design the analytics/dashboard system.

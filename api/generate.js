@@ -19,6 +19,7 @@
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
 import { INTAKE_TRIAGE, buildHistoryContext } from './lib/prompts.js'
 import { devlog } from './lib/devlog.js'
+import { buildRoleContextPrompt } from './lib/roleFlows.js'
 import softwareEngineHandler from './engines/software.js'
 import docsEngineHandler from './engines/docs.js'
 import automationEngineHandler from './engines/automation.js'
@@ -41,7 +42,10 @@ export default async function handler(req, res) {
     conversationHistory,
     userMemories,
     aiModel,
+    roleContext,
   } = req.body
+
+  const rolePreface = buildRoleContextPrompt(roleContext)
 
   if (!prompt || !conversationId) {
     return res.status(400).json({ error: 'Missing required fields: prompt, conversationId' })
@@ -98,7 +102,7 @@ export default async function handler(req, res) {
         const parsed = await orch.json('pm_questions', {
           tier: 'fast',
           maxTokens: 1000,
-          system: INTAKE_TRIAGE,
+          system: rolePreface ? `${INTAKE_TRIAGE}\n\n${rolePreface}` : INTAKE_TRIAGE,
           prompt: `User request: "${prompt}"${historyContext}
 PM Package: ${pmPackage}
 
@@ -143,7 +147,7 @@ Generate 4-5 targeted PM discovery questions. Return JSON:
         const parsed = await orch.json('role_questions', {
           tier: 'fast',
           maxTokens: 1000,
-          system: INTAKE_TRIAGE,
+          system: rolePreface ? `${INTAKE_TRIAGE}\n\n${rolePreface}` : INTAKE_TRIAGE,
           prompt: `User request: "${prompt}"${historyContext}
 Role: ${buildMode}. Package: ${rolePackage}
 
@@ -179,7 +183,7 @@ Generate 4-5 targeted discovery questions for a ${buildMode} role. Return JSON:
       const parsed = await orch.json('mode_questions', {
         tier: 'fast',
         maxTokens: isQuick ? 600 : 1000,
-        system: INTAKE_TRIAGE,
+        system: rolePreface ? `${INTAKE_TRIAGE}\n\n${rolePreface}` : INTAKE_TRIAGE,
         prompt: `User request: "${prompt}"${historyContext}${memoriesCtx}
 Build mode: ${buildMode}
 
@@ -220,7 +224,7 @@ Generate ${isQuick ? '2-3 focused' : '4-5 deep'} discovery questions. Return JSO
     const parsed = await orch.json('analyze_complexity', {
       tier: 'fast',
       maxTokens: 500,
-      system: INTAKE_TRIAGE,
+      system: rolePreface ? `${INTAKE_TRIAGE}\n\n${rolePreface}` : INTAKE_TRIAGE,
       prompt: `User request: "${prompt}"${historyContext}${memoriesContext}
 
 Analyze and classify this request. Return JSON:

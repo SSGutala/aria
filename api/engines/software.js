@@ -1,11 +1,13 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
+import { buildRoleContextPrompt } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const SOFTWARE_ENGINE_STEPS = ['Goal & users', 'Core workflow', 'Data model', 'Integrations', 'App spec', 'Build']
 
 export default async function softwareEngineHandler(req, res) {
-  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
+  const rolePreface = buildRoleContextPrompt(roleContext)
 
   if (clarificationAnswers) {
     // Route to spec generation
@@ -22,7 +24,7 @@ export default async function softwareEngineHandler(req, res) {
 You think like a senior product architect who has shipped 100+ internal tools.
 Your questions uncover what gets built: users, permissions, workflows, data, integrations, actions.
 Never ask about documents, governance, or compliance unless explicitly needed.
-Tone: direct, technical, product-minded.`,
+Tone: direct, technical, product-minded.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to build: "${prompt}"${historyContext}
 
 Generate 4-5 targeted discovery questions. Focus ONLY on software design concerns.

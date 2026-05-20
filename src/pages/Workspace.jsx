@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase, MOCK_MODE } from '../lib/supabase'
-import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions } from '../lib/claude'
+import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions, setActiveRoleContext } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
 import { useBreakpoint } from '../hooks/useBreakpoint'
@@ -25,6 +25,7 @@ import OnboardingFlow from '../components/OnboardingFlow'
 import HomeScreen from '../components/HomeScreen'
 import EngineIntakeCard from '../components/EngineIntakeCard'
 import DocsTypeCard from '../components/DocsTypeCard'
+import RoleBadge from '../components/RoleBadge'
 
 export default function Workspace() {
   const { convId } = useParams()
@@ -137,7 +138,20 @@ export default function Workspace() {
   useEffect(() => {
     if (!convId) return
     supabase.from('conversations').select('*').eq('id', convId).single()
-      .then(({ data }) => setCurrentConv(data))
+      .then(({ data }) => {
+        setCurrentConv(data)
+        // Push this conversation's frozen role context into the API client
+        // so every downstream call uses the role active when the chat began.
+        if (data) {
+          setActiveRoleContext({
+            role: data.role_context || null,
+            customRole: data.custom_role_context || null,
+            seniority: data.seniority_context || null,
+            intendedUseCases: data.intended_use_cases || [],
+            overridden: data.role_overridden || false,
+          })
+        }
+      })
     supabase.from('messages').select('*').eq('conversation_id', convId).order('created_at')
       .then(({ data }) => {
         const msgs = data || []
@@ -1038,13 +1052,48 @@ export default function Workspace() {
     await runAnalyzeAndQuestion(prompt, engineHint)
   }
 
+  // Apply a per-chat role override. Writes to the conversation row and
+  // refreshes the active role context used by the API client.
+  async function handleRoleOverride(updates) {
+    if (!convId) return
+    const { data, error } = await supabase
+      .from('conversations').update(updates).eq('id', convId).select().single()
+    if (error || !data) return
+    setCurrentConv(data)
+    setActiveRoleContext({
+      role: data.role_context || null,
+      customRole: data.custom_role_context || null,
+      seniority: data.seniority_context || null,
+      intendedUseCases: data.intended_use_cases || [],
+      overridden: !!data.role_overridden,
+    })
+  }
+
+  // Build a role context snapshot from the current profile. This snapshot is
+  // FROZEN onto each conversation at creation time so existing chats keep
+  // their role even if the user later changes their profile.
+  function buildRoleContextFromProfile() {
+    if (!profile) return {}
+    return {
+      role_context: profile.selected_role || null,
+      custom_role_context: profile.custom_role || null,
+      seniority_context: profile.seniority_level || null,
+      intended_use_cases: profile.intended_use_cases || profile.use_cases || [],
+      role_overridden: false,
+    }
+  }
+
   // ─── Home screen: start a new conversation from a suggestion ────────────────
   async function handleStartFromHome(promptText, engine = null) {
     if (!user) return
     logAction('home.suggestion_started', { promptLength: promptText.length, engine })
     const { data, error } = await supabase
       .from('conversations')
-      .insert({ user_id: user.id, title: promptText.slice(0, 60) })
+      .insert({
+        user_id: user.id,
+        title: promptText.slice(0, 60),
+        ...buildRoleContextFromProfile(),
+      })
       .select().single()
     if (error || !data) return
     loadConversations()
@@ -1215,6 +1264,16 @@ export default function Workspace() {
           lastError={lastError}
           lastLatencyMs={lastLatencyMs}
         />
+        {convId && currentConv?.role_context && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 16px', borderBottom: '0.5px solid #1A1A1A',
+            background: '#0D0D0D',
+          }}>
+            <span style={{ fontSize: 10, color: '#525252', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Role</span>
+            <RoleBadge conversation={currentConv} onOverride={handleRoleOverride} />
+          </div>
+        )}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
           {convId ? (
             <>
