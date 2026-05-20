@@ -1,6 +1,6 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
-import { buildRoleContextPrompt } from '../lib/roleFlows.js'
+import { buildRoleContextPrompt, getSeniorityQuestionTarget } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const ANALYTICS_ENGINE_STEPS = ['Business objective', 'Key metrics & KPIs', 'Data sources', 'Audience & access', 'Visualization design', 'Dashboard spec', 'Build']
@@ -8,6 +8,7 @@ export const ANALYTICS_ENGINE_STEPS = ['Business objective', 'Key metrics & KPIs
 export default async function analyticsEngineHandler(req, res) {
   const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
   const rolePreface = buildRoleContextPrompt(roleContext)
+  const qTarget = getSeniorityQuestionTarget(roleContext?.seniority)
 
   if (clarificationAnswers) {
     const { default: specHandler } = await import('../spec.js')
@@ -27,7 +28,7 @@ Tone: analytical, data-focused, precise.
 NEVER use generic app-building language. This is about business intelligence and operational visibility.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to build: "${prompt}"${historyContext}
 
-Generate 4-5 targeted questions to design the analytics/dashboard system.
+Generate ${qTarget.target} targeted questions (depth tuned to user's seniority) to design the analytics/dashboard system.
 Return JSON:
 {
   "intro": "1-2 sentences. Name the specific business objective this dashboard serves and the decision it enables. Be analytical and direct.",
@@ -54,7 +55,7 @@ DO NOT ask about CRUD operations, user management, or generic software features.
       engine: 'analytics',
       intro: parsed.intro || '',
       outputType: 'analytics_spec',
-      questions: (parsed.questions || []).slice(0, 5),
+      questions: (parsed.questions || []).slice(0, qTarget.max),
     })
   } catch (err) {
     return respondWithError(res, err, orch)

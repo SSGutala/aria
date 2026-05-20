@@ -1,6 +1,6 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
-import { buildRoleContextPrompt } from '../lib/roleFlows.js'
+import { buildRoleContextPrompt, getSeniorityQuestionTarget } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const AUTOMATION_ENGINE_STEPS = ['Current process', 'Trigger & events', 'Conditions & routing', 'Integrations', 'Escalations & SLAs', 'Automation workflow', 'Deploy']
@@ -8,6 +8,7 @@ export const AUTOMATION_ENGINE_STEPS = ['Current process', 'Trigger & events', '
 export default async function automationEngineHandler(req, res) {
   const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
   const rolePreface = buildRoleContextPrompt(roleContext)
+  const qTarget = getSeniorityQuestionTarget(roleContext?.seniority)
 
   if (clarificationAnswers) {
     const { default: briefHandler } = await import('../brief.js')
@@ -28,7 +29,7 @@ Tone: process-focused, operational, precise.
 NEVER use app-building language. This is about automating workflows, not building CRUD apps.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to automate: "${prompt}"${historyContext}
 
-Generate 4-5 targeted questions to design the automation workflow.
+Generate ${qTarget.target} targeted questions (depth tuned to user's seniority) to design the automation workflow.
 Return JSON:
 {
   "intro": "1-2 sentences. Name the specific process being automated and the manual bottleneck it eliminates. Be direct about what the automation will do.",
@@ -55,7 +56,7 @@ DO NOT ask about apps, UX, or data models. Focus purely on the process flow.`,
       engine: 'automation',
       intro: parsed.intro || '',
       outputType: 'automation_brief',
-      questions: (parsed.questions || []).slice(0, 5),
+      questions: (parsed.questions || []).slice(0, qTarget.max),
     })
   } catch (err) {
     return respondWithError(res, err, orch)

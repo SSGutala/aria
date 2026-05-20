@@ -1,6 +1,6 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
-import { buildRoleContextPrompt } from '../lib/roleFlows.js'
+import { buildRoleContextPrompt, getSeniorityQuestionTarget } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const DOC_TYPES = [
@@ -28,6 +28,7 @@ const DOC_QUESTION_FOCUS = {
 export default async function docsEngineHandler(req, res) {
   const { prompt, conversationId, clarificationAnswers, docType, conversationHistory, aiModel, roleContext } = req.body
   const rolePreface = buildRoleContextPrompt(roleContext)
+  const qTarget = getSeniorityQuestionTarget(roleContext?.seniority)
 
   // No docType yet — show the picker
   if (!docType) {
@@ -64,7 +65,7 @@ Tone: precise, business-focused, no software development language.
 NEVER suggest building an app or generating code. This is a document workspace.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to generate a ${docMeta.label} for: "${prompt}"${historyContext}
 
-Generate 4-5 targeted questions to gather everything needed for a complete, professional ${docMeta.label}.
+Generate ${qTarget.target} targeted questions (depth tuned to user's seniority) to gather everything needed for a complete, professional ${docMeta.label}.
 Focus areas for this document type: ${focusAreas}
 
 Return JSON:
@@ -85,7 +86,7 @@ Questions must be document-centric. Do NOT use language about apps, builds, spec
       docType,
       intro: parsed.intro || '',
       outputType: 'doc_brief',
-      questions: (parsed.questions || []).slice(0, 5),
+      questions: (parsed.questions || []).slice(0, qTarget.max),
     })
   } catch (err) {
     return respondWithError(res, err, orch)

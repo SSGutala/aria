@@ -17,6 +17,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
 import { devlog, devlogError } from './lib/devlog.js'
 import { ROLE_BRIEF, buildHistoryContext } from './lib/prompts.js'
+import { buildRoleContextPrompt } from './lib/roleFlows.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -370,7 +371,8 @@ function formatAnswers(clarificationAnswers) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, conversationId, role, rolePackage, clarificationAnswers, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, role, rolePackage, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
+  const rolePreface = buildRoleContextPrompt(roleContext)
   if (!prompt || !conversationId || !role) return res.status(400).json({ error: 'Missing required fields: prompt, conversationId, role' })
   if (!VALID_ROLES.includes(role)) return res.status(400).json({ error: `Invalid role "${role}". Supported: ${VALID_ROLES.join(', ')}` })
 
@@ -385,8 +387,10 @@ export default async function handler(req, res) {
   })
 
   try {
-    // Compose system: shared ROLE_BRIEF foundation + per-role overlay
-    const systemPrompt = `${ROLE_BRIEF}\n\n${overlay}`
+    // Compose system: shared ROLE_BRIEF foundation + per-role overlay + (optional) user-profile role preface
+    const systemPrompt = rolePreface
+      ? `${ROLE_BRIEF}\n\n${overlay}\n\n${rolePreface}`
+      : `${ROLE_BRIEF}\n\n${overlay}`
 
     // Build user prompt: per-role schema body + conversation history tail
     const answersText = formatAnswers(clarificationAnswers)

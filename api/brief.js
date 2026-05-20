@@ -21,6 +21,11 @@ import {
   buildHistoryContext,
   buildAnswersContext,
 } from './lib/prompts.js'
+import {
+  buildRoleContextPrompt,
+  getRoleArtifactInstruction,
+  getRoleStageOverrides,
+} from './lib/roleFlows.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -163,17 +168,19 @@ function normalizeBrief(brief) {
   return brief
 }
 
-async function persistArtifacts(brief, { conversationId, userId, prompt, sourcePrompt }) {
+async function persistArtifacts(brief, { conversationId, userId, prompt, sourcePrompt, roleId }) {
   const appTitle = brief.appSpec?.appTitle || 'App'
   const artifactIds = {}
   const created = []
+  const stageOverrides = getRoleStageOverrides(roleId)
   for (const stage of STAGE_MAP) {
     if (!brief[stage.key]) continue
+    const roleLabel = stageOverrides[stage.key] || stage.label
     const { data: artifact, error } = await supabase.from('artifacts').insert({
       conversation_id: conversationId,
       user_id: userId,
       artifact_type: stage.type,
-      title: `${appTitle} — ${stage.label}`,
+      title: `${appTitle} — ${roleLabel}`,
       content: brief[stage.key],
       source_prompt: sourcePrompt || prompt,
       version: 1,
@@ -227,8 +234,10 @@ function fireAndForgetFileGen(artifacts) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, conversationId, buildMode, clarificationAnswers, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, buildMode, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
   if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing fields: prompt, conversationId' })
+  const rolePreface = buildRoleContextPrompt(roleContext)
+  const roleArtifactInstruction = getRoleArtifactInstruction(roleContext)
 
   const orch = createOrchestrator({
     workflow: 'enterprise_brief',
@@ -238,11 +247,15 @@ export default async function handler(req, res) {
 
   try {
     // ─── Generate the 7-stage brief ──────────────────────────────────────────
+    const baseUserPrompt = buildBriefPrompt({ prompt, buildMode, clarificationAnswers, conversationHistory })
+    const userPrompt = roleArtifactInstruction
+      ? `${baseUserPrompt}\n\n${roleArtifactInstruction}`
+      : baseUserPrompt
     const rawBrief = await orch.json('generate_brief', {
       tier: 'smart',
       maxTokens: 7500,
-      system: ENTERPRISE_BRIEF,
-      prompt: buildBriefPrompt({ prompt, buildMode, clarificationAnswers, conversationHistory }),
+      system: rolePreface ? `${ENTERPRISE_BRIEF}\n\n${rolePreface}` : ENTERPRISE_BRIEF,
+      prompt: userPrompt,
     })
     const brief = normalizeBrief(rawBrief)
 
@@ -251,7 +264,7 @@ export default async function handler(req, res) {
     const userId = conv?.user_id || null
 
     // ─── Persist artifacts (one per stage) ───────────────────────────────────
-    const { artifactIds, created } = await persistArtifacts(brief, { conversationId, userId, prompt })
+    const { artifactIds, created } = await persistArtifacts(brief, { conversationId, userId, prompt, roleId: roleContext?.role })
 
     // ─── Persist the brief message card ──────────────────────────────────────
     await supabase.from('messages').insert({

@@ -353,6 +353,149 @@ export function getSeniorityProfile(level) {
   return SENIORITY_PROFILES[level] || SENIORITY_PROFILES.mid
 }
 
+// ── Role → 7-slot brief label overrides ──────────────────────────────────────
+// The brief.js / EnterpriseStagesCard system uses 7 fixed JSON keys. We keep
+// the keys but relabel them per role so a PM sees "PRD" where a Solutions
+// Architect sees "Solution Design Document". Content shifts with labels.
+const ROLE_STAGE_OVERRIDES = {
+  product_manager: {
+    intakeSummary: 'Intake Summary',
+    productBrief: 'PRD',
+    workflowMap: 'User Stories & Workflow Map',
+    dataModel: 'Data Model',
+    automationModel: 'Acceptance Criteria & Automation',
+    uxRecommendation: 'UX Mockups',
+    appSpec: 'Launch Plan',
+  },
+  technical_product_manager: {
+    intakeSummary: 'Technical Intake Summary',
+    productBrief: 'Technical PRD',
+    workflowMap: 'API & Integration Spec',
+    dataModel: 'Data Mapping & Contracts',
+    automationModel: 'Dependency & NFR Matrix',
+    uxRecommendation: 'Architecture Diagram',
+    appSpec: 'Technical Acceptance Criteria',
+  },
+  project_manager: {
+    intakeSummary: 'Project Charter',
+    productBrief: 'Project Plan',
+    workflowMap: 'Work Breakdown & Timeline',
+    dataModel: 'RACI Matrix',
+    automationModel: 'RAID Log',
+    uxRecommendation: 'Communication Plan',
+    appSpec: 'Status Report Template',
+  },
+  program_manager: {
+    intakeSummary: 'Program Charter',
+    productBrief: 'Program Roadmap',
+    workflowMap: 'Workstream & Dependency Map',
+    dataModel: 'Governance Plan',
+    automationModel: 'Risk Register',
+    uxRecommendation: 'Executive Status Deck',
+    appSpec: 'Benefits Realization Plan',
+  },
+  software_engineer: {
+    intakeSummary: 'Engineering Task Summary',
+    productBrief: 'Implementation Plan',
+    workflowMap: 'Task Breakdown',
+    dataModel: 'Data Schema',
+    automationModel: 'Test Plan',
+    uxRecommendation: 'API / Interface Contract',
+    appSpec: 'Rollout & Rollback Plan',
+  },
+  it_systems_admin: {
+    intakeSummary: 'IT Request Summary',
+    productBrief: 'Change Request',
+    workflowMap: 'Change Implementation Plan',
+    dataModel: 'Access / Permissions Matrix',
+    automationModel: 'Monitoring & Alerting Plan',
+    uxRecommendation: 'Systems Architecture',
+    appSpec: 'Runbook & Rollback',
+  },
+  it_support: {
+    intakeSummary: 'Ticket Summary',
+    productBrief: 'Triage Decision Tree',
+    workflowMap: 'Support Workflow',
+    dataModel: 'SLA & Priority Model',
+    automationModel: 'Escalation Plan',
+    uxRecommendation: 'User Communication Draft',
+    appSpec: 'KB Article / Runbook',
+  },
+  solutions_architect: {
+    intakeSummary: 'Requirements Summary',
+    productBrief: 'Current State Architecture',
+    workflowMap: 'Future State Architecture',
+    dataModel: 'Integration Spec',
+    automationModel: 'Security Review',
+    uxRecommendation: 'Solution Design Document',
+    appSpec: 'Implementation Plan',
+  },
+  sales_account_executive: {
+    intakeSummary: 'Account Research Notes',
+    productBrief: 'Opportunity Plan',
+    workflowMap: 'Discovery Summary',
+    dataModel: 'Qualification & Stakeholder Map',
+    automationModel: 'Mutual Action Plan',
+    uxRecommendation: 'Proposal Draft',
+    appSpec: 'CRM Update & Handoff',
+  },
+  other: null,
+}
+
+/**
+ * Returns { intakeSummary: 'PRD', ... } for the role, or {} if no overrides.
+ * Used by brief.js to relabel persisted artifact titles per role.
+ */
+export function getRoleStageOverrides(roleId) {
+  return ROLE_STAGE_OVERRIDES[roleId] || {}
+}
+
+/**
+ * Compose a short instruction block telling the model exactly which artifacts
+ * to produce (mapped onto the fixed 7 JSON slots), which terminology to use,
+ * and what depth seniority requires. Appended to the user prompt of any
+ * downstream artifact generator (brief.js, spec.js, pm-brief, role-brief).
+ */
+export function getRoleArtifactInstruction(roleContext) {
+  if (!roleContext) return ''
+  const { role, customRole, seniority } = roleContext
+  if (!role && !customRole) return ''
+
+  const flow = getRoleFlow(role)
+  const sen = getSeniorityProfile(seniority)
+  const overrides = getRoleStageOverrides(role)
+  const overrideLines = Object.entries(overrides)
+    .map(([slot, label]) => `  - ${slot} → "${label}"`)
+    .join('\n')
+
+  return `
+ROLE-AWARE ARTIFACT MAPPING — apply this to your output:
+
+For this role (${(role === 'other' && customRole) ? customRole : flow.label}, ${sen.label}), the 7 brief slots must be framed as the following role-specific artifacts:
+${overrideLines || '  (use default labels)'}
+
+Terminology — bias every section toward this vocabulary: ${flow.terminology.join(', ') || '(domain-neutral)'}.
+
+Artifact depth: ${sen.artifactDepth}.
+
+Default artifacts this role expects:
+${flow.defaultArtifacts.map(a => `  - ${a}`).join('\n')}
+
+Each of the 7 JSON slots in your response MUST contain content appropriate for the role-specific artifact above, not a generic product brief. For example, if the role is Project Manager, the productBrief slot must contain Project Plan content (objectives, milestones, scope, deliverables) — not user-story content.
+`.trim()
+}
+
+/**
+ * Returns { min, max, target } question counts for the seniority level.
+ * Used by question-generation engines to enforce role-appropriate depth.
+ */
+export function getSeniorityQuestionTarget(level) {
+  const sen = getSeniorityProfile(level)
+  const target = sen.questionCountTarget || '4-5'
+  const [min, max] = target.split('-').map(n => parseInt(n.trim(), 10))
+  return { min: min || 4, max: max || 5, target }
+}
+
 /**
  * Compile a role context object into a system-prompt preface that can be
  * appended to any Aria prompt. Returns '' if no role context is set.

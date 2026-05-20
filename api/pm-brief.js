@@ -22,6 +22,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
 import { devlog, devlogError } from './lib/devlog.js'
 import { PM_BRIEF, buildHistoryContext, buildAnswersContext } from './lib/prompts.js'
+import { buildRoleContextPrompt } from './lib/roleFlows.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -580,8 +581,10 @@ function fireForgetFileGen(artifacts) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, conversationId, pmPackage, clarificationAnswers, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, pmPackage, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
   if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing fields: prompt, conversationId' })
+  const rolePreface = buildRoleContextPrompt(roleContext)
+  const pmSystem = rolePreface ? `${PM_BRIEF}\n\n${rolePreface}` : PM_BRIEF
 
   const isEnterprise = ['enterprise', 'full_lifecycle'].includes(pmPackage)
 
@@ -611,7 +614,7 @@ export default async function handler(req, res) {
     const partials = await Promise.all(stages.map(s => orch.json(s.span, {
       tier: s.tier,
       maxTokens: s.maxTokens,
-      system: PM_BRIEF,
+      system: pmSystem,
       prompt: s.build(prompt, pmPackage, context, histCtx),
     })))
 

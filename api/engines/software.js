@@ -1,6 +1,6 @@
 import { createOrchestrator, respondWithError } from '../lib/orchestrator.js'
 import { buildHistoryContext } from '../lib/prompts.js'
-import { buildRoleContextPrompt } from '../lib/roleFlows.js'
+import { buildRoleContextPrompt, getSeniorityQuestionTarget } from '../lib/roleFlows.js'
 import { devlog } from '../lib/devlog.js'
 
 export const SOFTWARE_ENGINE_STEPS = ['Goal & users', 'Core workflow', 'Data model', 'Integrations', 'App spec', 'Build']
@@ -8,6 +8,7 @@ export const SOFTWARE_ENGINE_STEPS = ['Goal & users', 'Core workflow', 'Data mod
 export default async function softwareEngineHandler(req, res) {
   const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
   const rolePreface = buildRoleContextPrompt(roleContext)
+  const qTarget = getSeniorityQuestionTarget(roleContext?.seniority)
 
   if (clarificationAnswers) {
     // Route to spec generation
@@ -27,7 +28,7 @@ Never ask about documents, governance, or compliance unless explicitly needed.
 Tone: direct, technical, product-minded.${rolePreface ? '\n\n' + rolePreface : ''}`,
       prompt: `User wants to build: "${prompt}"${historyContext}
 
-Generate 4-5 targeted discovery questions. Focus ONLY on software design concerns.
+Generate ${qTarget.target} targeted discovery questions (depth tuned to user's seniority). Focus ONLY on software design concerns.
 Return JSON:
 {
   "intro": "1-2 sentences. Name the specific tool being built and the key workflow it replaces. Sound like you already understood the request and are locking down the build spec.",
@@ -54,7 +55,7 @@ DO NOT ask about: document types, governance processes, compliance frameworks, o
       engine: 'software',
       intro: parsed.intro || '',
       outputType: 'software_spec',
-      questions: (parsed.questions || []).slice(0, 5),
+      questions: (parsed.questions || []).slice(0, qTarget.max),
     })
   } catch (err) {
     return respondWithError(res, err, orch)

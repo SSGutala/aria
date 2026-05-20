@@ -11,6 +11,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createOrchestrator, respondWithError } from './lib/orchestrator.js'
 import { devlog, devlogError } from './lib/devlog.js'
 import { APP_SPEC, buildHistoryContext, buildAnswersContext } from './lib/prompts.js'
+import { buildRoleContextPrompt, getRoleArtifactInstruction } from './lib/roleFlows.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -74,8 +75,10 @@ function normalizeSpec(spec) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel } = req.body
+  const { prompt, conversationId, clarificationAnswers, conversationHistory, aiModel, roleContext } = req.body
   if (!prompt || !conversationId) return res.status(400).json({ error: 'Missing fields: prompt, conversationId' })
+  const rolePreface = buildRoleContextPrompt(roleContext)
+  const roleArtifactInstruction = getRoleArtifactInstruction(roleContext)
 
   const orch = createOrchestrator({
     workflow: 'app_spec',
@@ -84,15 +87,18 @@ export default async function handler(req, res) {
   })
 
   try {
-    const userPrompt = SPEC_USER_TEMPLATE
+    const baseUserPrompt = SPEC_USER_TEMPLATE
       .replace('{{prompt}}', prompt)
       .replace('{{answers}}', buildAnswersContext(clarificationAnswers))
       .replace('{{history}}', buildHistoryContext(conversationHistory, 6))
+    const userPrompt = roleArtifactInstruction
+      ? `${baseUserPrompt}\n\n${roleArtifactInstruction}`
+      : baseUserPrompt
 
     const rawSpec = await orch.json('generate_spec', {
       tier: 'smart',
       maxTokens: 3500,
-      system: APP_SPEC,
+      system: rolePreface ? `${APP_SPEC}\n\n${rolePreface}` : APP_SPEC,
       prompt: userPrompt,
     })
     const spec = normalizeSpec(rawSpec)
