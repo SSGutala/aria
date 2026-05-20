@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { deriveAccountType, useProfile } from '../hooks/useProfile'
@@ -115,8 +115,15 @@ function StepIndicator({ current, total }) {
 
 export default function SignupProfile() {
   const navigate = useNavigate()
-  const { saveProfile } = useProfile()
+  const { profile, loading, saveProfile } = useProfile()
   const [step, setStep] = useState(1)
+
+  // If profile already exists, skip straight to workspace
+  useEffect(() => {
+    if (!loading && profile) {
+      navigate('/workspace', { replace: true })
+    }
+  }, [profile, loading, navigate])
   const [fullName, setFullName] = useState('')
   const [jobTitle, setJobTitle] = useState('')
   const [workCategory, setWorkCategory] = useState([])

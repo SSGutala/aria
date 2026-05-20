@@ -64,8 +64,9 @@ export default function Login({ session }) {
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
           logAction('user.signed_in', { email })
-          const { data: profile } = await supabase.from('profiles').select('id').eq('id', user.id).single()
-          if (!profile) {
+          const { data: profile, error: profileError } = await supabase.from('profiles').select('id').eq('id', user.id).maybeSingle()
+          // Only redirect to signup if the profile genuinely doesn't exist (not on query errors)
+          if (!profileError && !profile) {
             navigate('/signup/profile', { replace: true })
             return
           }
