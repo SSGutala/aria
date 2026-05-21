@@ -48,8 +48,23 @@ export default function Login({ session }) {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   useEffect(() => {
-    if (session) navigate('/workspace', { replace: true })
-  }, [session, navigate])
+    if (!session) return
+    // Don't override handleSubmit's navigation — only auto-redirect if we
+    // already have a session on page load (e.g. user navigated back to /login
+    // while still logged in). handleSubmit handles post-auth routing itself.
+    if (loading) return
+    supabase.from('profiles')
+      .select('id, onboarding_completed')
+      .eq('id', session.user.id)
+      .maybeSingle()
+      .then(({ data: profile }) => {
+        if (!profile || !profile.onboarding_completed) {
+          navigate('/signup/profile', { replace: true })
+        } else {
+          navigate('/workspace', { replace: true })
+        }
+      })
+  }, [session])
 
   function switchMode(next) {
     setMode(next)
