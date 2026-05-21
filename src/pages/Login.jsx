@@ -5,6 +5,23 @@ import { logAction } from '../lib/devlog'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
+function EyeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
+  )
+}
+
+function EyeOffIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 2l12 12M6.5 6.56A2 2 0 0010 10M4.15 4.17C2.38 5.36 1 8 1 8s2.5 5 7 5a6.84 6.84 0 003.85-1.17M6.5 3.14A6.56 6.56 0 018 3c4.5 0 7 5 7 5a11.6 11.6 0 01-1.67 2.35" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
 const inputStyle = {
   width: '100%',
   background: '#141414',
@@ -27,6 +44,8 @@ export default function Login({ session }) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   useEffect(() => {
     if (session) navigate('/workspace', { replace: true })
@@ -59,7 +78,22 @@ export default function Login({ session }) {
     try {
       if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password })
-        if (error) throw error
+        if (error) {
+          const msg = error.message?.toLowerCase() || ''
+          if (msg.includes('invalid login') || msg.includes('invalid credentials') || msg.includes('wrong password')) {
+            throw new Error('Incorrect password. Please try again.')
+          }
+          if (msg.includes('user not found') || msg.includes('no user') || msg.includes('email not found')) {
+            throw new Error('No account found with that email address.')
+          }
+          // Supabase returns "Invalid login credentials" for both wrong password
+          // and non-existent account — try to distinguish by checking if email exists
+          if (msg.includes('invalid login credentials')) {
+            const { data: methods } = await supabase.auth.signInWithOtp({ email, shouldCreateUser: false }).catch(() => ({ data: null }))
+            throw new Error('No account found with that email address, or the password is incorrect.')
+          }
+          throw error
+        }
         // Check if they've completed profile setup
         const { data: { user } } = await supabase.auth.getUser()
         if (user) {
@@ -160,14 +194,24 @@ export default function Login({ session }) {
               <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 6, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                 Password
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder={mode === 'signup' ? 'Minimum 8 characters' : '••••••••'}
-                required
-                style={inputStyle}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder={mode === 'signup' ? 'Minimum 8 characters' : '••••••••'}
+                  required
+                  style={{ ...inputStyle, paddingRight: 38 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#525252', padding: 2, display: 'flex', alignItems: 'center' }}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                </button>
+              </div>
             </div>
 
             {mode === 'signup' && (
@@ -175,14 +219,24 @@ export default function Login({ session }) {
                 <label style={{ display: 'block', fontSize: 11, color: '#737373', marginBottom: 6, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                   Confirm password
                 </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  style={inputStyle}
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    style={{ ...inputStyle, paddingRight: 38 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(p => !p)}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#525252', padding: 2, display: 'flex', alignItems: 'center' }}
+                    tabIndex={-1}
+                  >
+                    {showConfirmPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                </div>
               </div>
             )}
 
