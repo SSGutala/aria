@@ -53,7 +53,6 @@ export default function SignupProfile() {
   const [error, setError] = useState('')
 
   function toggleUseCase(id) {
-    if (id === 'agentic') return // coming soon
     if (id === 'all') {
       setUseCases(prev => prev.includes('all') ? [] : ['all'])
       return
@@ -323,32 +322,29 @@ export default function SignupProfile() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {INTENDED_USE_CASES.map(uc => {
                   const isSelected = useCases.includes(uc.id)
-                  const disabled = uc.comingSoon
                   return (
                     <button
                       key={uc.id}
                       onClick={() => toggleUseCase(uc.id)}
-                      disabled={disabled}
                       style={{
-                        background: isSelected ? '#141414' : '#0D0D0D',
-                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#1E1E1E'}`,
+                        background: isSelected ? '#1A1A1A' : '#141414',
+                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#2A2A2A'}`,
                         borderRadius: 10, padding: '12px 14px',
                         display: 'flex', alignItems: 'center', gap: 12,
-                        cursor: disabled ? 'default' : 'pointer',
-                        textAlign: 'left', fontFamily: 'inherit', opacity: disabled ? 0.5 : 1,
+                        cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
                       }}
                     >
                       <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{uc.icon}</span>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: isSelected ? '#E5E5E5' : '#737373', marginBottom: 2 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: isSelected ? '#E5E5E5' : '#A3A3A3', marginBottom: 2 }}>
                           {uc.label}
-                          {uc.comingSoon && <span style={{ marginLeft: 6, fontSize: 10, color: '#525252' }}>· Coming soon</span>}
+                          {uc.comingSoon && <span style={{ marginLeft: 6, fontSize: 10, color: '#737373' }}>· Coming soon</span>}
                         </div>
-                        <div style={{ fontSize: 11, color: '#3D3D3D' }}>{uc.description}</div>
+                        <div style={{ fontSize: 11, color: '#525252' }}>{uc.description}</div>
                       </div>
                       <div style={{
                         width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                        border: `0.5px solid ${isSelected ? '#34D399' : '#2A2A2A'}`,
+                        border: `0.5px solid ${isSelected ? '#34D399' : '#3D3D3D'}`,
                         background: isSelected ? '#0D2A1A' : 'transparent',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>

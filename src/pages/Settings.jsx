@@ -65,7 +65,6 @@ export default function Settings() {
   }, [profile])
 
   function toggleUseCase(id) {
-    if (id === 'agentic') return // coming soon
     if (id === 'all') {
       setUseCases(prev => prev.includes('all') ? [] : ['all'])
       return
@@ -334,23 +333,20 @@ export default function Settings() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {INTENDED_USE_CASES.map(uc => {
                   const isSelected = useCases.includes(uc.id)
-                  const disabled = uc.comingSoon
                   return (
                     <button
                       key={uc.id}
                       onClick={() => toggleUseCase(uc.id)}
-                      disabled={disabled}
                       style={{
                         background: isSelected ? '#1A1A1A' : '#141414',
-                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#1E1E1E'}`,
+                        border: `0.5px solid ${isSelected ? '#3D3D3D' : '#2A2A2A'}`,
                         borderRadius: 7, padding: '8px 12px',
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        cursor: disabled ? 'default' : 'pointer', fontSize: 12,
-                        color: isSelected ? '#D4D4D4' : '#525252', fontFamily: 'inherit', textAlign: 'left',
-                        opacity: disabled ? 0.5 : 1,
+                        cursor: 'pointer', fontSize: 12,
+                        color: isSelected ? '#D4D4D4' : '#A3A3A3', fontFamily: 'inherit', textAlign: 'left',
                       }}
                     >
-                      <span>{uc.icon} {uc.label}{uc.comingSoon && <span style={{ marginLeft: 6, fontSize: 10, color: '#525252' }}>· Coming soon</span>}</span>
+                      <span>{uc.icon} {uc.label}{uc.comingSoon && <span style={{ marginLeft: 6, fontSize: 10, color: '#737373' }}>· Coming soon</span>}</span>
                       {isSelected && <span style={{ color: '#34D399', fontSize: 11 }}>✓</span>}
                     </button>
                   )
