@@ -27,6 +27,10 @@ export default function Settings() {
   const [useCases, setUseCases] = useState([])
   const [savingProfile, setSavingProfile] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
+  // Delete-account flow: 'closed' | 'confirm' | 'type' | 'deleting'
+  const [deleteStage, setDeleteStage] = useState('closed')
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -100,6 +104,46 @@ export default function Settings() {
       role: resolvedRole, seniority, accountType: deriveAccountType(useCases),
     })
     setTimeout(() => setProfileSaved(false), 2000)
+  }
+
+  async function handleDeleteAccount() {
+    setDeleteError('')
+    setDeleteStage('deleting')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) {
+        setDeleteError('Session expired. Please sign in again.')
+        setDeleteStage('type')
+        return
+      }
+      const res = await fetch(`${API}/api/delete-account`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ confirmation: deleteConfirmText.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setDeleteError(data?.error || `Failed (${res.status})`)
+        setDeleteStage('type')
+        return
+      }
+      logAction('user.account_deleted', { userId: user?.id })
+      await supabase.auth.signOut()
+      navigate('/login', { replace: true })
+    } catch (err) {
+      setDeleteError(err.message || 'Unexpected error')
+      setDeleteStage('type')
+    }
+  }
+
+  function closeDeleteModal() {
+    setDeleteStage('closed')
+    setDeleteConfirmText('')
+    setDeleteError('')
   }
 
   async function loadM365Status(userId) {
@@ -451,10 +495,117 @@ export default function Settings() {
             </div>
           </div>
         )}
+        {/* Danger zone — delete account */}
+        <div style={{ marginTop: 40, marginBottom: 60, background: '#161010', border: '0.5px solid #3A1A1A', borderRadius: 12, padding: 20 }}>
+          <h3 style={{ color: '#F87171', fontSize: 14, fontWeight: 600, margin: '0 0 4px' }}>Danger zone</h3>
+          <p style={{ color: '#737373', fontSize: 12, margin: '0 0 16px', lineHeight: 1.5 }}>
+            Permanently delete your account, profile, and all associated chats. This cannot be undone.
+          </p>
+          <button
+            onClick={() => setDeleteStage('confirm')}
+            style={{
+              background: 'transparent', color: '#F87171',
+              border: '0.5px solid #7F1D1D', borderRadius: 7,
+              padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#7F1D1D'; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#F87171' }}
+          >
+            Delete account
+          </button>
+        </div>
       </div>
+
+      {/* ── Delete Account Modal — Step 1: confirmation ─────────────────────── */}
+      {deleteStage === 'confirm' && (
+        <div style={modalBackdropStyle} onClick={closeDeleteModal}>
+          <div style={modalCardStyle} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color: '#F5F5F5', fontSize: 16, fontWeight: 600, margin: '0 0 10px' }}>
+              Are you sure you want to delete your account?
+            </h3>
+            <p style={{ color: '#A3A3A3', fontSize: 13, margin: '0 0 22px', lineHeight: 1.5 }}>
+              This is irreversible. Your profile, all chats, and all artifacts will be permanently removed.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={closeDeleteModal} style={modalCancelBtnStyle}>Cancel</button>
+              <button onClick={() => setDeleteStage('type')} style={modalDangerBtnStyle}>
+                Proceed to delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Account Modal — Step 2: type "delete" ─────────────────────── */}
+      {(deleteStage === 'type' || deleteStage === 'deleting') && (
+        <div style={modalBackdropStyle} onClick={deleteStage === 'deleting' ? undefined : closeDeleteModal}>
+          <div style={modalCardStyle} onClick={e => e.stopPropagation()}>
+            <h3 style={{ color: '#F5F5F5', fontSize: 16, fontWeight: 600, margin: '0 0 10px' }}>
+              Final confirmation
+            </h3>
+            <p style={{ color: '#A3A3A3', fontSize: 13, margin: '0 0 14px', lineHeight: 1.5 }}>
+              Type <span style={{ color: '#F87171', fontWeight: 600 }}>delete</span> in the box below to permanently delete your account.
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              placeholder="Type delete to confirm"
+              autoFocus
+              disabled={deleteStage === 'deleting'}
+              style={{
+                width: '100%', background: '#1A1A1A', border: '0.5px solid #2A2A2A',
+                borderRadius: 7, color: '#F5F5F5', padding: '10px 12px',
+                fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit',
+                marginBottom: 16,
+              }}
+            />
+            {deleteError && (
+              <div style={{ color: '#F87171', fontSize: 12, marginBottom: 14, padding: '8px 12px', background: '#2A1010', border: '0.5px solid #7F1D1D', borderRadius: 6 }}>
+                {deleteError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={closeDeleteModal} disabled={deleteStage === 'deleting'} style={modalCancelBtnStyle}>Cancel</button>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText.trim().toLowerCase() !== 'delete' || deleteStage === 'deleting'}
+                style={{
+                  ...modalDangerBtnStyle,
+                  opacity: (deleteConfirmText.trim().toLowerCase() !== 'delete' || deleteStage === 'deleting') ? 0.4 : 1,
+                  cursor: (deleteConfirmText.trim().toLowerCase() !== 'delete' || deleteStage === 'deleting') ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {deleteStage === 'deleting' ? 'Deleting…' : 'Delete account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
+}
+
+const modalBackdropStyle = {
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  zIndex: 1100, padding: 20,
+}
+const modalCardStyle = {
+  background: '#0D0D0D', border: '0.5px solid #2A2A2A',
+  borderRadius: 12, padding: 24, maxWidth: 460, width: '100%',
+}
+const modalCancelBtnStyle = {
+  background: 'transparent', color: '#A3A3A3',
+  border: '0.5px solid #2A2A2A', borderRadius: 7,
+  padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+}
+const modalDangerBtnStyle = {
+  background: '#7F1D1D', color: '#fff',
+  border: '0.5px solid #991B1B', borderRadius: 7,
+  padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
 }
 
 function InfoField({ label, value }) {

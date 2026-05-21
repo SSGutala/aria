@@ -114,6 +114,11 @@ app.post('/api/role-brief', async (req, res) => {
   return h(req, res)
 })
 
+app.post('/api/delete-account', async (req, res) => {
+  const { default: h } = await import('./api/delete-account.js')
+  return h(req, res)
+})
+
 app.post('/api/task-brief', async (req, res) => {
   const { default: h } = await import('./api/task-brief.js')
   return h(req, res)
