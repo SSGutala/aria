@@ -29,6 +29,11 @@ export default function RoleBadge({ conversation, onOverride }) {
     ? conversation.custom_role_context
     : (role?.label || 'No role')
 
+  const hasChanged =
+    draftRole !== (conversation.role_context || '') ||
+    draftSeniority !== (conversation.seniority_context || '') ||
+    (draftRole === 'other' && draftCustom.trim() !== (conversation.custom_role_context || ''))
+
   async function save() {
     await onOverride?.({
       role_context: draftRole || null,
@@ -147,12 +152,15 @@ export default function RoleBadge({ conversation, onOverride }) {
                 padding: '7px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
               }}>Cancel</button>
               <button onClick={save}
-                disabled={!draftRole || (draftRole === 'other' && !draftCustom.trim())}
+                disabled={!hasChanged || !draftRole || (draftRole === 'other' && !draftCustom.trim())}
                 style={{
-                  background: '#E5E5E5', color: '#111', borderRadius: 7,
-                  border: '0.5px solid #484848',
-                  padding: '7px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-                  opacity: (!draftRole || (draftRole === 'other' && !draftCustom.trim())) ? 0.4 : 1,
+                  background: hasChanged ? '#E5E5E5' : '#1C1C1C',
+                  color: hasChanged ? '#111' : '#3D3D3D',
+                  borderRadius: 7,
+                  border: `0.5px solid ${hasChanged ? '#484848' : '#2A2A2A'}`,
+                  padding: '7px 14px', fontSize: 12,
+                  cursor: hasChanged ? 'pointer' : 'default',
+                  fontFamily: 'inherit',
                 }}>Save override</button>
             </div>
           </div>
