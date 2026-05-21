@@ -124,6 +124,11 @@ app.post('/api/task-brief', async (req, res) => {
   return h(req, res)
 })
 
+app.post('/api/chat', async (req, res) => {
+  const { default: h } = await import('./api/chat.js')
+  return h(req, res)
+})
+
 // ─── Artifacts ────────────────────────────────────────────────────────────────
 app.get('/api/artifacts', async (req, res) => {
   const handler = await loadHandler('artifacts')

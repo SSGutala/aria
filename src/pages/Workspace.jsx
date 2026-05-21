@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase, MOCK_MODE } from '../lib/supabase'
-import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions, setActiveRoleContext } from '../lib/claude'
+import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions, setActiveRoleContext, sendChatMessage } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
 import { useBreakpoint } from '../hooks/useBreakpoint'
@@ -1043,6 +1043,20 @@ export default function Workspace() {
       return
     }
 
+    // If the message looks like a question or conversational message (not a build
+    // request), respond naturally instead of routing to the build engine.
+    const hasActiveBuild = pendingBuildModeMsgId.current ||
+      pendingClarV2MsgIdRef.current ||
+      pendingClarMsgIdRef.current ||
+      pendingBriefMsgIdRef.current ||
+      pendingSpecMsgIdRef.current ||
+      pendingEngineIntakeMsgId.current
+    if (looksConversational(prompt) && !pendingEngineRef.current) {
+      await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
+      await runConversationalResponse(prompt)
+      return
+    }
+
     await supabase.from('conversations').update({ updated_at: new Date().toISOString(), title: prompt.slice(0, 60) }).eq('id', convId)
     setCurrentConv(prev => prev ? { ...prev, title: prompt.slice(0, 60) } : prev)
     loadConversations()
@@ -1108,6 +1122,52 @@ export default function Workspace() {
       'next', 'do it', 'sounds good', 'looks good', 'perfect', 'great', 'yep', 'yup', 'correct',
       'that works', 'thats right', 'that is right', 'let s go', 'lets go', 'ready', 'start']
     return CONTINUATIONS.includes(t) || t.length < 12 && CONTINUATIONS.some(c => t.startsWith(c))
+  }
+
+  // Returns true when the message is a question, status check, or casual message —
+  // NOT a new build request. Routes these to a plain chat response instead of the
+  // build engine so Aria stays responsive even after a build stalls.
+  function looksConversational(text) {
+    const t = text.trim().toLowerCase()
+    // Explicit question mark = question
+    if (t.includes('?')) return true
+    // Common question starters
+    const questionStarters = [
+      'what', 'why', 'how', 'when', 'where', 'who', 'which', 'is ', 'are ', 'was ',
+      'were ', 'can ', 'could ', 'do ', 'does ', 'did ', 'will ', 'would ', 'should ',
+      "isn't", "aren't", "doesn't", "don't", "won't", "why isn't", "why aren't",
+      "i don't see", "i don't understand", "i'm confused", "nothing is", "nothing's",
+      "i'm not seeing", 'not seeing', 'not working', 'not generating', "what's going on",
+      'whats going on', "what happened", 'what is happening', 'seems like', 'it seems',
+      'any update', 'still waiting', 'hello', 'hey', 'hi ', 'thanks', 'thank you',
+    ]
+    if (questionStarters.some(s => t.startsWith(s) || t.includes(' ' + s))) return true
+    // Definitely build requests — never route these to chat
+    const buildVerbs = [
+      'build', 'create', 'make', 'generate', 'automate', 'design', 'develop',
+      'write', 'draft', 'set up', 'setup', 'add', 'implement', 'integrate',
+      'track', 'monitor', 'report', 'dashboard', 'app', 'tool', 'system',
+    ]
+    if (buildVerbs.some(v => t.includes(v))) return false
+    // Short messages with no build verbs are probably conversational
+    if (t.length < 60 && !buildVerbs.some(v => t.includes(v))) return true
+    return false
+  }
+
+  async function runConversationalResponse(prompt) {
+    setIsTyping(true)
+    try {
+      const result = await sendChatMessage(prompt, toHistoryMessages(messages), currentModel)
+      const response = result?.response || "I'm here — let me know what you'd like to do next."
+      addMsg(response)
+      await supabase.from('messages').insert({
+        conversation_id: convId, role: 'assistant', content: response, message_type: 'text',
+      })
+    } catch (err) {
+      handleApiError(err, { action: 'respond to your message', onRetry: () => runConversationalResponse(prompt) })
+    } finally {
+      setIsTyping(false)
+    }
   }
 
   // ─── Utility ──────────────────────────────────────────────────────────────

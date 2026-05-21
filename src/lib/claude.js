@@ -262,6 +262,16 @@ export async function analyzeBuildMode(prompt, conversationId, conversationHisto
   return analyzeAndQuestion(prompt, conversationId, conversationHistory, aiModel)
 }
 
+// Plain conversational response — used when the user sends a question or
+// status message that isn't a build request.
+export async function sendChatMessage(prompt, conversationHistory = [], aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 400))
+    return { response: "I'm still here! Let me know what you'd like to do next." }
+  }
+  return postJSON('/api/chat', { prompt, conversationHistory }, 'responding', {}, aiModel)
+}
+
 // Phase 2 (PM): select PM package (no pmPackage yet) or get questions (with pmPackage)
 export async function getPMPackageOrQuestions(prompt, conversationId, pmPackage = null, conversationHistory = [], aiModel = 'claude') {
   if (MOCK_MODE) {
