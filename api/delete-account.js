@@ -13,6 +13,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { devlog, devlogError } from './lib/devlog.js'
+import { recordAudit, AUDIT } from './lib/audit.js'
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY
@@ -60,6 +61,18 @@ export default async function handler(req, res) {
     }
 
     devlog('delete_account.success', { userId })
+
+    // userId is passed explicitly because the auth.users row is now gone —
+    // resolving it from the (revoked) JWT afterwards would yield null.
+    recordAudit({
+      req,
+      userId,
+      action: AUDIT.DELETE,
+      table: 'auth.users',
+      recordId: userId,
+      metadata: { reason: 'user_requested_account_deletion' },
+    })
+
     return res.json({ ok: true })
   } catch (err) {
     devlogError('delete_account.unexpected_error', { error: err.message })

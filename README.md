@@ -62,6 +62,13 @@ vercel dev
 vercel --prod
 ```
 
+### 6. Running the backend
+
+```bash
+npm run dev:api
+```
+That's just node server.js, so you get only the [ACTION]/[FAILED]/[API] lines.
+
 Set all environment variables in your Vercel project settings (Dashboard → Settings → Environment Variables). The `ANTHROPIC_API_KEY` and `RESEND_API_KEY` must only be set as server-side env vars (not prefixed with `VITE_`).
 
 ## Routes

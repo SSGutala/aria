@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { recordAudit, AUDIT } from './lib/audit.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -45,6 +46,16 @@ export default async function handler(req, res) {
       .single()
 
     if (error) return res.status(500).json({ error: error.message })
+
+    recordAudit({
+      req,
+      userId: userId || data.user_id || null,
+      action: AUDIT.CREATE,
+      table: 'artifacts',
+      recordId: data.id,
+      newVal: data,
+    })
+
     return res.json({ artifact: data })
   }
 
@@ -53,12 +64,29 @@ export default async function handler(req, res) {
     const id = req.params?.id || req.url.split('/').filter(Boolean).pop()
     if (!id) return res.status(400).json({ error: 'Artifact ID required' })
 
+    // Capture the pre-delete state so the audit trail has old_val.
+    const { data: existing } = await supabase
+      .from('artifacts')
+      .select('*')
+      .eq('id', id)
+      .single()
+
     const { error } = await supabase
       .from('artifacts')
       .delete()
       .eq('id', id)
 
     if (error) return res.status(500).json({ error: error.message })
+
+    recordAudit({
+      req,
+      userId: existing?.user_id || null,
+      action: AUDIT.DELETE,
+      table: 'artifacts',
+      recordId: id,
+      oldVal: existing || null,
+    })
+
     return res.json({ success: true })
   }
 
@@ -107,6 +135,13 @@ export default async function handler(req, res) {
     }
 
     // Otherwise, update in place (manual edit — no new version)
+    // Snapshot the current row first so the audit trail can diff old vs new.
+    const { data: before } = await supabase
+      .from('artifacts')
+      .select('*')
+      .eq('id', id)
+      .single()
+
     const updates = { updated_at: new Date().toISOString() }
     if (content !== undefined) updates.content = content
     if (status !== undefined) updates.status = status
@@ -122,6 +157,17 @@ export default async function handler(req, res) {
       .single()
 
     if (error) return res.status(500).json({ error: error.message })
+
+    recordAudit({
+      req,
+      userId: data?.user_id || before?.user_id || null,
+      action: AUDIT.UPDATE,
+      table: 'artifacts',
+      recordId: id,
+      oldVal: before || null,
+      newVal: data,
+    })
+
     return res.json({ artifact: data })
   }
 

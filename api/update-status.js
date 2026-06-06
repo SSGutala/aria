@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import { recordAudit, AUDIT } from './lib/audit.js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL,
@@ -14,6 +15,13 @@ export default async function handler(req, res) {
   if (!submissionId || !newStatus || !appId) return res.status(400).json({ error: 'Missing required fields' })
 
   try {
+    // Snapshot the prior status so the audit entry records the transition.
+    const { data: prior } = await supabase
+      .from('app_submissions')
+      .select('status')
+      .eq('id', submissionId)
+      .single()
+
     const { data: updated, error: updateErr } = await supabase
       .from('app_submissions')
       .update({ status: newStatus, updated_at: new Date().toISOString() })
@@ -22,6 +30,16 @@ export default async function handler(req, res) {
       .single()
 
     if (updateErr) throw new Error(updateErr.message)
+
+    recordAudit({
+      req,
+      action: AUDIT.UPDATE,
+      table: 'app_submissions',
+      recordId: submissionId,
+      oldVal: { status: prior?.status ?? null },
+      newVal: { status: newStatus },
+      metadata: { appId },
+    })
 
     const { data: app } = await supabase
       .from('generated_apps')
