@@ -27,6 +27,20 @@ import analyticsEngineHandler from './engines/analytics.js'
 
 const ROLE_MODES = ['operations', 'it_admin', 'compliance', 'finance', 'hr']
 
+const VALID_ENGINES = ['software', 'docs', 'automation', 'analytics']
+
+// Models (esp. the fast intake model) sometimes echo the enum instead of
+// picking one, returning e.g. "software | automation" or "software, docs".
+// Normalize to the FIRST valid engine token so routing never dead-ends.
+function normalizeEngine(raw, fallback = 'software') {
+  if (!raw || typeof raw !== 'string') return fallback
+  const lower = raw.toLowerCase()
+  for (const token of lower.split(/[^a-z]+/).filter(Boolean)) {
+    if (VALID_ENGINES.includes(token)) return token
+  }
+  return fallback
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -73,7 +87,8 @@ export default async function handler(req, res) {
       automation: automationEngineHandler,
       analytics: analyticsEngineHandler,
     }
-    const handler = engineMap[engine]
+    // Normalize defensively: a stray "software | automation" must still route.
+    const handler = engineMap[engine] || engineMap[normalizeEngine(engine)]
     if (handler) return handler(req, res)
   }
 
@@ -244,11 +259,12 @@ When ambiguous between software and analytics: if primary goal is DISPLAYING dat
 When ambiguous between docs and others: if output is a document to be read/reviewed → docs. If output is a working system → software/automation.`,
     })
 
-    orch.end({ engine: parsed.engine })
-    devlog('intake.analyzed', { engine: parsed.engine, conversationId })
+    const resolvedEngine = normalizeEngine(parsed.engine)
+    orch.end({ engine: resolvedEngine })
+    devlog('intake.analyzed', { engine: resolvedEngine, rawEngine: parsed.engine, conversationId })
     return res.json({
       type: 'engine_intake',
-      engine: parsed.engine || 'software',
+      engine: resolvedEngine,
       greeting: parsed.greeting || '',
       engineFocus: parsed.engineFocus || '',
     })

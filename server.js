@@ -89,6 +89,19 @@ app.post('/api/build', async (req, res) => {
   return handler(req, res)
 })
 
+// Staged provider-agnostic app generation engine (Phase 1) — additive, runs
+// alongside the legacy /api/build template engine.
+app.post('/api/generate-app', async (req, res) => {
+  const handler = await loadHandler('generate-app')
+  return handler(req, res)
+})
+
+// Iterative edit (Phase 4) + repair (Phase 5) for generated projects.
+app.post('/api/edit-app', async (req, res) => {
+  const handler = await loadHandler('edit-app')
+  return handler(req, res)
+})
+
 app.post('/api/edit', async (req, res) => {
   const handler = await loadHandler('edit')
   return handler(req, res)
@@ -127,6 +140,20 @@ app.post('/api/task-brief', async (req, res) => {
 app.post('/api/chat', async (req, res) => {
   const { default: h } = await import('./api/chat.js')
   return h(req, res)
+})
+
+// Model status — reports whether Claude calls are degrading to the Groq fallback
+// (e.g. Anthropic out of credits). Frontend polls this to show a banner.
+app.get('/api/model-status', async (req, res) => {
+  const { getModelStatus } = await import('./api/ai-client.js')
+  return res.json(getModelStatus())
+})
+
+// Live app-engine provider failover state: which provider is active, and any
+// cloud providers cooling down (with seconds until they reset → switch back).
+app.get('/api/provider-health', async (req, res) => {
+  const { getProviderHealth } = await import('./api/lib/providerHealth.js')
+  return res.json(getProviderHealth())
 })
 
 // ─── Artifacts ────────────────────────────────────────────────────────────────

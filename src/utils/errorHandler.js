@@ -66,9 +66,9 @@ export function mapMessage(type, context = {}) {
   const what = context.action ? ` while ${context.action}` : ''
   switch (type) {
     case ErrorTypes.NETWORK:
-      return `Connection lost${what}. Check your internet and try again.`
+      return `Couldn't reach the Aria API server${what}. Make sure it's running (run "node server.js" in the Aria folder on port 3001), then retry.`
     case ErrorTypes.TIMEOUT:
-      return `The request timed out${what}. The server may be busy — retry in a moment.`
+      return `This is taking a while${what} — local models (Ollama) on CPU can be slow. It may still be working; give it a moment, or switch to Claude for speed.`
     case ErrorTypes.RATE_LIMIT:
       return context.retryAfter
         ? `API is busy. Retrying in ${context.retryAfter}s...`

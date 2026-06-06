@@ -16,10 +16,50 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
 
+// ── Section-based document detection ───────────────────────────────────────────
+// New corporate documents (from documentTemplates.js) store content as
+// { documentType, format, meta, sections: [{ key, title, body, bullets, table }] }.
+// These render as real documents, not key:value dumps.
+function getDocSections(content) {
+  return (content && Array.isArray(content.sections) && content.sections.length) ? content.sections : null
+}
+function metaLine(meta) {
+  if (!meta || typeof meta !== 'object') return ''
+  return ['owner', 'date', 'project', 'version'].filter(k => meta[k])
+    .map(k => `**${k[0].toUpperCase() + k.slice(1)}:** ${meta[k]}`).join('  |  ')
+}
+// Excel sheet names: <=31 chars, unique, no illegal chars.
+function safeSheetName(name, used) {
+  let n = String(name || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 28) || 'Sheet'
+  let candidate = n, i = 2
+  while (used.has(candidate)) { candidate = `${n.slice(0, 26)} ${i++}` }
+  used.add(candidate)
+  return candidate
+}
+
 // ── Markdown serialiser ──────────────────────────────────────────────────────
 function toMarkdown(artifact) {
   const { title, artifact_type, version, content } = artifact
   const lines = [`# ${artifact.title}`, `**Type:** ${artifact_type}  |  **Version:** ${version}  |  **Status:** ${artifact.status}`, '---', '']
+
+  // Section-based document → render as a real document.
+  const sections = getDocSections(content)
+  if (sections) {
+    const ml = metaLine(content.meta)
+    if (ml) { lines.push(ml); lines.push('') }
+    for (const s of sections) {
+      lines.push(`## ${s.title || s.key}`); lines.push('')
+      if (s.body) { lines.push(String(s.body)); lines.push('') }
+      if (Array.isArray(s.bullets) && s.bullets.length) { s.bullets.forEach(b => lines.push(`- ${b}`)); lines.push('') }
+      if (s.table?.columns?.length && Array.isArray(s.table.rows)) {
+        lines.push('| ' + s.table.columns.join(' | ') + ' |')
+        lines.push('| ' + s.table.columns.map(() => '---').join(' | ') + ' |')
+        s.table.rows.forEach(r => lines.push('| ' + s.table.columns.map((_, i) => String(r[i] ?? '')).join(' | ') + ' |'))
+        lines.push('')
+      }
+    }
+    return lines.join('\n')
+  }
 
   function walk(key, val, depth = 0) {
     const indent = '  '.repeat(depth)
@@ -237,7 +277,27 @@ function generatePDF(artifact) {
       }
     }
 
-    Object.entries(content).forEach(([k, v]) => renderVal(k, v, 0))
+    const pdfSections = getDocSections(content)
+    if (pdfSections) {
+      const ml = content.meta
+      if (ml && typeof ml === 'object') {
+        const bits = ['owner', 'date', 'project'].filter(k => ml[k]).map(k => `${k[0].toUpperCase() + k.slice(1)}: ${ml[k]}`)
+        if (bits.length) { doc.fontSize(9).font('Helvetica').fillColor('#9CA3AF').text(bits.join('   ·   '), MARGIN, doc.y); doc.moveDown(1) }
+      }
+      pdfSections.forEach(s => {
+        sectionHeading(s.title || s.key)
+        if (s.body) String(s.body).split(/\n\n+/).forEach(p => bodyText(p))
+        if (Array.isArray(s.bullets) && s.bullets.length) bulletList(s.bullets.map(String))
+        if (s.table?.columns?.length && Array.isArray(s.table.rows) && s.table.rows.length) {
+          const rowsAsObj = s.table.rows.map(r => {
+            const o = {}; s.table.columns.forEach((c, i) => { o[c] = r[i] ?? '' }); return o
+          })
+          objectTable(rowsAsObj, s.table.columns)
+        }
+      })
+    } else {
+      Object.entries(content).forEach(([k, v]) => renderVal(k, v, 0))
+    }
 
     // ── Footer on last page ──────────────────────────────────────────────────
     addFooter()
@@ -299,7 +359,24 @@ async function generateDOCX(artifact) {
       }
     }
 
-    Object.entries(content).forEach(([k, v]) => addVal(k, v, 0))
+    const docxSections = getDocSections(content)
+    if (docxSections) {
+      const ml = metaLine(content.meta).replace(/\*\*/g, '')
+      if (ml) children.push(new Paragraph({ children: [new TextRun({ text: ml, color: '888888', size: 18 })] }))
+      docxSections.forEach(s => {
+        children.push(new Paragraph({ text: s.title || s.key, heading: HeadingLevel.HEADING_2 }))
+        if (s.body) String(s.body).split(/\n\n+/).forEach(p => children.push(new Paragraph({ children: [new TextRun({ text: p, size: 20 })] })))
+        if (Array.isArray(s.bullets)) s.bullets.forEach(b => children.push(new Paragraph({ text: '• ' + b, indent: { left: 360 } })))
+        if (s.table?.columns?.length && Array.isArray(s.table.rows) && s.table.rows.length) {
+          const headerRow = new TableRow({ children: s.table.columns.map(c => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: String(c), bold: true, size: 18 })] })] })) })
+          const bodyRows = s.table.rows.map(r => new TableRow({ children: s.table.columns.map((_, i) => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: String(r[i] ?? ''), size: 18 })] })] })) }))
+          children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [headerRow, ...bodyRows] }))
+          children.push(new Paragraph({ text: '' }))
+        }
+      })
+    } else {
+      Object.entries(content).forEach(([k, v]) => addVal(k, v, 0))
+    }
 
     const doc = new Document({ sections: [{ children }] })
     return await Packer.toBuffer(doc)
@@ -366,6 +443,40 @@ function generateXLSX(artifact) {
       })
     })
     return widths.map(w => ({ wch: w }))
+  }
+
+  // ── Section-based document → one sheet per table, plus a narrative sheet ───
+  const xlsxSections = getDocSections(content)
+  if (xlsxSections) {
+    const used = new Set()
+    xlsxSections.forEach(s => {
+      if (s.table?.columns?.length && Array.isArray(s.table.rows) && s.table.rows.length) {
+        const data = [s.table.columns, ...s.table.rows.map(r => s.table.columns.map((_, i) => String(r[i] ?? '')))]
+        const ws = XLSX.utils.aoa_to_sheet(data)
+        ws['!cols'] = autoColWidths(data)
+        applyHeaderStyle(ws, s.table.columns.length, data.length)
+        XLSX.utils.book_append_sheet(wb, ws, safeSheetName(s.title || s.key, used))
+      }
+    })
+    const narrative = xlsxSections.filter(s => !s.table && (s.body || (Array.isArray(s.bullets) && s.bullets.length)))
+    if (narrative.length) {
+      const data = [['Section', 'Content']]
+      narrative.forEach(s => data.push([s.title || s.key, s.body || (s.bullets || []).join('; ')]))
+      const ws = XLSX.utils.aoa_to_sheet(data)
+      ws['!cols'] = [{ wch: 28 }, { wch: 90 }]
+      applyHeaderStyle(ws, 2, data.length)
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName('Narrative', used))
+    }
+    const overviewWs = XLSX.utils.aoa_to_sheet([
+      ['Document', artifact.title],
+      ['Type', artifact.artifact_type.replace(/_/g, ' ')],
+      ['Version', String(artifact.version)],
+      ['Status', artifact.status],
+      ['Generated', new Date().toISOString()],
+    ])
+    overviewWs['!cols'] = [{ wch: 18 }, { wch: 50 }]
+    XLSX.utils.book_append_sheet(wb, overviewWs, safeSheetName('Overview', used))
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
   }
 
   // ── Type-specific sheets ─────────────────────────────────────────────────
@@ -482,6 +593,20 @@ function generateXLSX(artifact) {
 // ── CSV generator ─────────────────────────────────────────────────────────────
 function generateCSV(artifact) {
   const content = artifact.content || {}
+
+  // Section-based doc → emit the first table section (most useful for spreadsheets),
+  // else a Section/Content listing.
+  const csvSections = getDocSections(content)
+  if (csvSections) {
+    const tableSec = csvSections.find(s => s.table?.columns?.length && Array.isArray(s.table.rows) && s.table.rows.length)
+    if (tableSec) {
+      const out = [tableSec.table.columns, ...tableSec.table.rows.map(r => tableSec.table.columns.map((_, i) => r[i] ?? ''))]
+      return out.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    }
+    const out = [['Section', 'Content'], ...csvSections.map(s => [s.title || s.key, s.body || (s.bullets || []).join('; ')])]
+    return out.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  }
+
   const rows = [['Field', 'Value']]
 
   function walk(obj, prefix = '') {
@@ -542,7 +667,16 @@ export default async function handler(req, res) {
     .from('artifacts').select('*').eq('id', artifactId).single()
   if (fetchErr || !artifact) return res.status(404).json({ error: 'Artifact not found' })
 
-  const formats = FORMAT_MAP[artifact.artifact_type] || ['pdf', 'json', 'md']
+  // Formats we can actually produce as real files (no fake buttons).
+  const SUPPORTED = ['pdf', 'docx', 'xlsx', 'csv', 'json', 'md']
+  // New section-based docs carry their own exportFormats; fall back to the type map.
+  const requested = (Array.isArray(artifact.content?.exportFormats) && artifact.content.exportFormats.length)
+    ? artifact.content.exportFormats
+    : (FORMAT_MAP[artifact.artifact_type] || ['pdf', 'json', 'md'])
+  let formats = requested.filter(f => SUPPORTED.includes(f))
+  // Always ensure a PDF + machine-readable fallback exist.
+  if (!formats.includes('pdf')) formats.push('pdf')
+  if (!formats.includes('json')) formats.push('json')
   const basePath = `${artifact.conversation_id}/${artifactId}_v${artifact.version}`
   const fileUrls = {}
   const errors = []

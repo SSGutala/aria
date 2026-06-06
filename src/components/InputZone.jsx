@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { logAction } from '../lib/devlog'
 
-export default function InputZone({ onSubmit, disabled, currentModel, onModelChange }) {
+export default function InputZone({ onSubmit, disabled, currentModel, onModelChange, placeholder = 'Describe the internal tool you need...', sendHint = 'Enter to send · Shift+Enter for new line' }) {
   const [value, setValue] = useState('')
   const textareaRef = useRef(null)
 
@@ -42,7 +42,7 @@ export default function InputZone({ onSubmit, disabled, currentModel, onModelCha
           value={value}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
-          placeholder="Describe the internal tool you need..."
+          placeholder={placeholder}
           rows={1}
           disabled={disabled}
           style={{
@@ -61,7 +61,7 @@ export default function InputZone({ onSubmit, disabled, currentModel, onModelCha
             overflow: 'hidden',
           }}
         />
-        <style>{`textarea::placeholder { color: #3D3D3D; }`}</style>
+        <style>{`textarea::placeholder { color: #6E6E6E; }`}</style>
         <button
           onClick={submit}
           disabled={disabled || !value.trim()}
@@ -93,47 +93,36 @@ export default function InputZone({ onSubmit, disabled, currentModel, onModelCha
         <div style={{ display: 'flex', gap: 6, flex: 1 }}>
           <span style={{
             display: 'flex', alignItems: 'center', gap: 4,
-            color: '#3D3D3D', fontSize: 10, cursor: 'default',
+            color: '#C4C4C4', fontSize: 10, cursor: 'default',
           }}>
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#3D3D3D" strokeWidth="0.75"/>
-              <path d="M3 5h4M5 3v4" stroke="#3D3D3D" strokeWidth="0.75" strokeLinecap="round"/>
+              <rect x="1" y="1" width="8" height="8" rx="1.5" stroke="#C4C4C4" strokeWidth="0.75"/>
+              <path d="M3 5h4M5 3v4" stroke="#C4C4C4" strokeWidth="0.75" strokeLinecap="round"/>
             </svg>
             Connect M365
           </span>
           <span style={{
             display: 'flex', alignItems: 'center', gap: 4,
-            color: '#3D3D3D', fontSize: 10, cursor: 'default',
+            color: '#C4C4C4', fontSize: 10, cursor: 'default',
           }}>
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <circle cx="5" cy="5" r="3.5" stroke="#3D3D3D" strokeWidth="0.75"/>
-              <path d="M5 3v2l1.5 1.5" stroke="#3D3D3D" strokeWidth="0.75" strokeLinecap="round"/>
+              <circle cx="5" cy="5" r="3.5" stroke="#C4C4C4" strokeWidth="0.75"/>
+              <path d="M5 3v2l1.5 1.5" stroke="#C4C4C4" strokeWidth="0.75" strokeLinecap="round"/>
             </svg>
             View history
           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <select
-            value={currentModel || 'claude'}
-            onChange={(e) => { logAction('model.changed', { model: e.target.value }); onModelChange && onModelChange(e.target.value) }}
-            style={{
-              background: 'transparent',
-              color: '#6B7280',
-              fontSize: 10,
-              border: '0.5px solid #3D3D3D',
-              borderRadius: 4,
-              padding: '4px 8px',
-              cursor: 'pointer',
-              outline: 'none',
-            }}
-          >
-            <option value="claude">Claude (Anthropic)</option>
-            <option value="groq">Groq</option>
-            <option value="ollama">Ollama (Local)</option>
-          </select>
-
-          <span style={{ color: '#2A2A2A', fontSize: 10, whiteSpace: 'nowrap' }}>Enter to send · Shift+Enter for new line</span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: 5,
+            color: '#9CA3AF', fontSize: 10,
+            border: '0.5px solid #2A2A2A', borderRadius: 4, padding: '4px 8px',
+          }} title="Model is configured in Settings → Integrations">
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: (currentModel || 'ollama') === 'ollama' ? '#34D399' : '#A78BFA' }} />
+            {(currentModel || 'ollama') === 'ollama' ? 'Ollama (Local)' : (currentModel === 'claude' ? 'Claude' : 'Groq')}
+          </span>
+          <span style={{ color: '#B5B5B5', fontSize: 10, whiteSpace: 'nowrap' }}>{sendHint}</span>
         </div>
       </div>
     </div>

@@ -262,6 +262,18 @@ export async function analyzeBuildMode(prompt, conversationId, conversationHisto
   return analyzeAndQuestion(prompt, conversationId, conversationHistory, aiModel)
 }
 
+// Reports whether Claude calls are currently degrading to the Groq fallback
+// (e.g. Anthropic out of credits). Returns { degraded, reason, model, at }.
+export async function getModelStatus() {
+  if (MOCK_MODE) return { degraded: false }
+  try {
+    const res = await fetch(`${API_URL}/api/model-status`)
+    return await res.json()
+  } catch {
+    return { degraded: false }
+  }
+}
+
 // Plain conversational response — used when the user sends a question or
 // status message that isn't a build request.
 export async function sendChatMessage(prompt, conversationHistory = [], aiModel = 'claude') {
@@ -548,6 +560,118 @@ export async function editApp(appId, editRequest, conversationId, aiModel = 'cla
     'updating your app',
     { timeoutMs: 90_000 },
     aiModel)
+}
+
+// ─── New staged generation engine (multi-file React project) ─────────────────
+// Runs the provider-agnostic staged pipeline. Defaults to Ollama server-side
+// ($0). providerConfig can override the provider/tier per stage.
+export async function generateAppProject(conversationId, prompt, { providerConfig, context } = {}, aiModel = 'claude') {
+  return postJSON('/api/generate-app',
+    { conversationId, prompt, providerConfig, context },
+    'generating your app',
+    { timeoutMs: 300_000 },
+    aiModel)
+}
+
+// Streaming variant — emits real progress events (with stage, message, percent)
+// as the staged pipeline runs. onEvent(evt) fires per progress event; resolves
+// with the final result. Falls back gracefully if streaming isn't available.
+export async function generateAppProjectStream(conversationId, prompt, { onEvent, providerConfig, context } = {}, aiModel = 'claude') {
+  if (MOCK_MODE) {
+    const stages = [
+      { stage: 'plan', message: 'Planning the app architecture…', percent: 12 },
+      { stage: 'file_tree', message: 'Designing the file tree…', percent: 28 },
+      { stage: 'codegen', message: 'Writing components…', percent: 60 },
+      { stage: 'assemble', message: 'Assembling the project…', percent: 90 },
+      { stage: 'done', message: 'Done.', percent: 100 },
+    ]
+    for (const s of stages) { onEvent?.(s); await new Promise(r => setTimeout(r, 500)) }
+    return { appName: 'Demo App', files: { '/App.js': 'export default () => <div>Demo</div>' }, summary: 'A demo app.' }
+  }
+
+  const res = await fetch(`${API_URL}/api/generate-app`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/x-ndjson' },
+    body: JSON.stringify({ conversationId, prompt, providerConfig, context, stream: true, aiModel }),
+  })
+  if (!res.ok || !res.body) {
+    // Fallback to the non-streaming endpoint.
+    return generateAppProject(conversationId, prompt, { providerConfig, context }, aiModel)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result = null
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim()
+      buffer = buffer.slice(nl + 1)
+      if (!line) continue
+      let evt
+      try { evt = JSON.parse(line) } catch { continue }
+      if (evt.type === 'result') result = evt
+      else if (evt.type === 'error') {
+        const e = new Error(evt.error || 'Generation failed')
+        if (evt.providersUnavailable) { e.providersUnavailable = true; e.retryAfterMs = evt.retryAfterMs || null }
+        throw e
+      }
+      else onEvent?.(evt)
+    }
+  }
+  return result
+}
+
+// Iterative edit / repair of a generated project. Pass { isRepair:true, errorText }
+// to seed a repair from build errors.
+export async function editAppProject(projectId, editRequest, { isRepair, errorText, providerConfig, files, plan } = {}, aiModel = 'claude') {
+  return postJSON('/api/edit-app',
+    // `files`/`plan` enable in-memory edit/repair when the project was never
+    // persisted (e.g. app_projects table not migrated). Server prefers the DB
+    // copy when a valid projectId resolves, otherwise uses these.
+    { projectId, editRequest, isRepair, errorText, providerConfig, files, plan },
+    isRepair ? 'repairing your app' : 'updating your app',
+    { timeoutMs: 180_000 },
+    aiModel)
+}
+
+// Streaming variant of editAppProject — surfaces real per-stage progress (a
+// progress bar + a running narration of which files are being changed) via
+// onEvent. Falls back to the non-streaming endpoint if streaming is unavailable.
+export async function editAppProjectStream(projectId, editRequest, { onEvent, isRepair, errorText, providerConfig, files, plan } = {}, aiModel = 'claude') {
+  const res = await fetch(`${API_URL}/api/edit-app`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/x-ndjson' },
+    body: JSON.stringify({ projectId, editRequest, isRepair, errorText, providerConfig, files, plan, stream: true, aiModel }),
+  })
+  if (!res.ok || !res.body) {
+    return editAppProject(projectId, editRequest, { isRepair, errorText, providerConfig, files, plan }, aiModel)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result = null
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim()
+      buffer = buffer.slice(nl + 1)
+      if (!line) continue
+      let evt
+      try { evt = JSON.parse(line) } catch { continue }
+      if (evt.type === 'result') result = evt
+      else if (evt.type === 'error') throw new Error(evt.error || 'Edit failed')
+      else onEvent?.(evt)
+    }
+  }
+  return result
 }
 
 export async function submitForm(appId, formData) {

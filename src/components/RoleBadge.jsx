@@ -55,17 +55,17 @@ export default function RoleBadge({ conversation, onOverride }) {
         title="Change role for this chat"
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6,
-          background: '#141414', border: '0.5px solid #2A2A2A',
-          borderRadius: 6, padding: '3px 9px',
-          fontSize: 11, color: '#A3A3A3',
+          background: '#1A1A1A', border: '0.5px solid #333',
+          borderRadius: 6, padding: '4px 10px',
+          fontSize: 11.5, color: '#E0E0E0',
           cursor: 'pointer', fontFamily: 'inherit',
         }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = '#3D3D3D'; e.currentTarget.style.color = '#E5E5E5' }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A2A'; e.currentTarget.style.color = '#A3A3A3' }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = '#4A4A4A'; e.currentTarget.style.background = '#1F1F1F' }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = '#333'; e.currentTarget.style.background = '#1A1A1A' }}
       >
         <span style={{ fontSize: 12 }}>{role?.icon || '✦'}</span>
-        <span>{label}</span>
-        {seniority && <span style={{ color: '#525252' }}>· {seniority.label}</span>}
+        <span style={{ fontWeight: 500 }}>{label}</span>
+        {seniority && <span style={{ color: '#8A8A8A' }}>· {seniority.label}</span>}
         {conversation.role_overridden && (
           <span style={{ color: '#F59E0B', fontSize: 10 }}>override</span>
         )}

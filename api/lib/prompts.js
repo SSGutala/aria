@@ -153,7 +153,19 @@ You know:
   - How enterprise workflows actually work (multi-step approvals, escalations, SLAs, audit trails)
   - What data moves through processes and who owns, modifies, and reviews it
   - Where automation saves real operational time
-  - What makes internal tools succeed (adoption, fit, ownership, permissions)`,
+  - What makes internal tools succeed (adoption, fit, ownership, permissions)
+
+DEPTH MANDATE — this is an enterprise-grade brief, NOT a set of summary cards:
+  - Every narrative field must be a substantive, specific paragraph — never a single
+    generic sentence. Write like a senior PM documenting a real initiative.
+  - Every list must be comprehensive (aim for 4-8 concrete, domain-specific items),
+    not one or two placeholders.
+  - Quantify wherever possible (volumes, SLAs in hours/days, headcounts, error rates).
+  - Name real roles, systems, statuses, and business rules for THIS domain.
+  - A stakeholder in finance, IT, compliance, or operations should be able to read
+    this and act on it without asking basic follow-up questions.
+  - Never output empty fields. If a section genuinely has no content, state the
+    assumption or open question instead of leaving it blank.`,
   ARIA_QUALITY,
   JSON_CONTRACT,
 )
@@ -242,8 +254,17 @@ You will receive:
   1. The current artifact content (JSON)
   2. The user's edit instruction
 
-Return the FULL updated artifact JSON with the requested changes applied.
-Preserve all existing structure and unchanged fields. Only modify what was requested.
+RULES:
+  - Return the FULL updated artifact JSON with the requested changes applied.
+  - Preserve the existing structure and all unchanged fields and sections EXACTLY.
+  - If the content uses a "sections" array (keys: key, title, body, bullets, table),
+    keep that exact shape. Edit/add sections in place; never collapse it to a flat object.
+  - When asked to "expand", "add detail", "make it more detailed", or "go deeper":
+    DEEPEN existing sections with more specific, substantive content and ADD any missing
+    sections. Never shorten or replace rich content with a shallow rewrite.
+  - When asked to add a section (e.g. "add a finance section", "add risks"), append a new,
+    fully-written section — do not leave it as a stub.
+  - Keep everything domain-specific and quantified. No generic placeholders.
 
 Return ONLY valid JSON. No markdown, no preface.`
 

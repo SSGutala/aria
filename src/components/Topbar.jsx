@@ -63,9 +63,12 @@ function EditableTitle({ value, placeholder, onSave, dim }) {
       onDoubleClick={startEdit}
       title="Double-click to rename"
       style={{
-        color: dim ? '#525252' : '#F5F5F5',
+        color: dim ? '#737373' : '#F5F5F5',
         fontSize: 13, fontWeight: 500,
         cursor: 'default', userSelect: 'none',
+        maxWidth: 'min(46vw, 520px)',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        display: 'inline-block', verticalAlign: 'bottom',
       }}
     >
       {value || placeholder}
@@ -73,7 +76,26 @@ function EditableTitle({ value, placeholder, onSave, dim }) {
   )
 }
 
-export default function Topbar({ conversation, app, onTitleChange, onAppTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel, onMenuToggle, isMobile, currentModel, isRunning, phaseLabel, lastError, lastLatencyMs }) {
+// Small mode chip so it's always clear whether the current surface is a chat
+// or an app build — parallels the "App build" pill in the New-app composer.
+function ModePill({ kind }) {
+  const isApp = kind === 'app'
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0,
+      fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase',
+      color: isApp ? '#34D399' : '#60A5FA',
+      background: isApp ? '#0D2A1A' : '#0D1A2A',
+      border: `0.5px solid ${isApp ? '#1E5F3A' : '#1E3A5F'}`,
+      borderRadius: 5, padding: '2px 8px', marginLeft: 2,
+    }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: isApp ? '#34D399' : '#60A5FA' }} />
+      {isApp ? 'App build' : 'Chat build'}
+    </span>
+  )
+}
+
+export default function Topbar({ conversation, app, appBuild, onTitleChange, onAppTitleChange, onAppBuildTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel, onMenuToggle, isMobile, currentModel, isRunning, phaseLabel, lastError, lastLatencyMs }) {
   const [toast, setToast] = useState('')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2000) }
@@ -114,16 +136,47 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
             </svg>
           </button>
         )}
-        {/* Conversation title — always shown */}
-        <EditableTitle
-          value={conversation?.title}
-          placeholder="New conversation"
-          onSave={saveConvTitle}
-          dim={false}
-        />
+        {/* App build surface — show the app title + an "App build" pill so it's
+            unambiguous this tab is building an app, not chatting. */}
+        {appBuild ? (
+          <>
+            <ModePill kind="app" />
+            {appBuild.renamable ? (
+              <EditableTitle
+                value={appBuild.title}
+                placeholder="Untitled app"
+                onSave={onAppBuildTitleChange}
+                dim={false}
+              />
+            ) : (
+              <span style={{
+                color: '#F5F5F5', fontSize: 13, fontWeight: 500,
+                maxWidth: 'min(40vw, 460px)', overflow: 'hidden',
+                textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                display: 'inline-block', verticalAlign: 'bottom',
+              }}>
+                {appBuild.title || 'New app'}
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Chat-build pill — parallels the App-build pill, so it's always
+                clear which surface this is. Hidden once a deployed app exists.
+                Shown first, before the title, for a consistent left-to-right read. */}
+            {conversation && !app && <ModePill kind="chat" />}
+            {/* Conversation title — always shown */}
+            <EditableTitle
+              value={conversation?.title}
+              placeholder="New conversation"
+              onSave={saveConvTitle}
+              dim={false}
+            />
+          </>
+        )}
 
         {/* App title separator + name */}
-        {app && (
+        {!appBuild && app && (
           <>
             <span style={{ color: '#2A2A2A', fontSize: 14 }}>/</span>
             <EditableTitle
@@ -156,8 +209,13 @@ export default function Topbar({ conversation, app, onTitleChange, onAppTitleCha
         )}
 
         {/* Hint when no app yet — hide on mobile */}
-        {!app && conversation && !isMobile && (
-          <span style={{ fontSize: 11, color: '#2A2A2A', marginLeft: 4 }}>double-click to rename</span>
+        {!appBuild && !app && conversation && !isMobile && (
+          <span style={{ fontSize: 11, color: '#5A5A5A', marginLeft: 4, flexShrink: 0, whiteSpace: 'nowrap' }}>double-click to rename</span>
+        )}
+
+        {/* Same rename hint for a renamable app build */}
+        {appBuild?.renamable && !isMobile && (
+          <span style={{ fontSize: 11, color: '#5A5A5A', marginLeft: 4, flexShrink: 0, whiteSpace: 'nowrap' }}>double-click to rename</span>
         )}
 
         {/* System status — always visible, command-center texture */}

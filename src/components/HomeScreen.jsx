@@ -86,7 +86,7 @@ export default function HomeScreen({ user, onStartConversation }) {
         <p style={{ margin: 0, fontSize: 16, fontWeight: 500, color: '#D4D4D4', marginBottom: 6 }}>
           {firstName ? `What are we building today, ${firstName}?` : 'What are we building today?'}
         </p>
-        <p style={{ margin: 0, fontSize: 12, color: '#3D3D3D' }}>
+        <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF' }}>
           Describe your need below, or pick a starting point.
         </p>
       </div>
@@ -117,7 +117,7 @@ export default function HomeScreen({ user, onStartConversation }) {
                 background: group.color, flexShrink: 0,
                 boxShadow: `0 0 6px ${group.color}66`,
               }} />
-              <span style={{ fontSize: 10, fontWeight: 600, color: '#525252', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              <span style={{ fontSize: 10, fontWeight: 600, color: '#B5B5B5', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 {group.category}
               </span>
             </div>
@@ -148,7 +148,7 @@ export default function HomeScreen({ user, onStartConversation }) {
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: isHovered ? '#E5E5E5' : '#A3A3A3' }}>
+                    <span style={{ fontSize: 12, fontWeight: 500, color: isHovered ? '#FFFFFF' : '#E5E5E5' }}>
                       {p.label}
                     </span>
                     {isHovered && (
@@ -157,7 +157,7 @@ export default function HomeScreen({ user, onStartConversation }) {
                       </svg>
                     )}
                   </div>
-                  <span style={{ fontSize: 10, color: '#3D3D3D', lineHeight: 1.4 }}>{p.detail}</span>
+                  <span style={{ fontSize: 10, color: '#9CA3AF', lineHeight: 1.4 }}>{p.detail}</span>
                 </button>
               )
             })}
@@ -166,7 +166,7 @@ export default function HomeScreen({ user, onStartConversation }) {
       </div>
 
       {/* Bottom nudge */}
-      <p style={{ marginTop: 36, fontSize: 11, color: '#2A2A2A', textAlign: 'center' }}>
+      <p style={{ marginTop: 36, fontSize: 11, color: '#8A8A8A', textAlign: 'center' }}>
         Or describe exactly what you need in the input below
       </p>
 

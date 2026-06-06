@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase, MOCK_MODE } from '../lib/supabase'
-import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions, setActiveRoleContext, sendChatMessage } from '../lib/claude'
+import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions, setActiveRoleContext, sendChatMessage, getModelStatus, generateAppProject, generateAppProjectStream, editAppProject, editAppProjectStream } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
 import { useBreakpoint } from '../hooks/useBreakpoint'
@@ -17,6 +17,15 @@ function toHistoryMessages(msgs) {
     .map(m => ({ role: m.role, content: m.content }))
 }
 
+// ─── DIRECT BUILD MODE ───────────────────────────────────────────────────────
+// When true, a build prompt skips the guided intake → questions → enterprise
+// brief → document pipeline and goes STRAIGHT to staged app generation. The
+// brief/docs flow is fully preserved in the codebase (runAnalyzeAndQuestion,
+// runEngineQuestions, runBrief, handleRequestDocument, api/engines/*, the
+// EngineIntakeCard/SpecCard/brief components) — it is only bypassed here, so we
+// can re-enable it later by flipping this flag back to false. See PARKED_FLOWS.md.
+const DIRECT_BUILD_MODE = true
+
 import Sidebar from '../components/Sidebar'
 import Topbar from '../components/Topbar'
 import ChatArea from '../components/ChatArea'
@@ -26,6 +35,7 @@ import HomeScreen from '../components/HomeScreen'
 import EngineIntakeCard from '../components/EngineIntakeCard'
 import DocsTypeCard from '../components/DocsTypeCard'
 import RoleBadge from '../components/RoleBadge'
+import AppProjectPanel from '../components/AppProjectPanel'
 
 export default function Workspace() {
   const { convId } = useParams()
@@ -53,14 +63,38 @@ export default function Workspace() {
   const [user, setUser] = useState(null)
   const [conversations, setConversations] = useState([])
   const [apps, setApps] = useState([])
+  const [appProjects, setAppProjects] = useState([])   // new-engine multi-file projects (app_projects table)
+  const [folders, setFolders] = useState([])           // project folders grouping chats + apps
+  const [showNewApp, setShowNewApp] = useState(false)  // blank "build an app" prompt modal
+  const [newAppText, setNewAppText] = useState('')
   const [messages, setMessages] = useState([])
   const [currentConv, setCurrentConv] = useState(null)
   const [currentApp, setCurrentApp] = useState(null)
+  const [currentProject, setCurrentProject] = useState(null)   // new-engine multi-file project
+  const [generatingApp, setGeneratingApp] = useState(false)
+  const [editingApp, setEditingApp] = useState(false)
+  const [autoFixing, setAutoFixing] = useState(false)
+  const [editProgress, setEditProgress] = useState({ percent: 0, message: '' })
+  const [editLog, setEditLog] = useState([])           // running narration of edit steps
+  const [editElapsedMs, setEditElapsedMs] = useState(0)
+  const editStartRef = useRef(0)
+  const repairAttemptsRef = useRef(0)
+  const lastRepairSigRef = useRef('')
+  const repairSigCountsRef = useRef({})   // { [errorSignature]: attemptCount }
+  const [genProgress, setGenProgress] = useState({ percent: 0, message: '' })
+  const [genElapsedMs, setGenElapsedMs] = useState(0)
+  const genStartRef = useRef(0)
   const [isTyping, setIsTyping] = useState(false)
+  const [modelStatus, setModelStatus] = useState({ degraded: false })
+  const [bannerDismissed, setBannerDismissed] = useState(false)
   const [buildingLabel, setBuildingLabel] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
-  const [currentModel, setCurrentModel] = useState(import.meta.env.VITE_DEFAULT_AI_MODEL || 'groq')  // 'claude' | 'groq' | 'ollama'
+  // Ollama is the standard default. Override only via Settings (persisted to localStorage).
+  const [currentModel, setCurrentModel] = useState(() => {
+    try { return localStorage.getItem('aria_model') || import.meta.env.VITE_DEFAULT_AI_MODEL || 'groq' }
+    catch { return 'ollama' }
+  })
   const [lastLatencyMs, setLastLatencyMs] = useState(null)
   const [lastError, setLastError] = useState(null)
   const opStartedAtRef = useRef(null)
@@ -92,14 +126,43 @@ export default function Workspace() {
   const pendingDocTypeRef      = useRef(null)     // selected doc type
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user)
+    let cancelled = false
+    // Resolve the signed-in user reliably. getUser() makes a network call that
+    // can race or fail right after a redirect; fall back to the cached session
+    // user so the sidebar + history aren't hidden just because that call lagged.
+    const applyUser = (u) => {
+      if (cancelled || !u) return
+      setUser(prev => prev?.id === u.id ? prev : u)
       if (localStorage.getItem('aria_new_user')) setShowOnboarding(true)
-      if (user) {
-        loadUserMemories(user.id).then(setUserMemories)
-      }
+      loadUserMemories(u.id).then(setUserMemories)
+    }
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) applyUser(data.user)
+      else supabase.auth.getSession().then(({ data: s }) => applyUser(s?.session?.user))
+    }).catch(() => {
+      supabase.auth.getSession().then(({ data: s }) => applyUser(s?.session?.user))
     })
+    // Keep user in sync if auth resolves/refreshes after this mount.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session?.user) applyUser(session.user)
+    })
+    return () => { cancelled = true; subscription.unsubscribe() }
   }, [])
+
+  // Tick a live elapsed clock while an app build is running, so we can show a
+  // real "time left" estimate that updates smoothly between pipeline events.
+  useEffect(() => {
+    if (!generatingApp) return
+    const id = setInterval(() => setGenElapsedMs(Date.now() - genStartRef.current), 250)
+    return () => clearInterval(id)
+  }, [generatingApp])
+
+  // Same live clock for edits/repairs, so the edit bar shows a real elapsed time.
+  useEffect(() => {
+    if (!editingApp && !autoFixing) return
+    const id = setInterval(() => setEditElapsedMs(Date.now() - editStartRef.current), 250)
+    return () => clearInterval(id)
+  }, [editingApp, autoFixing])
 
   // Drive command-bar timing from typing state. When an AI op starts, record
   // start time + clear last error. When it ends (without error), record latency.
@@ -113,13 +176,45 @@ export default function Workspace() {
     }
   }, [isTyping])
 
+  // Poll model status so the user is told when Claude is degrading to the Groq
+  // fallback (e.g. Anthropic out of credits) instead of silently shipping weaker output.
+  useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      const s = await getModelStatus()
+      if (!cancelled) setModelStatus(s || { degraded: false })
+    }
+    check()
+    const id = setInterval(check, 15000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
+
+  // Re-check immediately whenever an AI op finishes (catches a fresh fallback fast).
+  useEffect(() => {
+    if (!isTyping) { getModelStatus().then(s => setModelStatus(s || { degraded: false })) }
+  }, [isTyping])
+
   const loadConversations = useCallback(async () => {
     if (!user) return
     const { data } = await supabase
       .from('conversations').select('*').eq('user_id', user.id)
       .neq('deleted', true)
       .order('updated_at', { ascending: false })
-    setConversations(data || [])
+    // Hide "app-shell" conversations (kind === 'app') created by the New-app flow
+    // so they don't clutter the Chats list. Filtered in JS so this stays graceful
+    // if the `kind` column hasn't been migrated yet (undefined → kept as a chat).
+    setConversations((data || []).filter(c => c.kind !== 'app'))
+  }, [user])
+
+  // Project folders that group chats + apps. Best-effort: if the migration hasn't
+  // run yet, the query errors and we just keep an empty folder list.
+  const loadFolders = useCallback(async () => {
+    if (!user) return
+    const { data, error } = await supabase
+      .from('project_folders').select('*').eq('user_id', user.id)
+      .order('created_at', { ascending: true })
+    if (error) return
+    setFolders(data || [])
   }, [user])
 
   const loadApps = useCallback(async () => {
@@ -131,9 +226,113 @@ export default function Workspace() {
     setApps(data || [])
   }, [user])
 
+  // New-engine projects (multi-file, previewable in-app). Best-effort: if the
+  // app_projects migration hasn't been run yet, just leave the list empty.
+  const loadAppProjects = useCallback(async () => {
+    if (!user) return
+    const { data, error } = await supabase
+      .from('app_projects').select('*').eq('user_id', user.id)
+      .neq('status', 'deleted')
+      .order('created_at', { ascending: false })
+    if (error) return
+    setAppProjects(data || [])
+  }, [user])
+
+  // Soft-delete a generated project (status → 'deleted'). Closes the preview if
+  // the deleted project is the one currently open, then refreshes the list.
+  const handleDeleteProject = useCallback(async (projectId) => {
+    if (!projectId) return
+    const { error } = await supabase
+      .from('app_projects')
+      .update({ status: 'deleted', updated_at: new Date().toISOString() })
+      .eq('id', projectId)
+    if (error) { handleApiError(error, { action: 'delete the app' }); return }
+    logAction('app.project_deleted', { projectId })
+    setAppProjects(prev => prev.filter(p => p.id !== projectId))
+    setCurrentProject(prev => (prev && prev.id === projectId ? null : prev))
+  }, [handleApiError])
+
+  // ─── Project folders: CRUD + membership + pinning ───────────────────────────
+  const handleCreateFolder = useCallback(async (name = 'New project') => {
+    if (!user) return null
+    const { data, error } = await supabase
+      .from('project_folders').insert({ user_id: user.id, name }).select().single()
+    if (error) { handleApiError(error, { action: 'create the folder' }); return null }
+    logAction('folder.created', { folderId: data.id })
+    setFolders(prev => [...prev, data])
+    return data
+  }, [user, handleApiError])
+
+  const handleRenameFolder = useCallback(async (folderId, name) => {
+    if (!folderId || !name?.trim()) return
+    setFolders(prev => prev.map(f => f.id === folderId ? { ...f, name: name.trim() } : f))
+    await supabase.from('project_folders').update({ name: name.trim(), updated_at: new Date().toISOString() }).eq('id', folderId)
+  }, [])
+
+  const handleDeleteFolder = useCallback(async (folderId) => {
+    if (!folderId) return
+    // ON DELETE SET NULL un-files the folder's chats/apps rather than deleting them.
+    const { error } = await supabase.from('project_folders').delete().eq('id', folderId)
+    if (error) { handleApiError(error, { action: 'delete the folder' }); return }
+    logAction('folder.deleted', { folderId })
+    setFolders(prev => prev.filter(f => f.id !== folderId))
+    loadConversations(); loadAppProjects()
+  }, [handleApiError, loadConversations, loadAppProjects])
+
+  // Move a chat or app into a folder (folderId = null → unfile it).
+  const handleMoveToFolder = useCallback(async (itemType, itemId, folderId) => {
+    if (!itemId) return
+    if (itemType === 'chat') {
+      setConversations(prev => prev.map(c => c.id === itemId ? { ...c, folder_id: folderId } : c))
+      await supabase.from('conversations').update({ folder_id: folderId }).eq('id', itemId)
+    } else {
+      setAppProjects(prev => prev.map(p => p.id === itemId ? { ...p, folder_id: folderId } : p))
+      await supabase.from('app_projects').update({ folder_id: folderId }).eq('id', itemId)
+    }
+    logAction('item.moved_to_folder', { itemType, itemId, folderId })
+  }, [])
+
+  // Pin / unpin a chat or app (pinned items sort to the top of their section).
+  const handlePinItem = useCallback(async (itemType, itemId, pinned) => {
+    if (!itemId) return
+    if (itemType === 'chat') {
+      setConversations(prev => prev.map(c => c.id === itemId ? { ...c, pinned } : c))
+      await supabase.from('conversations').update({ pinned }).eq('id', itemId)
+    } else if (itemType === 'folder') {
+      setFolders(prev => prev.map(f => f.id === itemId ? { ...f, pinned } : f))
+      await supabase.from('project_folders').update({ pinned, updated_at: new Date().toISOString() }).eq('id', itemId)
+    } else {
+      setAppProjects(prev => prev.map(p => p.id === itemId ? { ...p, pinned } : p))
+      await supabase.from('app_projects').update({ pinned }).eq('id', itemId)
+    }
+  }, [])
+
+  // Rename an app project (from the Topbar app-build title or the sidebar).
+  const handleRenameProject = useCallback(async (id, title) => {
+    const trimmed = (title || '').trim()
+    if (!id || !trimmed) return
+    setCurrentProject(prev => (prev && prev.id === id ? { ...prev, title: trimmed } : prev))
+    setAppProjects(prev => prev.map(p => p.id === id ? { ...p, title: trimmed } : p))
+    await supabase.from('app_projects').update({ title: trimmed }).eq('id', id)
+  }, [])
+
   useEffect(() => {
-    if (user) { loadConversations(); loadApps() }
-  }, [user, loadConversations, loadApps])
+    if (user) { loadConversations(); loadApps(); loadAppProjects(); loadFolders() }
+  }, [user, loadConversations, loadApps, loadAppProjects, loadFolders])
+
+  // Navigating to a different chat (New chat, or clicking an existing chat/home)
+  // should immediately surface that chat — never leave the user stranded on the
+  // New-app composer or a project preview. So whenever the active convId changes,
+  // drop any in-progress app-build surface. (Building a new app doesn't change
+  // convId, so this won't clobber a freshly built preview.)
+  const prevConvIdRef = useRef(convId)
+  useEffect(() => {
+    if (prevConvIdRef.current !== convId) {
+      prevConvIdRef.current = convId
+      setShowNewApp(false)
+      setCurrentProject(null)
+    }
+  }, [convId])
 
   useEffect(() => {
     if (!convId) return
@@ -329,6 +528,244 @@ export default function Workspace() {
     }
   }
 
+  // ─── New engine: staged, provider-agnostic multi-file generation ────────────
+  // Runs the real pipeline (plan → file tree → per-file codegen → assemble) via
+  // Aria's model router (defaults to Ollama, $0). Renders a live Sandpack preview.
+  // Falls back to the legacy template build only if the new engine errors.
+  async function handleGenerateApp() {
+    const prompt = pendingPromptRef.current || pendingSpecRef.current?.appTitle
+    if (!prompt) return
+    pendingSpecMsgIdRef.current = null
+    pendingBriefMsgIdRef.current = null
+
+    setGeneratingApp(true)
+    setIsTyping(true)
+    setGenProgress({ percent: 2, message: 'Starting the generation pipeline…' })
+    setBuildingLabel('Generating your app…')
+    // Fresh build → reset the self-repair budget so the new app gets its own attempts.
+    repairAttemptsRef.current = 0
+    lastRepairSigRef.current = ''
+    repairSigCountsRef.current = {}
+    genStartRef.current = Date.now()
+    setGenElapsedMs(0)
+    // Monotonic progress driven by REAL pipeline events (never goes backwards).
+    const onEvent = (evt) => {
+      setGenProgress(prev => ({
+        percent: Math.max(prev.percent, typeof evt.percent === 'number' ? evt.percent : prev.percent),
+        message: evt.message || prev.message,
+        stage: evt.stage,
+        etaSeconds: typeof evt.etaSeconds === 'number' ? evt.etaSeconds : prev.etaSeconds,
+      }))
+    }
+    try {
+      const result = await generateAppProjectStream(convId, prompt, { onEvent }, currentModel)
+      setGenProgress({ percent: 100, message: 'Done.' })
+      const project = result?.project || {
+        title: result?.appName, summary: result?.summary, files: result?.files,
+        entry: result?.entry, file_tree: result?.fileTree, generation_errors: result?.errors,
+      }
+      setCurrentProject(project)
+      logAction('app.generated_v2', { conversationId: convId, projectId: result?.projectId, fileCount: Object.keys(result?.files || {}).length })
+      addMsg(result?.summary || `Generated ${project.title || 'your app'} — open the preview to see it live.`)
+      // Refresh the sidebar "My Apps" list so the new project is reopenable
+      // later without regenerating.
+      loadAppProjects()
+    } catch (err) {
+      // Providers exhausted: don't silently grind on slow local Ollama or the
+      // legacy engine — tell the user exactly what's unavailable and when it's back.
+      if (err.providersUnavailable) {
+        logAction('app.generate_v2_providers_unavailable', { conversationId: convId, retryAfterMs: err.retryAfterMs })
+        addMsg(err.message, true)
+      } else {
+        // Other error — fall back to the legacy template engine so the user isn't blocked.
+        logAction('app.generate_v2_failed_fallback', { conversationId: convId, error: err.message })
+        addMsg('The new generation engine hit an error, so I used the classic builder instead. (Tip: make sure Ollama is running, or switch the provider.)', true)
+        await handleBuildApp()
+      }
+    } finally {
+      setGeneratingApp(false)
+      setIsTyping(false)
+      setBuildingLabel(null)
+      setGenProgress({ percent: 0, message: '' })
+    }
+  }
+
+  // ─── "New app" from the + New menu — a blank prompt that builds directly ────
+  // Creates a hidden app-shell conversation (kind:'app', so it doesn't show in
+  // Chats) purely to satisfy app_projects' FK, then runs the same generation
+  // pipeline with the typed prompt and opens the live preview. No brief/spec step.
+  async function handleBuildNewApp(promptText) {
+    const prompt = (promptText || '').trim()
+    if (!prompt || !user) return
+
+    // Create the backing app-shell conversation. The `kind: 'app'` discriminator
+    // is what keeps this shell out of the Chats list and files its app under
+    // "Recent Apps" (standalone) rather than nesting it under a chat. If the
+    // `kind` column hasn't been migrated yet, that insert errors — so retry
+    // without it so New app still works (the app just classifies as standalone
+    // once the migration lands).
+    const shellTitle = prompt.length > 40 ? prompt.slice(0, 40) + '…' : prompt
+    let { data: shell, error: shellErr } = await supabase.from('conversations')
+      .insert({ user_id: user.id, title: shellTitle, kind: 'app' })
+      .select().single()
+    if (shellErr && /kind/i.test(shellErr.message || '')) {
+      ({ data: shell, error: shellErr } = await supabase.from('conversations')
+        .insert({ user_id: user.id, title: shellTitle })
+        .select().single())
+    }
+    if (shellErr || !shell) { handleApiError(shellErr || new Error('Could not start the app'), { action: 'start a new app' }); return }
+    const shellConvId = shell.id
+
+    setGeneratingApp(true)
+    setGenProgress({ percent: 2, message: 'Starting the generation pipeline…' })
+    repairAttemptsRef.current = 0
+    lastRepairSigRef.current = ''
+    repairSigCountsRef.current = {}
+    genStartRef.current = Date.now()
+    setGenElapsedMs(0)
+    const onEvent = (evt) => {
+      setGenProgress(prev => ({
+        percent: Math.max(prev.percent, typeof evt.percent === 'number' ? evt.percent : prev.percent),
+        message: evt.message || prev.message,
+        stage: evt.stage,
+        etaSeconds: typeof evt.etaSeconds === 'number' ? evt.etaSeconds : prev.etaSeconds,
+      }))
+    }
+    try {
+      const result = await generateAppProjectStream(shellConvId, prompt, { onEvent }, currentModel)
+      setGenProgress({ percent: 100, message: 'Done.' })
+      const project = result?.project || {
+        title: result?.appName, summary: result?.summary, files: result?.files,
+        entry: result?.entry, file_tree: result?.fileTree, generation_errors: result?.errors,
+      }
+      autoFixedProjectRef.current = ''
+      setCurrentProject(project)
+      logAction('app.new_app_built', { conversationId: shellConvId, projectId: result?.projectId })
+      loadAppProjects()
+      setShowNewApp(false)
+      setNewAppText('')
+    } catch (err) {
+      if (err.providersUnavailable) {
+        toast.error(err.message, { title: 'Generation paused' })
+      } else {
+        handleApiError(err, { action: 'build your app', onRetry: () => handleBuildNewApp(prompt) })
+      }
+    } finally {
+      setGeneratingApp(false)
+      setGenProgress({ percent: 0, message: '' })
+    }
+  }
+
+  // Iterative edit / repair of the open generated project. Patches only the
+  // affected files via the staged engine and refreshes the preview.
+  // Works whether or not the project was persisted. When there's no DB id we
+  // send the current files/plan inline so the backend can edit/repair in memory
+  // and return updated files — the preview is refreshed from those directly.
+  async function handleEditProject(editRequest, opts = {}) {
+    if (!currentProject || !editRequest?.trim()) return null
+    setEditingApp(true)
+    // Reset the live progress/narration for this edit pass.
+    editStartRef.current = Date.now()
+    setEditElapsedMs(0)
+    setEditProgress({ percent: 4, message: opts.isRepair ? 'Diagnosing the error…' : 'Reading your request…' })
+    setEditLog([{ stage: 'start', message: opts.isRepair ? 'Aria is fixing the app automatically.' : `Applying your change: “${editRequest.length > 80 ? editRequest.slice(0, 80) + '…' : editRequest}”` }])
+    // Monotonic progress + a running narration of the edit steps. These messages
+    // come straight from the pipeline's stage events — pure logging, no AI.
+    const onEvent = (evt) => {
+      setEditProgress(prev => ({
+        percent: Math.max(prev.percent, typeof evt.percent === 'number' ? evt.percent : prev.percent),
+        message: evt.message || prev.message,
+        stage: evt.stage,
+      }))
+      if (evt.message) setEditLog(prev => [...prev, { stage: evt.stage, message: evt.message }])
+    }
+    try {
+      const result = await editAppProjectStream(
+        currentProject.id || null,
+        editRequest,
+        { ...opts, onEvent, files: currentProject.files || {}, plan: currentProject.app_plan || currentProject.plan || {} },
+        currentModel
+      )
+      setEditProgress({ percent: 100, message: 'Done.' })
+      // Prefer the persisted project row; otherwise merge returned files into the
+      // in-memory project so the Sandpack preview recompiles with the fix.
+      if (result?.project) {
+        setCurrentProject(result.project)
+      } else if (result?.files) {
+        setCurrentProject(prev => ({
+          ...prev,
+          files: result.files,
+          generation_errors: result.errors || [],
+          summary: result.summary || prev?.summary,
+        }))
+      }
+      if (result?.summary) setEditLog(prev => [...prev, { stage: 'summary', message: result.summary }])
+      logAction(opts.isRepair ? 'app.repaired_v2' : 'app.edited_v2', { projectId: currentProject.id || '(inline)', changed: result?.changedFiles?.length || 0 })
+      return result
+    } catch (err) {
+      setEditLog(prev => [...prev, { stage: 'error', message: 'Edit failed: ' + (err.message || 'unknown error') }])
+      handleApiError(err, { action: 'edit your app', onRetry: () => handleEditProject(editRequest, opts) })
+      return null
+    } finally {
+      setEditingApp(false)
+      setTimeout(() => setEditProgress({ percent: 0, message: '' }), 600)
+    }
+  }
+
+  // Aria fixes its OWN code. When the live preview throws a compile/runtime
+  // error, automatically run repair passes — the user never has to touch code.
+  // We keep fixing until the preview compiles clean, with two guard rails so it
+  // can't loop forever on a genuinely unfixable bug:
+  //   • a TOTAL attempt cap across the whole build session, and
+  //   • a per-error cap so we retry the SAME error a few times (the first fix
+  //     often doesn't land) but eventually give up on a stuck one.
+  // The error counter is reset on every fresh build and whenever the preview
+  // compiles cleanly (see ErrorWatcher), so a brand-new error after a good fix
+  // gets a full budget again.
+  const MAX_AUTO_REPAIRS = 12        // total passes per build session
+  const MAX_PER_ERROR = 3            // retries for one specific error signature
+  async function handleAutoRepair(errorText) {
+    if (!currentProject || editingApp || autoFixing) return
+    if (repairAttemptsRef.current >= MAX_AUTO_REPAIRS) return
+    const sig = (errorText || '').replace(/\d+/g, '').slice(0, 240)
+    const perError = repairSigCountsRef.current
+    const seen = perError[sig] || 0
+    if (sig && seen >= MAX_PER_ERROR) return // this exact error is stuck — stop
+    perError[sig] = seen + 1
+    lastRepairSigRef.current = sig
+    repairAttemptsRef.current += 1
+    setAutoFixing(true)
+    try {
+      await handleEditProject(
+        `The live preview is failing to compile/run with this error. Fix the code so it compiles and runs correctly, and make sure every imported symbol actually exists and is exported from the file it's imported from. Do not change the app's intended behavior or design — only fix the bug.\n\nError:\n${errorText}`,
+        { isRepair: true, errorText }
+      )
+    } finally {
+      setAutoFixing(false)
+    }
+  }
+
+  // Auto-fix generation errors. When a freshly generated project carries
+  // build/generation errors, kick off a repair pass automatically — the user
+  // shouldn't have to click "Fix with AI". Guarded by the same attempt budget
+  // as preview repairs so it can't loop forever on an unfixable build.
+  const autoFixedProjectRef = useRef('')
+  useEffect(() => {
+    const proj = currentProject
+    if (!proj) return
+    const errs = proj.generation_errors || proj.errors || []
+    if (!errs.length) return
+    if (editingApp || autoFixing || generatingApp) return
+    if (repairAttemptsRef.current >= MAX_AUTO_REPAIRS) return
+    // Only auto-fix a given project's generation errors once per signature so we
+    // don't re-trigger on every render after the same fix attempt.
+    const sig = (proj.id || proj.title || '') + ':' + errs.length
+    if (autoFixedProjectRef.current === sig) return
+    autoFixedProjectRef.current = sig
+    handleEditProject('Fix the build/generation issues in the app so it compiles and runs cleanly. Do not change the intended behavior or design.', { isRepair: true, errorText: JSON.stringify(errs) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProject, editingApp, autoFixing, generatingApp])
+
   // ─── Quick path: spec card ─────────────────────────────────────────────────
   async function runSpec(prompt, clarificationAnswers = null) {
     setBuildingLabel('Generating app spec...')
@@ -348,8 +785,11 @@ export default function Workspace() {
       setMessages(prev => [...prev, specMsg])
       await persistCardMessages([specMsg])
       // Save cross-conversation memory
+      const specSummary = typeof result.spec === 'string'
+        ? result.spec
+        : (result.spec?.summary || result.spec?.appName || result.spec?.title || JSON.stringify(result.spec || {}))
       saveConversationMemory(convId, {
-        summary: result.spec?.slice(0, 300) || prompt.slice(0, 200),
+        summary: specSummary.slice(0, 300) || prompt.slice(0, 200),
         prompt, outputType: 'spec', buildMode: 'quick',
       }).then(() => loadUserMemories(user?.id).then(setUserMemories))
     } catch (err) {
@@ -1043,6 +1483,15 @@ export default function Workspace() {
       return
     }
 
+    // Document request router — "generate a PRD", "create an SOP", "make a finance
+    // breakdown" etc. route to the corporate document generator, NOT the app builder.
+    // PARKED while DIRECT_BUILD_MODE is on (docs come back later).
+    if (!DIRECT_BUILD_MODE && looksLikeDocumentRequest(prompt) && !pendingEngineRef.current) {
+      await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
+      await handleRequestDocument(prompt)
+      return
+    }
+
     // If the message looks like a question or conversational message (not a build
     // request), respond naturally instead of routing to the build engine.
     const hasActiveBuild = pendingBuildModeMsgId.current ||
@@ -1051,7 +1500,11 @@ export default function Workspace() {
       pendingBriefMsgIdRef.current ||
       pendingSpecMsgIdRef.current ||
       pendingEngineIntakeMsgId.current
-    if (looksConversational(prompt) && !pendingEngineRef.current) {
+    // Only divert to a plain chat reply for genuine questions — and only when there's
+    // an active build to discuss, OR the message is an explicit question. Never hijack
+    // build/continue requests (they must reach the intake → brief → documents pipeline).
+    const isExplicitQuestion = prompt.includes('?')
+    if (looksConversational(prompt) && (hasActiveBuild || isExplicitQuestion) && !pendingEngineRef.current) {
       await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
       await runConversationalResponse(prompt)
       return
@@ -1060,6 +1513,14 @@ export default function Workspace() {
     await supabase.from('conversations').update({ updated_at: new Date().toISOString(), title: prompt.slice(0, 60) }).eq('id', convId)
     setCurrentConv(prev => prev ? { ...prev, title: prompt.slice(0, 60) } : prev)
     loadConversations()
+
+    // DIRECT BUILD: skip the guided intake/brief pipeline and generate the app now.
+    if (DIRECT_BUILD_MODE) {
+      pendingEngineRef.current = null
+      pendingPromptRef.current = prompt
+      await handleGenerateApp()
+      return
+    }
 
     const engineHint = pendingEngineRef.current
     pendingEngineRef.current = null
@@ -1149,8 +1610,54 @@ export default function Workspace() {
       'track', 'monitor', 'report', 'dashboard', 'app', 'tool', 'system',
     ]
     if (buildVerbs.some(v => t.includes(v))) return false
-    // Short messages with no build verbs are probably conversational
-    if (t.length < 60 && !buildVerbs.some(v => t.includes(v))) return true
+    // Otherwise it's NOT conversational — let it reach the build/document pipeline.
+    // (We no longer treat short ambiguous messages like "continue" as chatter, which
+    // was wrongly diverting build/continue requests to the plain chat handler.)
+    return false
+  }
+
+  // Detects a request for a specific corporate DOCUMENT (PRD, SOP, risk assessment,
+  // finance breakdown, deck, etc.) vs. an app build. Anchored on document nouns so
+  // "build me a leave tracker app" still goes to the app builder.
+  function looksLikeDocumentRequest(text) {
+    const t = ' ' + text.trim().toLowerCase().replace(/[^a-z0-9 /-]/g, ' ').replace(/\s+/g, ' ') + ' '
+    // App-build override: if the user clearly wants a working app/tool built, route to
+    // the app engine even if the prompt also lists document deliverables (PRD, data model…).
+    const APP_BUILD_SIGNALS = [
+      'full-stack', 'fullstack', 'full stack', 'working app', 'working internal', 'real working',
+      'not a static prototype', 'static prototype', 'internal tool', 'internal app', 'build an app',
+      'build a tool', 'build a system', 'build a full', 'build a working', 'crud', 'command center',
+      'real app', 'functional app', 'build the app', 'generate the app', 'generate an app',
+    ]
+    if (APP_BUILD_SIGNALS.some(s => t.includes(s))) return false
+    // A long message is a full build brief (which already produces ALL the artifacts —
+    // intake summary, product brief, workflow map, data model, automation model, UX, app
+    // spec + diagram). Only SHORT, focused messages are treated as single-document requests.
+    if (text.trim().length > 240) return false
+    // Explicit document-type keywords (mirror documentTemplates.js aliases).
+    const DOC_KEYWORDS = [
+      'prd', 'product requirements', 'feature scope', 'user stories', 'acceptance criteria',
+      'technical spec', 'tech spec', 'technical specification', 'design doc', 'api spec',
+      'api specification', 'api documentation', 'test plan', 'qa plan', 'uat plan', 'test strategy',
+      'deployment plan', 'release plan', 'rollout plan', 'rollback plan', 'go-live plan',
+      'sop', 'standard operating procedure', 'runbook', 'run book', 'process optimization',
+      'process improvement', 'current state process', 'future state process', 'process map',
+      'cost breakdown', 'finance breakdown', 'cost analysis', 'budget breakdown', 'spend breakdown',
+      'roi', 'savings analysis', 'cost-benefit', 'cost benefit', 'payback', 'business value',
+      'risk assessment', 'risk analysis', 'risk register', 'compliance checklist', 'legal review',
+      'legal checklist', 'compliance audit', 'audit checklist', 'data privacy', 'privacy review',
+      'project charter', 'program charter', 'charter', 'raci', 'responsibility matrix',
+      'status report', 'progress report', 'business case', 'business justification', 'investment case',
+      'executive summary deck', 'exec deck', 'executive deck', 'pitch deck', 'stakeholder deck',
+      'slide deck', 'signoff', 'sign-off', 'sign off',
+    ]
+    if (DOC_KEYWORDS.some(k => t.includes(' ' + k + ' ') || t.includes(' ' + k + 's '))) return true
+    // Generic: a document verb + a document noun (e.g. "create a compliance document").
+    const docVerb = /\b(generate|create|make|draft|write|add|produce|prepare|put together)\b/.test(t)
+    const docNoun = /\b(documents?|docs?|checklists?|matri(x|ces)|plans?|reports?|assessments?|specs?|charters?|decks?|summary|summaries|memos?|policy|policies|briefs?|registers?|sop|prd)\b/.test(t)
+    // Don't hijack app builds: if it names an app/tool/system as the object, defer to the app flow
+    // UNLESS an explicit document keyword was already matched above.
+    if (docVerb && docNoun) return true
     return false
   }
 
@@ -1187,9 +1694,9 @@ export default function Workspace() {
       .slice(-1)[0]?.metadata?.brief || null
 
     setIsTyping(true)
-    setBuildingLabel(`Generating ${userRequest}...`)
+    setBuildingLabel(`Generating document: "${userRequest.slice(0, 50)}${userRequest.length > 50 ? '…' : ''}"`)
     try {
-      const result = await requestPMDocument(convId, userRequest, projectContext)
+      const result = await requestPMDocument(convId, userRequest, projectContext, currentModel)
       setIsTyping(false)
       setBuildingLabel(null)
       // Add a text message confirming creation
@@ -1247,11 +1754,11 @@ export default function Workspace() {
       return { ...m, onClarifyV2: null, onRestart: handleRestartFromClarification }
     }
     if (ct === 'spec' && m.id === pendingSpecMsgIdRef.current && !isTyping) {
-      return { ...m, onBuild: handleBuildApp, onSpecChange: (updatedSpec) => { pendingSpecRef.current = updatedSpec } }
+      return { ...m, onBuild: handleGenerateApp, onSpecChange: (updatedSpec) => { pendingSpecRef.current = updatedSpec } }
     }
     if (ct === 'enterprise_brief') {
       const handlers = { onOpenArtifact: openArtifact, artifacts, onRequestDocument: handleRequestDocument }
-      if (m.id === pendingBriefMsgIdRef.current && !isTyping) handlers.onBuild = handleBuildApp
+      if (m.id === pendingBriefMsgIdRef.current && !isTyping) handlers.onBuild = handleGenerateApp
       return { ...m, ...handlers }
     }
     return m
@@ -1260,7 +1767,22 @@ export default function Workspace() {
   const activeArtifacts = artifacts.filter(a => a.status !== 'superseded')
 
   const sidebarProps = {
-    user, conversations, apps,
+    user, conversations, apps, appProjects,
+    onOpenProject: (proj) => {
+      setShowNewApp(false)            // opening an app supersedes the New-app composer
+      setCurrentProject(proj)
+      autoFixedProjectRef.current = ''   // allow auto-fix to run for the reopened project
+      if (isSmall) setShowSidebar(false)
+    },
+    onDeleteProject: handleDeleteProject,
+    onProjectsChange: loadAppProjects,
+    folders,
+    onCreateFolder: handleCreateFolder,
+    onRenameFolder: handleRenameFolder,
+    onDeleteFolder: handleDeleteFolder,
+    onMoveToFolder: handleMoveToFolder,
+    onPinItem: handlePinItem,
+    onNewApp: () => setShowNewApp(true),
     onConversationsChange: loadConversations, onAppsChange: loadApps,
     onConversationRename: (id, title) => {
       setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
@@ -1305,6 +1827,8 @@ export default function Workspace() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', minWidth: 0 }}>
         <Topbar
           conversation={currentConv} app={currentApp}
+          appBuild={currentProject ? { title: currentProject.title, id: currentProject.id, renamable: !!currentProject.id } : showNewApp ? { title: 'New app' } : null}
+          onAppBuildTitleChange={(t) => { if (currentProject?.id) handleRenameProject(currentProject.id, t) }}
           onTitleChange={(t) => {
             setCurrentConv(prev => prev ? { ...prev, title: t } : prev)
             setConversations(prev => prev.map(c => c.id === currentConv?.id ? { ...c, title: t } : c))
@@ -1324,21 +1848,140 @@ export default function Workspace() {
           lastError={lastError}
           lastLatencyMs={lastLatencyMs}
         />
-        {convId && currentConv?.role_context && (
+        {/* Only a "degradation" if the user actually picked Claude. When Groq or
+            Ollama is the chosen model, falling back to Groq is the plan, not a
+            problem — so suppress the banner entirely. Always dismissible. */}
+        {modelStatus.degraded && currentModel === 'claude' && !bannerDismissed && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '8px 16px', borderBottom: '0.5px solid #3A2A0A',
+            background: '#1A1407', color: '#F5C451', fontSize: 12, lineHeight: 1.5,
+          }}>
+            <span style={{ fontSize: 14 }}>⚠</span>
+            <span style={{ flex: 1 }}>
+              {modelStatus.reason === 'credits'
+                ? 'Aria is running in degraded mode — your Anthropic API account is out of credits, so output is falling back to a weaker model. Add credits at console.anthropic.com (separate from Claude Max) to restore full quality.'
+                : modelStatus.reason === 'rate_limit'
+                ? 'Aria is temporarily rate-limited by Anthropic and falling back to a weaker model. Quality will restore automatically shortly.'
+                : 'Aria is running in degraded mode — Claude is unavailable and output is falling back to a weaker model.'}
+            </span>
+            <button
+              onClick={() => setBannerDismissed(true)}
+              title="Dismiss"
+              style={{
+                background: 'none', border: 'none', color: '#F5C451', cursor: 'pointer',
+                fontSize: 16, lineHeight: 1, padding: '0 2px', opacity: 0.7,
+              }}
+            >×</button>
+          </div>
+        )}
+        {convId && currentConv?.role_context && !currentProject && !showNewApp && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '6px 16px', borderBottom: '0.5px solid #1A1A1A',
             background: '#0D0D0D',
           }}>
-            <span style={{ fontSize: 10, color: '#525252', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Role</span>
+            <span style={{ fontSize: 10, color: '#8A8A8A', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 600 }}>Role</span>
             <RoleBadge conversation={currentConv} onOverride={handleRoleOverride} />
           </div>
         )}
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          {convId ? (
+          {currentProject ? (
+            /* App build surface — lives in the content column beside the sidebar,
+               exactly like chat does (no fullscreen overlay covering the rail). */
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '10px 16px', borderBottom: '0.5px solid #1A1A1A' }}>
+                {currentProject.id && (
+                  <button
+                    onClick={async () => { const id = currentProject.id; await handleDeleteProject(id) }}
+                    disabled={editingApp || autoFixing}
+                    style={{ background: '#1A0E0E', color: '#F87171', border: '0.5px solid #3A1A1A', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: editingApp || autoFixing ? 'default' : 'pointer', fontFamily: 'inherit', opacity: editingApp || autoFixing ? 0.5 : 1 }}
+                    title="Delete this app"
+                  >Delete</button>
+                )}
+                <button
+                  onClick={() => setCurrentProject(null)}
+                  style={{ background: '#1C1C1C', color: '#E5E5E5', border: '0.5px solid #2A2A2A', borderRadius: 7, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}
+                >Close ✕</button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <AppProjectPanel project={currentProject} onEdit={handleEditProject} editing={editingApp} onRuntimeError={handleAutoRepair} autoFixing={autoFixing} editProgress={editProgress} editLog={editLog} editElapsedMs={editElapsedMs} />
+              </div>
+            </div>
+          ) : showNewApp ? (
+            /* New-app surface — identical UI to the chat empty state (centered
+               hint + bottom input bar). Only the mode tag (App build, in the
+               Topbar) and the build workflow differ. */
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#2A2A2A', fontSize: 12, gap: 8, minHeight: 0 }}>
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                  <rect x="2" y="2" width="13" height="13" rx="2" fill="#2A2A2A" />
+                  <rect x="17" y="2" width="13" height="13" rx="2" fill="#3A3A3A" />
+                  <rect x="2" y="17" width="13" height="13" rx="2" fill="#222" />
+                  <rect x="17" y="17" width="13" height="13" rx="2" fill="#303030" />
+                </svg>
+                <span>Describe an app to get started</span>
+              </div>
+              {generatingApp && (
+                <div style={{ padding: '12px 16px', borderTop: '0.5px solid #1A1A1A', background: '#0B0B0B' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#34D399', animation: 'pulse 1.4s ease-in-out infinite' }} />
+                      {genProgress.message || 'Building your app…'}
+                    </span>
+                    <span style={{ fontSize: 13, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{Math.min(100, Math.round(genProgress.percent || 0))}%</span>
+                  </div>
+                  <div style={{ height: 6, background: '#1C1C1C', borderRadius: 999, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.max(2, Math.min(100, genProgress.percent))}%`, background: 'linear-gradient(90deg, #34D399, #60A5FA)', borderRadius: 999, transition: 'width 0.5s ease' }} />
+                  </div>
+                </div>
+              )}
+              <InputZone
+                onSubmit={handleBuildNewApp}
+                disabled={generatingApp}
+                currentModel={currentModel}
+                onModelChange={setCurrentModel}
+                placeholder="Describe the app you want to build. Aria will instantly build it."
+                sendHint="Enter to build · Shift+Enter for new line"
+              />
+            </div>
+          ) : convId ? (
             <>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                <ChatArea messages={messagesWithHandlers} isTyping={isTyping} buildingLabel={buildingLabel} />
+                <ChatArea messages={messagesWithHandlers} isTyping={isTyping && !generatingApp} buildingLabel={generatingApp ? null : buildingLabel} />
+                {generatingApp && (() => {
+                  // Compute ETA on the frontend from real elapsed time vs. % done.
+                  // Works even if the backend doesn't send an estimate, and the
+                  // 250ms tick keeps it live between pipeline events.
+                  const elapsedSec = genElapsedMs / 1000
+                  const pct = Math.round(genProgress.percent)
+                  const etaSec = pct > 3 && pct < 100 ? Math.max(1, Math.round(elapsedSec * (100 - pct) / pct)) : null
+                  const fmt = (s) => s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`
+                  return (
+                  <div style={{ padding: '12px 16px', borderTop: '0.5px solid #1A1A1A', background: '#0B0B0B' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, color: '#FFFFFF', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#34D399', animation: 'pulse 1.4s ease-in-out infinite' }} />
+                        {genProgress.message || 'Generating your app…'}
+                      </span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                        <span style={{ fontSize: 12, color: '#C8C8C8', fontVariantNumeric: 'tabular-nums' }}>
+                          {fmt(elapsedSec)} elapsed
+                        </span>
+                        {etaSec != null && (
+                          <span style={{ fontSize: 12, color: '#34D399', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                            ~{fmt(etaSec)} left
+                          </span>
+                        )}
+                        <span style={{ fontSize: 13, color: '#FFFFFF', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>{pct}%</span>
+                      </span>
+                    </div>
+                    <div style={{ height: 6, background: '#1C1C1C', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.max(2, Math.min(100, genProgress.percent))}%`, background: 'linear-gradient(90deg, #34D399, #60A5FA)', borderRadius: 999, transition: 'width 0.5s ease' }} />
+                    </div>
+                  </div>
+                  )
+                })()}
                 <InputZone onSubmit={handleSubmit} disabled={isTyping} currentModel={currentModel} onModelChange={setCurrentModel} />
               </div>
               {showArtifactPanel && (
@@ -1373,6 +2016,7 @@ export default function Workspace() {
           )}
         </div>
       </div>
+
     </div>
   )
 }

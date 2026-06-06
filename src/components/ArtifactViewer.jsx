@@ -27,6 +27,23 @@ const FORMAT_ICONS  = { pdf: '📄', docx: '📝', xlsx: '📊', csv: '📋', js
 
 // ─── contentToMarkdown helper ────────────────────────────────────────────────
 function contentToMarkdown(artifact) {
+  const c = artifact.content || {}
+  // Section-based document → clean markdown (matches the export serializer).
+  if (Array.isArray(c.sections) && c.sections.length) {
+    const lines = [`# ${c.meta?.title || artifact.title}\n`]
+    for (const s of c.sections) {
+      lines.push(`## ${s.title || s.key}\n`)
+      if (s.body) lines.push(String(s.body) + '\n')
+      if (Array.isArray(s.bullets) && s.bullets.length) { s.bullets.forEach(b => lines.push(`- ${b}`)); lines.push('') }
+      if (s.table?.columns?.length && Array.isArray(s.table.rows)) {
+        lines.push('| ' + s.table.columns.join(' | ') + ' |')
+        lines.push('| ' + s.table.columns.map(() => '---').join(' | ') + ' |')
+        s.table.rows.forEach(r => lines.push('| ' + s.table.columns.map((_, i) => String(r[i] ?? '')).join(' | ') + ' |'))
+        lines.push('')
+      }
+    }
+    return lines.join('\n')
+  }
   const lines = [`# ${artifact.title}\n`]
   function walk(obj, depth = 0) {
     if (!obj || typeof obj !== 'object') return
@@ -181,11 +198,54 @@ function HighlightBox({ children, bg = '#FFFBEB', border = '#FDE68A' }) {
   )
 }
 
+// ─── Section-based document renderer (new corporate documents) ───────────────
+// Renders { meta, sections:[{key,title,body,bullets,table}] } as a real document.
+function SectionDocView({ artifact, color }) {
+  const c = artifact.content || {}
+  const m = c.meta || {}
+  const isSlides = c.format === 'presentation'
+  const docTitle = { fontSize: 26, fontWeight: 800, ...D.heading, marginBottom: 6, lineHeight: 1.2, fontFamily: 'system-ui, -apple-system, sans-serif' }
+  const docSubtitle = { fontSize: 13, ...D.label, marginBottom: 28, fontFamily: 'system-ui, -apple-system, sans-serif' }
+  const metaBits = ['owner', 'date', 'project', 'version'].filter(k => m[k]).map(k => `${k[0].toUpperCase() + k.slice(1)}: ${m[k]}`)
+
+  return (
+    <div>
+      <h1 style={docTitle}>{m.title || artifact.title}</h1>
+      <div style={docSubtitle}>
+        {(c.label || '').toString()}{metaBits.length ? '  ·  ' + metaBits.join('  ·  ') : ''}
+        {c.depthMode ? `  ·  ${c.depthMode === 'enterprise' ? 'Enterprise Detailed' : c.depthMode}` : ''}
+      </div>
+      {(c.sections || []).map((s, idx) => (
+        <DocSection key={s.key || idx} title={s.title || s.key} color={color}>
+          {s.body && String(s.body).split(/\n\n+/).map((p, i) => (
+            <p key={i} style={{ fontSize: 13.5, ...D.body, lineHeight: 1.7, margin: '0 0 12px' }}>{p}</p>
+          ))}
+          {Array.isArray(s.bullets) && s.bullets.length > 0 && (
+            <DocList items={s.bullets} color={color} numbered={isSlides} />
+          )}
+          {s.table?.columns?.length > 0 && Array.isArray(s.table.rows) && s.table.rows.length > 0 && (
+            <DocTable
+              headers={s.table.columns}
+              rows={s.table.rows.map(r => s.table.columns.map((_, i) => String(r[i] ?? '')))}
+              color={color}
+            />
+          )}
+        </DocSection>
+      ))}
+    </div>
+  )
+}
+
 // ─── Document renderer (white-background, read-only) ─────────────────────────
 function DocumentView({ artifact }) {
   const meta = TYPE_META[artifact.artifact_type] || {}
   const color = meta.color || '#94A3B8'
   const c = artifact.content || {}
+
+  // New section-based corporate documents render through the generic section view.
+  if (Array.isArray(c.sections) && c.sections.length) {
+    return <SectionDocView artifact={artifact} color={color} />
+  }
 
   const docTitle = {
     fontSize: 26, fontWeight: 800, ...D.heading, marginBottom: 6, lineHeight: 1.2,
@@ -237,6 +297,19 @@ function DocumentView({ artifact }) {
           </DocSection>
         )}
 
+        {c.background && (
+          <DocSection title="Background & Context" color={color}>
+            <p style={{ fontSize: 13.5, ...D.body, lineHeight: 1.7, margin: 0 }}>{c.background}</p>
+          </DocSection>
+        )}
+
+        {(c.scope?.inScope?.length > 0 || c.scope?.outOfScope?.length > 0) && (
+          <DocSection title="Scope" color={color}>
+            <DocList label="In Scope" items={c.scope.inScope} color={color} />
+            <DocList label="Out of Scope" items={c.scope.outOfScope} color={color} />
+          </DocSection>
+        )}
+
         {c.userRoles?.length > 0 && (
           <DocSection title="User Roles" color={color}>
             <DocTable
@@ -262,6 +335,22 @@ function DocumentView({ artifact }) {
         {c.successCriteria?.length > 0 && (
           <DocSection title="Success Criteria" color={color}>
             <DocList items={c.successCriteria} color={color} numbered />
+          </DocSection>
+        )}
+
+        {c.dependencies?.length > 0 && (
+          <DocSection title="Dependencies" color={color}>
+            <DocList items={c.dependencies} color={color} />
+          </DocSection>
+        )}
+
+        {c.risks?.length > 0 && (
+          <DocSection title="Risks & Mitigations" color={color}>
+            <DocTable
+              headers={['Risk', 'Impact', 'Mitigation', 'Owner']}
+              rows={c.risks.map(r => typeof r === 'string' ? [r, '', '', ''] : [r.risk || '', r.impact || '', r.mitigation || '', r.owner || ''])}
+              color={color}
+            />
           </DocSection>
         )}
 
@@ -787,7 +876,12 @@ export default function ArtifactViewer({ artifact: initial, onClose, onApprove, 
 
   const meta = TYPE_META[artifact.artifact_type] || {}
   const color = meta.color || '#94A3B8'
-  const formats = FORMAT_MAP[artifact.artifact_type] || ['pdf', 'json', 'md']
+  // Formats we can actually produce as real files (must match the server) — no fake buttons.
+  const GENERATABLE = ['pdf', 'docx', 'xlsx', 'csv', 'json', 'md']
+  const requestedFormats = (Array.isArray(artifact.content?.exportFormats) && artifact.content.exportFormats.length)
+    ? artifact.content.exportFormats
+    : (FORMAT_MAP[artifact.artifact_type] || ['pdf', 'json', 'md'])
+  const formats = Array.from(new Set([...requestedFormats.filter(f => GENERATABLE.includes(f)), 'pdf', 'json']))
 
   useEffect(() => {
     setArtifact(initial)

@@ -12,6 +12,22 @@ const GROQ_MODEL_FAST   = 'llama-3.1-8b-instant'      // Groq fallback on Anthro
 const GROQ_MODEL_SMART  = 'llama-3.3-70b-versatile'   // Groq fallback for smart calls
 const GROQ_MAX_TOKENS   = 8000
 
+// Tracks the last time an INTENDED Claude call was forced to degrade to Groq
+// (e.g. Anthropic out of credits / rate limited). Cleared on the next successful
+// Claude call. The frontend reads this via GET /api/model-status to show a banner.
+let _lastFallback = null
+// Auto-expire a stale fallback so the degraded banner clears on its own once the
+// user stops making Claude calls (e.g. after switching to Ollama).
+const FALLBACK_TTL_MS = 120_000
+export function getModelStatus() {
+  if (_lastFallback && (Date.now() - (_lastFallback.at || 0)) > FALLBACK_TTL_MS) {
+    _lastFallback = null
+  }
+  return _lastFallback
+    ? { degraded: true, ..._lastFallback }
+    : { degraded: false }
+}
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null
 
@@ -267,8 +283,8 @@ async function callOllamaFallback({ system, messages, max_tokens }) {
  * @param {number}  [opts.timeout=30000]  — timeout in ms
  */
 export async function createMessage({ system, messages, max_tokens = 4000, smart = false, modelTier, timeout = 30000, aiModel }) {
-  // Resolve which model to use — explicit param > env default > claude
-  const resolvedModel = aiModel || process.env.DEFAULT_AI_MODEL || 'claude'
+  // Resolve which model to use — explicit param > env default > ollama (standard).
+  const resolvedModel = aiModel || process.env.DEFAULT_AI_MODEL || 'ollama'
 
   // Dev mode: return mock responses without hitting the API
   if (process.env.MOCK_RESPONSES === 'true') {
@@ -280,16 +296,18 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
     return callGroqFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
   }
   if (resolvedModel === 'ollama') {
+    // Pure Ollama — NO Groq/Claude fallback (per user: Ollama is the standard, always).
+    // One retry in case the model is cold-loading, then a clear error if it's down.
     try {
       return await callOllamaFallback({ system, messages, max_tokens })
     } catch (ollamaErr) {
-      // Ollama unreachable / model missing → fall back to Groq so the user
-      // isn't blocked when local Ollama isn't running.
-      if (groq) {
-        console.warn('[ai-client] Ollama unavailable — falling back to Groq:', ollamaErr.message)
-        return callGroqFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
+      console.warn('[ai-client] Ollama call failed, retrying once:', ollamaErr.message)
+      try {
+        return await callOllamaFallback({ system, messages, max_tokens })
+      } catch (retryErr) {
+        _lastFallback = null // not a credits/Claude issue
+        throw new Error(`Ollama is not responding. Make sure it's running ("ollama serve") and the model "${process.env.OLLAMA_MODEL || 'mistral'}" is pulled. (${retryErr.message})`)
       }
-      throw ollamaErr
     }
   }
 
@@ -313,6 +331,8 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
         timeoutPromise
       ])
 
+      // Claude succeeded — clear any prior degraded state.
+      _lastFallback = null
       return res
     } catch (err) {
       lastError = err
@@ -333,6 +353,12 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
       // Fall back to Groq on rate limit, server error, OR insufficient credits
       if ((status === 429 || status === 529 || status >= 500 || isCreditsError) && groq) {
         console.warn(`[ai-client] Anthropic ${isCreditsError ? 'credits exhausted' : status} — falling back to Groq`)
+        _lastFallback = {
+          reason: isCreditsError ? 'credits' : (status === 429 ? 'rate_limit' : 'error'),
+          provider: 'groq',
+          model: useSmart ? GROQ_MODEL_SMART : GROQ_MODEL_FAST,
+          at: Date.now(),
+        }
         try {
           return await callGroqFallback({ system, messages, max_tokens, smart: useSmart })
         } catch (groqErr) {

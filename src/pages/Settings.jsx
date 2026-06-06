@@ -186,6 +186,18 @@ export default function Settings() {
     setTimeout(() => setToast(null), 4000)
   }
 
+  // Generation model preference (standard = Ollama). Persisted to localStorage;
+  // Workspace reads it on load. Changing it here is the ONLY way to leave Ollama.
+  const [aiModelPref, setAiModelPref] = useState(() => {
+    try { return localStorage.getItem('aria_model') || 'ollama' } catch { return 'ollama' }
+  })
+  function changeModel(m) {
+    setAiModelPref(m)
+    try { localStorage.setItem('aria_model', m) } catch {}
+    const label = m === 'ollama' ? 'Ollama (Local)' : m === 'claude' ? 'Claude (Anthropic)' : 'Groq'
+    showToast(`Generation model set to ${label}. Reload the workspace to apply.`, 'success')
+  }
+
   return (
     <div style={{ background: '#111111', minHeight: '100vh', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', color: '#E5E5E5' }}>
       <style>{`@keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
@@ -491,8 +503,41 @@ export default function Settings() {
             </div>
           </div>
         )}
+        {/* Generation model */}
+        <div style={{ marginTop: 28, background: '#0F0F0F', border: '0.5px solid #1E1E1E', borderRadius: 12, padding: 20 }}>
+          <h3 style={{ color: '#D4D4D4', fontSize: 14, fontWeight: 600, margin: '0 0 4px' }}>Generation model</h3>
+          <p style={{ color: '#737373', fontSize: 12, margin: '0 0 16px', lineHeight: 1.5 }}>
+            Which AI runs generation. <strong style={{ color: '#A3A3A3' }}>Ollama (local) is the standard</strong> and runs free on your machine.
+            Claude and Groq are optional and only used if you select them here.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 460 }}>
+            {[
+              { id: 'ollama', label: 'Ollama (Local)', desc: 'Default. Free, runs locally. No API credits needed.' },
+              { id: 'claude', label: 'Claude (Anthropic)', desc: 'Highest quality. Requires Anthropic API credits.' },
+              { id: 'groq', label: 'Groq', desc: 'Fast cloud Llama. Requires a Groq key.' },
+            ].map(opt => {
+              const selected = aiModelPref === opt.id
+              return (
+                <button key={opt.id} onClick={() => changeModel(opt.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left',
+                    background: selected ? '#15211A' : '#141414',
+                    border: `0.5px solid ${selected ? '#2F6B4F' : '#222'}`,
+                    borderRadius: 8, padding: '10px 14px', cursor: 'pointer', fontFamily: 'inherit',
+                  }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: selected ? '#34D399' : '#3D3D3D', flexShrink: 0 }} />
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 13, color: selected ? '#E5E5E5' : '#A3A3A3', fontWeight: 500 }}>{opt.label}{opt.id === 'ollama' ? '  · standard' : ''}</span>
+                    <span style={{ fontSize: 11, color: '#666' }}>{opt.desc}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         {/* Danger zone — delete account */}
-        <div style={{ marginTop: 40, marginBottom: 60, background: '#161010', border: '0.5px solid #3A1A1A', borderRadius: 12, padding: 20 }}>
+        <div style={{ marginTop: 28, marginBottom: 60, background: '#161010', border: '0.5px solid #3A1A1A', borderRadius: 12, padding: 20 }}>
           <h3 style={{ color: '#F87171', fontSize: 14, fontWeight: 600, margin: '0 0 4px' }}>Danger zone</h3>
           <p style={{ color: '#737373', fontSize: 12, margin: '0 0 16px', lineHeight: 1.5 }}>
             Permanently delete your account, profile, and all associated chats. This cannot be undone.

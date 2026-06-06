@@ -62,21 +62,25 @@ Return this exact JSON structure. Every section must be specific to this domain:
 
 {
   "intakeSummary": {
-    "understood": "1-2 sentence domain-specific summary",
-    "businessProblem": "The exact operational problem",
-    "primaryUsers": ["Role 1", "Role 2"],
-    "secondaryUsers": ["Role 3"],
-    "currentProcess": "Specific manual process being replaced",
-    "mainOutcome": "Primary measurable operational improvement"
+    "understood": "2-3 sentence domain-specific summary of what is being built and why it matters now",
+    "businessProblem": "A full paragraph: the exact operational problem, quantified (time lost, error rate, cost, volume) and who feels the pain",
+    "primaryUsers": ["Role 1 (with context)", "Role 2 (with context)", "Role 3"],
+    "secondaryUsers": ["Role with how they interact", "Another"],
+    "currentProcess": "A detailed description of the current manual process step by step, including the tools used (spreadsheet, email, SharePoint) and where it breaks down",
+    "mainOutcome": "The primary measurable operational improvement, quantified with a target"
   },
   "productBrief": {
-    "objective": "Single clear sentence",
-    "userRoles": [{ "role": "Role name", "access": "What they can do", "estimated": "Approx user count" }],
-    "coreWorkflows": ["Primary workflow", "Secondary workflow or exception"],
-    "businessRules": ["Specific enforceable rule 1", "Rule 2"],
-    "successCriteria": ["Measurable outcome 1", "Outcome 2"],
-    "assumptions": ["Design assumption 1"],
-    "openQuestions": ["Unresolved business decision 1"]
+    "objective": "A clear, specific objective statement (2-3 sentences)",
+    "background": "A paragraph of context: why now, prior attempts, and the trigger for this work",
+    "scope": { "inScope": ["Capability in scope", "..."], "outOfScope": ["Explicitly excluded", "..."] },
+    "userRoles": [{ "role": "Role name", "access": "What they can do in detail", "estimated": "Approx user count" }],
+    "coreWorkflows": ["Primary workflow (described)", "Secondary workflow", "Exception workflow", "..."],
+    "businessRules": ["Specific enforceable rule with the condition and consequence", "Rule 2", "Rule 3", "..."],
+    "successCriteria": ["Measurable outcome with baseline and target", "Outcome 2", "..."],
+    "assumptions": ["Concrete checkable design assumption", "..."],
+    "dependencies": ["Upstream/downstream system, team, or approval this depends on", "..."],
+    "risks": [{ "risk": "Material risk", "impact": "What it affects", "mitigation": "Concrete mitigation", "owner": "Role" }],
+    "openQuestions": ["Unresolved business decision and who must decide", "..."]
   },
   "workflowMap": {
     "trigger": "What initiates the workflow",
@@ -132,12 +136,15 @@ Return this exact JSON structure. Every section must be specific to this domain:
   }
 }
 
-QUALITY CHECKS:
+QUALITY CHECKS (enterprise depth — reject your own shallow output):
 - Every field name, status, role, screen name is domain-specific
 - statusFlow has 3-5 domain-specific states (no Active/Inactive)
 - fields have 5-8 domain-specific entries (no generic Name/Description)
-- workflowMap.steps shows actual business steps
-- automationModel shows real automation opportunities`
+- workflowMap.steps shows 5+ actual business steps with actors, actions, outputs, and SLAs
+- automationModel shows real automation opportunities (triggers, notifications, escalations)
+- intakeSummary.businessProblem and productBrief.background are full paragraphs, not one sentence
+- productBrief includes populated scope (in/out), dependencies, and risks
+- No field is empty or a single generic sentence; quantify wherever possible`
 
 function buildBriefPrompt({ prompt, buildMode, clarificationAnswers, conversationHistory }) {
   return BRIEF_USER_TEMPLATE
@@ -253,7 +260,7 @@ export default async function handler(req, res) {
       : baseUserPrompt
     const rawBrief = await orch.json('generate_brief', {
       tier: 'smart',
-      maxTokens: 7500,
+      maxTokens: 11000,
       system: rolePreface ? `${ENTERPRISE_BRIEF}\n\n${rolePreface}` : ENTERPRISE_BRIEF,
       prompt: userPrompt,
     })

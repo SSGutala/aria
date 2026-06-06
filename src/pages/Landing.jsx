@@ -1,10 +1,23 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 
 const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
 export default function Landing() {
   const navigate = useNavigate()
+  const [session, setSession] = useState(undefined)
+
+  // Track the auth session so "Sign in" can jump straight into the workspace
+  // when the user is already logged in, instead of bouncing through /login.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // If signed in, go directly to the account; otherwise to the login screen.
+  const goToApp = () => navigate(session ? '/workspace' : '/login')
 
   return (
     <div style={{ background: '#111111', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -19,7 +32,7 @@ export default function Landing() {
           backgroundClip: 'text',
         }}>aria.</span>
         <button
-          onClick={() => navigate('/login')}
+          onClick={goToApp}
           style={{
             background: glareGradient,
             color: '#111111',
@@ -74,7 +87,7 @@ export default function Landing() {
           </p>
 
           <button
-            onClick={() => navigate('/login')}
+            onClick={goToApp}
             style={{
               background: glareGradient,
               color: '#111111',
