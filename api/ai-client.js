@@ -8,8 +8,8 @@ import Groq from 'groq-sdk'
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const GEMINI_MODEL_FAST = 'gemini-1.5-flash'         // Gemini primary — fast + generous free tier
-const GEMINI_MODEL_SMART = 'gemini-2.0-flash'        // Gemini for smart calls
+const GEMINI_MODEL_FAST = 'gemini-2.5-flash'   // Gemini primary — latest flash (fast + high quality)
+const GEMINI_MODEL_SMART = 'gemini-2.5-pro'    // Gemini for smart calls (highest quality)
 const GEMINI_MAX_TOKENS = 8000
 
 const ANTHROPIC_MODEL   = 'claude-haiku-4-5'         // Fallback — fast + cheap
@@ -233,7 +233,6 @@ function getMockResponse(system, messages, { max_tokens, smart, modelTier }) {
 async function callGeminiFallback({ system, messages, max_tokens, smart }) {
   if (!gemini) throw new Error('Gemini not configured — set GOOGLE_API_KEY')
   const model = smart ? GEMINI_MODEL_SMART : GEMINI_MODEL_FAST
-  // Disable safety filters so code generation isn't blocked (Gemini SDK expects specific enum names)
   const safetySettings = [
     { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -255,11 +254,18 @@ async function callGeminiFallback({ system, messages, max_tokens, smart }) {
       generationConfig: { maxOutputTokens: Math.min(max_tokens, GEMINI_MAX_TOKENS) },
     })
 
+    // Track token usage from Gemini metadata
+    const meta = res.response.usageMetadata
+    if (meta) {
+      const { trackUsage, setCurrentProvider } = await import('./lib/tokenTracker.js')
+      trackUsage('gemini', { inputTokens: meta.promptTokenCount || 0, outputTokens: meta.candidatesTokenCount || 0 })
+      setCurrentProvider('gemini')
+    }
+
     const text = res.response.text?.() || res.response.text
     console.log(`[ai-client] Used Gemini (${model})`)
     return { content: [{ text }] }
   } catch (err) {
-    // Gemini errors might be slightly different shape; ensure we throw with message
     throw new Error(`Gemini error: ${err?.message || String(err)}`)
   }
 }
@@ -276,6 +282,14 @@ async function callGroqFallback({ system, messages, max_tokens, smart }) {
     max_tokens: Math.min(max_tokens, GROQ_MAX_TOKENS),
     temperature: 0.3,
   })
+
+  // Track token usage from Groq response
+  if (res.usage) {
+    const { trackUsage, setCurrentProvider } = await import('./lib/tokenTracker.js')
+    trackUsage('groq', { inputTokens: res.usage.prompt_tokens || 0, outputTokens: res.usage.completion_tokens || 0 })
+    setCurrentProvider('groq')
+  }
+
   console.warn(`[ai-client] Used Groq fallback (${model})`)
   return { content: [{ text: res.choices[0].message.content }] }
 }
@@ -389,7 +403,12 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
         timeoutPromise
       ])
 
-      // Claude succeeded — clear any prior degraded state.
+      // Claude succeeded — track tokens and clear prior degraded state.
+      if (res?.usage) {
+        const { trackUsage, setCurrentProvider } = await import('./lib/tokenTracker.js')
+        trackUsage('claude', { inputTokens: res.usage.input_tokens || 0, outputTokens: res.usage.output_tokens || 0 })
+        setCurrentProvider('claude')
+      }
       _lastFallback = null
       return res
     } catch (err) {

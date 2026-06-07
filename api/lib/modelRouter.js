@@ -141,6 +141,8 @@ export async function generateWithModel(opts) {
       if (canFailover) {
         markCoolingDown(candidate, err)
         devlog('appgen.failover_switch', { taskType, from: candidate, to: chain[i + 1], reason: 'rate_limit' })
+        // Record switch event so the frontend can show a toast notification
+        import('./tokenTracker.js').then(({ trackSwitch }) => trackSwitch(candidate, chain[i + 1], 'rate_limit')).catch(() => {})
         lastErr = err
         continue
       }

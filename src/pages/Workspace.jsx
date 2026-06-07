@@ -95,10 +95,19 @@ export default function Workspace() {
   const [buildingLabel, setBuildingLabel] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
-  // Ollama is the standard default. Override only via Settings (persisted to localStorage).
+  // Gemini is the primary provider. localStorage preference overrides env default.
   const [currentModel, setCurrentModel] = useState(() => {
-    try { return localStorage.getItem('aria_model') || import.meta.env.VITE_DEFAULT_AI_MODEL || 'groq' }
-    catch { return 'ollama' }
+    try {
+      const stored = localStorage.getItem('aria_model')
+      // Clear stale 'groq'/'ollama' from localStorage if env now says gemini
+      const envDefault = import.meta.env.VITE_DEFAULT_AI_MODEL || 'gemini'
+      if (stored && stored !== envDefault && envDefault === 'gemini' && (stored === 'groq' || stored === 'ollama')) {
+        localStorage.setItem('aria_model', 'gemini')
+        return 'gemini'
+      }
+      return stored || envDefault
+    }
+    catch { return 'gemini' }
   })
   const [lastLatencyMs, setLastLatencyMs] = useState(null)
   const [lastError, setLastError] = useState(null)
@@ -1714,12 +1723,19 @@ export default function Workspace() {
   async function runConversationalResponse(prompt) {
     setIsTyping(true)
     try {
-      const result = await sendChatMessage(prompt, toHistoryMessages(messages), currentModel)
+      const result = await sendChatMessage(prompt, toHistoryMessages(messages), currentModel, convId)
       const response = result?.response || "I'm here — let me know what you'd like to do next."
       addMsg(response)
       await supabase.from('messages').insert({
         conversation_id: convId, role: 'assistant', content: response, message_type: 'text',
       })
+      // If an artifact was edited by Aria, refresh the artifacts list
+      if (result?.editedArtifact) {
+        await loadArtifacts(convId)
+        if (viewingArtifact?.id === result.editedArtifact.id) {
+          setViewingArtifact(result.editedArtifact)
+        }
+      }
     } catch (err) {
       handleApiError(err, { action: 'respond to your message', onRetry: () => runConversationalResponse(prompt) })
     } finally {

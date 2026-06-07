@@ -276,12 +276,12 @@ export async function getModelStatus() {
 
 // Plain conversational response — used when the user sends a question or
 // status message that isn't a build request.
-export async function sendChatMessage(prompt, conversationHistory = [], aiModel = 'claude') {
+export async function sendChatMessage(prompt, conversationHistory = [], aiModel = 'claude', conversationId = null) {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 400))
     return { response: "I'm still here! Let me know what you'd like to do next." }
   }
-  return postJSON('/api/chat', { prompt, conversationHistory }, 'responding', {}, aiModel)
+  return postJSON('/api/chat', { prompt, conversationHistory, conversationId }, 'responding', {}, aiModel)
 }
 
 // Phase 2 (PM): select PM package (no pmPackage yet) or get questions (with pmPackage)
@@ -732,5 +732,37 @@ export async function aiEditArtifact(artifactId, instruction, aiModel = 'claude'
     { artifactId, instruction },
     'applying AI edit',
     { timeoutMs: 90_000 },
+    aiModel)
+}
+
+// ─── Download artifact ─────────────────────────────────────────────────────
+export async function downloadArtifact(artifactId, format = 'md') {
+  try {
+    const res = await fetch(`${API_URL}/api/artifacts/export`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ artifactId, format }),
+    })
+    if (!res.ok) throw new Error('Download failed')
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `artifact.${format}`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+  } catch (err) {
+    throw new Error('Failed to download: ' + err.message)
+  }
+}
+
+// ─── Convert app code to different language ────────────────────────────────
+export async function convertAppLanguage(projectId, targetLanguage, aiModel = 'claude') {
+  return postJSON('/api/convert-app-language',
+    { projectId, targetLanguage },
+    'converting app code',
+    { timeoutMs: 120_000 },
     aiModel)
 }

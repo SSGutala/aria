@@ -207,6 +207,22 @@ app.get('/api/artifacts/:id/download/:format', async (req, res) => {
   return res.redirect(artifact.file_urls[req.params.format])
 })
 
+// Live provider status + token usage (polled by the frontend indicator)
+app.get('/api/provider-status', async (req, res) => {
+  const { default: h } = await import('./api/provider-status.js')
+  return h(req, res)
+})
+
+// New endpoints: language conversion + artifact export
+app.post('/api/convert-app-language', async (req, res) => {
+  const { default: h } = await import('./api/convert-app-language.js')
+  return h(req, res)
+})
+app.post('/api/artifacts/export', async (req, res) => {
+  const { default: h } = await import('./api/artifacts-export.js')
+  return h(req, res)
+})
+
 app.post('/api/submit', async (req, res) => {
   const handler = await loadHandler('submit')
   return handler(req, res)

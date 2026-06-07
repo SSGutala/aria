@@ -80,6 +80,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required fields: conversationId, prompt' })
   }
 
+  // chosenStyle comes from context (passed by frontend after style carousel selection)
+  const chosenStyle = context?.chosenStyle
+
   // Map the selected model → a concrete per-stage providerConfig so the engine
   // actually runs on the chosen provider (defaults to Groq via env otherwise).
   const effectiveProviderConfig = resolveProviderConfig(providerConfig, aiModel)
@@ -134,6 +137,7 @@ export default async function handler(req, res) {
       const result = await runAppPipeline({
         prompt,
         context: generationContext,
+        chosenStyle,
         providerConfig: effectiveProviderConfig,
         onProgress: (evt) => write({ type: 'progress', ...evt }),
       })
@@ -152,6 +156,7 @@ export default async function handler(req, res) {
     const result = await runAppPipeline({
       prompt,
       context: generationContext,
+      chosenStyle,
       providerConfig: effectiveProviderConfig,
       onProgress: (evt) => devlog('generate_app.progress', { conversationId, stage: evt.stage, message: evt.message }),
     })

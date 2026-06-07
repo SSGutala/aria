@@ -127,17 +127,33 @@ Return ONE JSON object, no markdown:
 // Shared, opinionated design system injected into every codegen prompt so
 // generated apps look intentionally designed (Linear/Vercel/Stripe-grade),
 // not like default browser HTML.
-const DESIGN_SYSTEM = `DESIGN BAR (NON-NEGOTIABLE — the app must look intentionally designed for ITS OWN domain, never like raw HTML, and never like a generic template):
-- INFER THE DOMAIN FIRST: a focus timer, a CRM, an approval workflow, a finance tracker, and an IT ticket queue each deserve a DIFFERENT layout, palette, and tone. Choose styling that fits THIS app's purpose, user, and emotional tone — do not reach for the same dark-blue dashboard or the same indigo gradient every time.
-- LAYOUT: full-height app (min-h-screen). Pick the layout the product actually needs — a centered single-purpose panel for focused tools (timer/calculator), a max-w container for forms, a header + cards/table for trackers and dashboards, a sidebar only when there's real navigation. Don't bolt enterprise nav onto a simple app. Always responsive.
-- BACKGROUND & PALETTE: choose ONE cohesive palette that matches the mood (calm/dark for focus tools, clean/light for admin & healthcare, confident neutrals for finance, operational slate for queues). Avoid plain unstyled white; avoid random multi-color gradients. One accent color, used deliberately for the primary action and key highlights.
-- SURFACES: group content into cards/panels with consistent radius (rounded-xl/2xl), padding (p-5/p-6), a subtle border, and a shadow appropriate to the palette. Keep radius/spacing/shadow consistent across the whole app.
-- TYPOGRAPHY: clear hierarchy — a real page title, bold section headers, readable body, muted secondary text. For large numeric displays (timers, totals, KPIs) use big tabular-nums.
-- BUTTONS & CONTROLS: NEVER unstyled. Every button, input, select, tab, and badge gets intentional Tailwind styling. Primary action = filled accent and visually dominant; secondary = quieter (subtle bg or outline). Always include hover, active, disabled, and focus-visible states with transitions.
-- STATE AS VISUALS: reflect functional state visually — active tab highlighted, running = progress/glow, pending = amber badge, approved = green, overdue = red, selected = accent. Provide empty, loading, success, and error states.
-- POLISH (restrained, not overdesigned): consistent spacing, tasteful hover/transitions, useful microinteractions. Avoid meaningless glassmorphism, excessive animation, and decorative visuals that hurt usability. Readability and usability win.
-- ICONS/IMAGERY: emojis and colored divs only (NO image URLs, NO icon libraries), used tastefully as accents.
-- TAILWIND CLASSES MUST BE REAL (CRITICAL — invented classes render as NOTHING, leaving raw unstyled HTML): use ONLY classes that exist in default Tailwind. For colors use ONLY the built-in palettes — slate, gray, zinc, neutral, stone, red, orange, amber, yellow, lime, green, emerald, teal, cyan, sky, blue, indigo, violet, purple, fuchsia, pink, rose — each with numeric shades 50–950 (e.g. bg-slate-900, text-emerald-400, border-zinc-700). NEVER invent semantic color names like bg-deep-charcoal, bg-dark-slate-blue-500, text-bright-green-500, accent-ocean — those are not Tailwind classes and produce ZERO styling. If you want a custom hex color, use Tailwind's arbitrary-value syntax with square brackets instead, e.g. bg-[#0f172a], text-[#34d399], border-[#1e293b]. When in doubt, pick the nearest real palette class. Every className you write must be either a documented stock Tailwind utility or an explicit [arbitrary-value].`
+const DESIGN_SYSTEM = `DESIGN BAR (LOVABLE QUALITY — the app must be insanely beautiful and polished, matching Google AI Studio / Lovable standards):
+DOMAIN-SPECIFIC DESIGN (CRITICAL):
+- a focus timer, a CRM, an approval workflow, a finance tracker, and an IT ticket queue each deserve RADICALLY DIFFERENT layouts, palettes, and interactions
+- Study what each domain's best apps look like — Linear for task mgmt, Figma for design, Stripe for payments, Apple for consumer focus
+- DO NOT use the same dark dashboard for everything — that's corporate boredom
+- CHOOSE the right visual architecture PER APP TYPE:
+  * Focus tools (timer, notes, calculator): centered, spacious, minimal distractions. Large clear displays. Calming palette (blues, greens, warm neutrals)
+  * Dashboards (finance, analytics, admin): grid of stat cards/widgets, summary cards at top, tables below. Command-center feel. Confident neutrals (slate, stone) + sharp accent
+  * Forms & workflows (approval, intake, checkout): wizard/step layout or single focused form. Clear progress. Reduce cognitive load
+  * Creatives (design, music, drawing): canvas-focused, tools/palettes in sidebars. Dark theme. Lots of breathing room around the canvas
+  * Social/Community: cards, feeds, profiles, reactions. Energetic palette. Microinteractions matter
+
+LOVABLE PRODUCTION QUALITY:
+- SURFACES: Every card/panel is a hero — rounded-2xl, real shadow (shadow-lg or shadow-xl), subtle border (border-white/10, border-black/5, or border-slate-200), generous padding (p-6 or p-8). Surfaces have DEPTH
+- TYPOGRAPHY: hero headline (text-3xl/text-4xl, font-bold), clear subheadings (text-lg, font-semibold), readable body (text-base, leading-relaxed), muted metadata (text-xs/text-sm, text-slate-500). Hierarchy is INSTANT VISUAL SCANNING
+- BUTTONS & ACTIONS:
+  * Primary CTA: filled with accent, bold text, shadow, hover scale/glow effect, focus ring. VERY VISUALLY DOMINANT. NEVER subtle
+  * Secondary actions: outlined or soft bg, subtle hover. QUIET
+  * State indicators: hover/active/disabled always visible with transitions (transition-all duration-200)
+- PALETTE: Pick ONE dominant palette that feels premium:
+  * Dark: slate-900 or zinc-950 backgrounds, with slate-50/white text, ONE bright accent (emerald, cyan, indigo, violet, amber depending on mood)
+  * Light: white/slate-50 backgrounds, slate-900 text, ONE accent color chosen for EMOTIONAL FIT, not random
+  * NEVER: neon multi-color gradients, random emoji abuse, unstyled HTML, plain default inputs, generic blue-everywhere
+- STATE VISUAL CLARITY: Is it loading? → skeleton or spinne. Is it empty? → empathetic empty state with guidance. Is it success? → green + confirmation. Is it error? → red + actionable message. Is something running? → progress bar + elapsed time
+- RESPONSIVE & MOBILE: min-h-screen for tall apps, responsive grid (grid-cols-1 md:grid-cols-2 lg:grid-cols-3), touch-friendly tap targets (min h-10 w-10), stacked on mobile
+- ANIMATION & MOTION: transitions on all color/scale/opacity changes (transition-all duration-200), no needless keyframes, motion respects prefers-reduced-motion if feasible
+- TAILWIND REAL CLASSES ONLY (ABSOLUTE): use ONLY real Tailwind utilities or explicit [arbitrary-values]. Built-in palettes: slate gray zinc neutral stone red orange amber yellow lime green emerald teal cyan sky blue indigo violet purple fuchsia pink rose. Each has 50–950. NEVER invent: bg-deep-charcoal, text-bright-green-500, accent-ocean — those produce ZERO styling. For custom hex: bg-[#0f172a] or text-[#34d399]`
 
 const JSX_CORRECTNESS = `JSX CORRECTNESS (these prevent silent rendering bugs that DON'T throw errors):
 - Do method calls INSIDE the braces, never after them. WRONG: {seconds}.toString().padStart(2,'0') — everything after the } becomes literal on-screen text. RIGHT: {String(seconds).padStart(2, '0')}.
@@ -145,7 +161,9 @@ const JSX_CORRECTNESS = `JSX CORRECTNESS (these prevent silent rendering bugs th
 - Every { in JSX must contain a complete expression and close with its matching } before any literal text. Re-read each interpolation and confirm no stray ".toString()", ".padStart()", ".toFixed()" sits OUTSIDE the braces.
 - Clean up intervals/timeouts in useEffect (return () => clearInterval(id)). Never call setState during render.`
 
-const SINGLE_FILE_CODEGEN_SYSTEM = `You are a senior React engineer AND product designer writing ONE self-contained file: /App.js. The ENTIRE app lives in this single file, and it must be both fully functional AND genuinely beautiful.
+const SINGLE_FILE_CODEGEN_SYSTEM = `You are a WORLD-CLASS React engineer AND product designer (Lovable / Google AI Studio grade) writing ONE self-contained file: /App.js. The ENTIRE app lives in this single file, and it must be FEATURE-COMPLETE, fully functional, AND insanely beautiful.
+
+This is NOT a prototype — it is a SHIPPING-QUALITY web app. Every line of code matters. Every pixel matters.
 
 Hard rules:
 - React 18 + hooks. Define EVERY component inline in this one file. Import ONLY from "react" — NO local/relative imports whatsoever (no "./..."), so there is nothing that can break.
@@ -316,7 +334,7 @@ Output ONLY the COMPLETE new file contents (valid JS/JSX). No markdown, no backt
  *
  * @returns { files, brief, polishedPaths, errors }
  */
-export async function runPolishPass({ files, plan = {}, fileList = [], providerConfig = {}, lite = false, emit = () => {} } = {}) {
+export async function runPolishPass({ files, plan = {}, fileList = [], providerConfig = {}, styleDirective = '', lite = false, emit = () => {} } = {}) {
   const out = { ...files }
   const errors = []
   const SCAFFOLD = new Set(['/index.js', '/public/index.html'])
@@ -330,8 +348,8 @@ export async function runPolishPass({ files, plan = {}, fileList = [], providerC
   try {
     brief = await generateWithModel({
       taskType: 'polish', system: CREATIVE_DIRECTOR_SYSTEM,
-      prompt: 'Inspect this app and produce its creative brief.',
-      context: { appPlan: { appName: plan?.appName, complexity: plan?.complexity, summary: plan?.summary, features: plan?.features }, currentFiles: digest },
+      prompt: `Inspect this app and produce its creative brief.${styleDirective ? ' The user has already chosen a design direction — PRESERVE and refine it, do not contradict it.' : ''}`,
+      context: { appPlan: { appName: plan?.appName, complexity: plan?.complexity, summary: plan?.summary, features: plan?.features }, currentFiles: digest, userChosenStyle: styleDirective || null },
       expectedOutputFormat: 'json', maxTokens: 1200, providerConfig,
     })
   } catch (err) {
@@ -681,7 +699,7 @@ function fuzzyLineReplace(content, search, replace) {
  * @param {object} [opts.providerConfig] per-stage provider overrides
  * @param {(evt:object)=>void} [opts.onProgress] progress callback (real, not faked)
  */
-export async function runAppPipeline({ prompt, context, providerConfig = {}, onProgress } = {}) {
+export async function runAppPipeline({ prompt, context, chosenStyle, providerConfig = {}, onProgress } = {}) {
   const progress = []
   const startedAt = Date.now()
   const emit = (stage, message, extra = {}) => {
@@ -710,7 +728,7 @@ export async function runAppPipeline({ prompt, context, providerConfig = {}, onP
   // Chosen design direction from the style carousel (optional). When present it
   // becomes a HARD design constraint threaded into every codegen prompt so the
   // built app matches the preview the user picked, plus any opinion they typed.
-  const cs = context?.chosenStyle
+  const cs = chosenStyle || context?.chosenStyle
   const styleDirective = cs
     ? `\n\nCHOSEN DESIGN DIRECTION (the user picked this from a preview — MATCH IT FAITHFULLY): "${cs.label || cs.id}". ${cs.vibe || ''}${cs.direction ? ` ${cs.direction}` : ''}${context?.styleOpinion ? `\n\nUSER'S DESIGN OPINION / TWEAKS (apply these on top of the chosen direction): ${context.styleOpinion}` : ''}`
     : (context?.styleOpinion ? `\n\nUSER'S DESIGN NOTES (apply these): ${context.styleOpinion}` : '')
@@ -851,7 +869,7 @@ export default function App() {
   const polishOn = String(process.env.APP_POLISH_PASS || 'on').toLowerCase() !== 'off'
   if (polishOn) {
     try {
-      const polished = await runPolishPass({ files, plan, fileList, providerConfig, lite, emit })
+      const polished = await runPolishPass({ files, plan, fileList, providerConfig, styleDirective, lite, emit })
       creativeBrief = polished.brief
       Object.assign(files, polished.files)
       stubMissingImports(files)

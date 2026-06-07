@@ -8,12 +8,13 @@ import AppProjectViewer from './AppProjectViewer'
  * a generation-errors / auto-fix indicator) and a RIGHT preview area with Preview /
  * Code tabs. Additive — does not replace any existing Aria UI.
  *
- * Props: { project: { title, summary, files, entry, fileTree, generation_errors },
- *          onEdit?(request), editing?: bool, onRuntimeError?, autoFixing?: bool }
+ * Props: { project: { title, summary, files, entry, fileTree, generation_errors, language },
+ *          onEdit?(request), editing?: bool, onRuntimeError?, autoFixing?: bool, onLanguageChange?(lang) }
  */
-export default function AppProjectPanel({ project, onEdit, editing = false, onRuntimeError, autoFixing = false, editProgress = { percent: 0, message: '' }, editLog = [], editElapsedMs = 0 }) {
+export default function AppProjectPanel({ project, onEdit, onLanguageChange, editing = false, onRuntimeError, autoFixing = false, editProgress = { percent: 0, message: '' }, editLog = [], editElapsedMs = 0 }) {
   const [tab, setTab] = useState('preview')
   const [editText, setEditText] = useState('')
+  const [converting, setConverting] = useState(false)
   const logRef = useRef(null)
   // Keep the narration scrolled to the newest line.
   useEffect(() => {
@@ -151,6 +152,29 @@ export default function AppProjectPanel({ project, onEdit, editing = false, onRu
             {tabBtn('preview', '▶ Preview')}
             {tabBtn('code', '⬡ Code')}
           </div>
+          {tab === 'code' && (
+            <select
+              value={project.language || 'js'}
+              onChange={(e) => onLanguageChange?.(e.target.value)}
+              disabled={converting}
+              style={{
+                background: '#0A0A0A',
+                color: '#E5E5E5',
+                border: '0.5px solid #2A2A2A',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+                fontFamily: 'inherit',
+                cursor: converting ? 'default' : 'pointer',
+                opacity: converting ? 0.5 : 1,
+              }}
+            >
+              <option value="js">JavaScript/React</option>
+              <option value="python">Python</option>
+              <option value="java">Java</option>
+              <option value="html">HTML/CSS</option>
+            </select>
+          )}
           <div style={{ flex: 1, minWidth: 0, textAlign: 'right', fontSize: 12, color: '#A3A3A3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {project.title}
           </div>
