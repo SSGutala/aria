@@ -1,15 +1,21 @@
 /**
- * Shared AI client — Anthropic (Claude) is primary, Groq is rate-limit fallback only.
- * Both return the same shape: { content: [{ text: string }] }
+ * Shared AI client — Multi-provider with smart failover.
+ * Primary: Gemini (generous free credits). Fallbacks: Groq, Claude, Ollama.
+ * All return the same shape: { content: [{ text: string }] }
  */
 import Groq from 'groq-sdk'
 import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const ANTHROPIC_MODEL   = 'claude-haiku-4-5'           // primary — fast + cheap for most tasks
-const ANTHROPIC_SMART   = 'claude-opus-4-7'            // used when smart=true
+const GEMINI_MODEL_FAST = 'gemini-1.5-flash'         // Gemini primary — fast + generous free tier
+const GEMINI_MODEL_SMART = 'gemini-2.0-flash'        // Gemini for smart calls
+const GEMINI_MAX_TOKENS = 8000
 
-const GROQ_MODEL_FAST   = 'llama-3.1-8b-instant'      // Groq fallback on Anthropic 429/5xx
-const GROQ_MODEL_SMART  = 'llama-3.3-70b-versatile'   // Groq fallback for smart calls
+const ANTHROPIC_MODEL   = 'claude-haiku-4-5'         // Fallback — fast + cheap
+const ANTHROPIC_SMART   = 'claude-opus-4-7'          // Fallback for smart calls
+
+const GROQ_MODEL_FAST   = 'llama-3.1-8b-instant'     // Fallback on primary exhaustion
+const GROQ_MODEL_SMART  = 'llama-3.3-70b-versatile'  // Fallback for smart calls
 const GROQ_MAX_TOKENS   = 8000
 
 // Tracks the last time an INTENDED Claude call was forced to degrade to Groq
@@ -28,6 +34,7 @@ export function getModelStatus() {
     : { degraded: false }
 }
 
+const gemini = process.env.GOOGLE_API_KEY ? new GoogleGenerativeAI(process.env.GOOGLE_API_KEY) : null
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 const groq = process.env.GROQ_API_KEY ? new Groq({ apiKey: process.env.GROQ_API_KEY }) : null
 
@@ -222,6 +229,39 @@ function getMockResponse(system, messages, { max_tokens, smart, modelTier }) {
   }
 }
 
+async function callGeminiFallback({ system, messages, max_tokens, smart }) {
+  if (!gemini) throw new Error('Gemini not configured — set GOOGLE_API_KEY')
+  const model = smart ? GEMINI_MODEL_SMART : GEMINI_MODEL_FAST
+  const safetySettings = [
+    { category: 'HARM_CATEGORY_UNSPECIFIED', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+  ]
+
+  try {
+    const genModel = gemini.getGenerativeModel({ model, safetySettings })
+    let fullPrompt = ''
+    if (system) fullPrompt += system + '\n\n'
+    for (const m of messages) {
+      fullPrompt += `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}\n`
+    }
+
+    const res = await genModel.generateContent({
+      contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
+      generationConfig: { maxOutputTokens: Math.min(max_tokens, GEMINI_MAX_TOKENS) },
+    })
+
+    const text = res.response.text?.() || res.response.text
+    console.log(`[ai-client] Used Gemini (${model})`)
+    return { content: [{ text }] }
+  } catch (err) {
+    // Gemini errors might be slightly different shape; ensure we throw with message
+    throw new Error(`Gemini error: ${err?.message || String(err)}`)
+  }
+}
+
 async function callGroqFallback({ system, messages, max_tokens, smart }) {
   if (!groq) throw new Error('Groq not configured — set GROQ_API_KEY for rate-limit fallback')
   const model = smart ? GROQ_MODEL_SMART : GROQ_MODEL_FAST
@@ -292,6 +332,9 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
   }
 
   // Route to the selected AI model
+  if (resolvedModel === 'gemini' && gemini) {
+    return callGeminiFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
+  }
   if (resolvedModel === 'groq' && groq) {
     return callGroqFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
   }
@@ -350,19 +393,51 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
         continue
       }
 
-      // Fall back to Groq on rate limit, server error, OR insufficient credits
-      if ((status === 429 || status === 529 || status >= 500 || isCreditsError) && groq) {
-        console.warn(`[ai-client] Anthropic ${isCreditsError ? 'credits exhausted' : status} — falling back to Groq`)
-        _lastFallback = {
-          reason: isCreditsError ? 'credits' : (status === 429 ? 'rate_limit' : 'error'),
-          provider: 'groq',
-          model: useSmart ? GROQ_MODEL_SMART : GROQ_MODEL_FAST,
-          at: Date.now(),
-        }
-        try {
-          return await callGroqFallback({ system, messages, max_tokens, smart: useSmart })
-        } catch (groqErr) {
-          throw new Error(`Both Anthropic and Groq failed. Anthropic: ${lastError.message}. Groq: ${groqErr.message}`)
+      // Fall back through the chain: Gemini → Groq → error
+      if ((status === 429 || status === 529 || status >= 500 || isCreditsError)) {
+        console.warn(`[ai-client] Anthropic ${isCreditsError ? 'credits exhausted' : status} — trying Gemini`)
+        if (gemini) {
+          try {
+            _lastFallback = {
+              reason: isCreditsError ? 'credits' : (status === 429 ? 'rate_limit' : 'error'),
+              provider: 'gemini',
+              model: useSmart ? GEMINI_MODEL_SMART : GEMINI_MODEL_FAST,
+              at: Date.now(),
+            }
+            return await callGeminiFallback({ system, messages, max_tokens, smart: useSmart })
+          } catch (geminiErr) {
+            console.warn(`[ai-client] Gemini failed (${geminiErr.message}) — trying Groq`)
+            if (groq) {
+              try {
+                _lastFallback = {
+                  reason: isCreditsError ? 'credits' : (status === 429 ? 'rate_limit' : 'error'),
+                  provider: 'groq',
+                  model: useSmart ? GROQ_MODEL_SMART : GROQ_MODEL_FAST,
+                  at: Date.now(),
+                }
+                return await callGroqFallback({ system, messages, max_tokens, smart: useSmart })
+              } catch (groqErr) {
+                throw new Error(`All providers failed. Anthropic: ${lastError.message}. Gemini: ${geminiErr.message}. Groq: ${groqErr.message}`)
+              }
+            } else {
+              throw new Error(`Anthropic and Gemini failed, Groq not configured. Anthropic: ${lastError.message}. Gemini: ${geminiErr.message}`)
+            }
+          }
+        } else if (groq) {
+          console.warn(`[ai-client] Gemini not configured — trying Groq`)
+          try {
+            _lastFallback = {
+              reason: isCreditsError ? 'credits' : (status === 429 ? 'rate_limit' : 'error'),
+              provider: 'groq',
+              model: useSmart ? GROQ_MODEL_SMART : GROQ_MODEL_FAST,
+              at: Date.now(),
+            }
+            return await callGroqFallback({ system, messages, max_tokens, smart: useSmart })
+          } catch (groqErr) {
+            throw new Error(`Both Anthropic and Groq failed. Anthropic: ${lastError.message}. Groq: ${groqErr.message}`)
+          }
+        } else {
+          throw new Error(`All fallback providers exhausted/unavailable: Anthropic ${status}, Gemini not configured, Groq not configured`)
         }
       }
 
@@ -374,4 +449,4 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
   throw lastError || new Error('Failed to get AI response after retries')
 }
 
-export { ANTHROPIC_MODEL, ANTHROPIC_SMART, GROQ_MODEL_FAST, GROQ_MODEL_SMART }
+export { GEMINI_MODEL_FAST, GEMINI_MODEL_SMART, ANTHROPIC_MODEL, ANTHROPIC_SMART, GROQ_MODEL_FAST, GROQ_MODEL_SMART }

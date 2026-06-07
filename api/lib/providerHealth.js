@@ -2,12 +2,12 @@
  * Provider health + automatic failover for the app-generation engine.
  *
  * Policy (set by the user):
- *   - Prefer the cloud providers Groq and Claude. Groq is the default.
+ *   - Primary: Gemini (generous free tier). Fallbacks: Groq, Claude, Ollama.
  *   - When the active cloud provider is rate-limited / out of quota, switch to
- *     the OTHER cloud provider automatically.
- *   - When BOTH cloud providers are exhausted, fall back to local Ollama for the
- *     duration — and make it a PRIORITY to switch back to Groq or Claude the
- *     moment whichever one resets first becomes available again.
+ *     the next in the chain automatically.
+ *   - When ALL cloud providers are exhausted, fall back to local Ollama for the
+ *     duration — and make it a PRIORITY to switch back to the first available
+ *     cloud provider the moment it resets.
  *
  * How the "timer" works: when a provider returns a rate-limit / quota error, we
  * record a cooldown-until timestamp (parsed from the provider's own "try again
@@ -22,7 +22,7 @@
 
 import { devlog, devlogError } from './devlog.js'
 
-export const CLOUD_PROVIDERS = ['groq', 'claude']
+export const CLOUD_PROVIDERS = ['gemini', 'groq', 'claude']
 
 // provider -> { until: epochMs, reason, timer }
 const cooldowns = Object.create(null)
@@ -117,18 +117,24 @@ export function msUntilAvailable(provider) {
  * Build the ordered list of providers to try for one generation call.
  *
  *   - If the caller explicitly wants Ollama, honor it (local, no quota).
- *   - Otherwise prefer the requested cloud provider, then the other cloud one,
- *     skipping any that are currently cooling down.
- *   - Ollama is appended as the final safety net. If BOTH cloud providers are
+ *   - Otherwise prefer the requested cloud provider, falling back through the chain:
+ *     Gemini (primary) → Groq → Claude, skipping any that are currently cooling down.
+ *   - Ollama is appended as the final safety net. If ALL cloud providers are
  *     cooling down, Ollama is the only candidate — until a cloud cooldown
  *     expires, at which point that provider re-appears here automatically.
  */
 export function buildFailoverChain(preferred) {
   if (preferred === 'ollama') return ['ollama']
-  const ordered = preferred === 'claude' ? ['claude', 'groq'] : ['groq', 'claude']
+  // Determine the base order (default is Gemini first)
+  let ordered = ['gemini', 'groq', 'claude']
+  if (preferred === 'groq') {
+    ordered = ['groq', 'gemini', 'claude']
+  } else if (preferred === 'claude') {
+    ordered = ['claude', 'gemini', 'groq']
+  }
   const available = ordered.filter((p) => !isCoolingDown(p))
   if (available.length) return [...available, 'ollama']
-  return ['ollama'] // both cloud providers exhausted — bridge on local Ollama
+  return ['ollama'] // all cloud providers exhausted — bridge on local Ollama
 }
 
 /** Snapshot for telemetry / UI (e.g. GET /api/provider-health). */
@@ -146,7 +152,7 @@ export function getProviderHealth() {
       resumesAt: cooling ? new Date(c.until).toISOString() : null,
     }
   }
-  // The provider the next call would actually use.
-  const active = buildFailoverChain('groq')[0]
+  // The provider the next call would actually use (default to gemini-first chain).
+  const active = buildFailoverChain('gemini')[0]
   return { active, providers }
 }

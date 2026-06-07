@@ -15,6 +15,7 @@
     "@anthropic-ai/sdk": "^0.91.1",
     "@azure/msal-node": "^5.1.5",
     "@codesandbox/sandpack-react": "^2.20.0",
+    "@google/generative-ai": "^0.24.1",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@supabase/supabase-js": "^2.39.3",
     "concurrently": "^9.2.1",

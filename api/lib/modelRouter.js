@@ -27,16 +27,16 @@ import {
 } from './providerHealth.js'
 import { devlog } from './devlog.js'
 
-export const PROVIDERS = ['claude', 'groq', 'ollama']
+export const PROVIDERS = ['gemini', 'claude', 'groq', 'ollama']
 
 // Per-stage default provider + quality tier. The default provider comes from
-// APP_ENGINE_PROVIDER (env), defaulting to 'groq' — free, fast, and powered by
-// llama-3.3-70b, which produces real (not toy) apps. Users can override any
-// stage through providerConfig (e.g. flip to 'claude' in Settings for max
-// quality, or 'ollama' for a fully-local $0 run).
+// APP_ENGINE_PROVIDER (env), defaulting to 'gemini' — free, fast, and generous
+// free tier (1M tokens/min for Flash). Fallbacks: Groq (llama-3.3-70b) → Claude.
+// Users can override any stage through providerConfig (e.g. flip to 'claude' in
+// Settings for max quality, or 'ollama' for a fully-local $0 run).
 //   tier: 'fast' | 'balanced' | 'smart' (maps to model strength in ai-client;
 //   ignored by Ollama, which uses OLLAMA_MODEL).
-const ENGINE_PROVIDER = process.env.APP_ENGINE_PROVIDER || 'groq'
+const ENGINE_PROVIDER = process.env.APP_ENGINE_PROVIDER || 'gemini'
 
 export const STAGE_DEFAULTS = {
   plan:      { provider: ENGINE_PROVIDER, tier: 'smart' },
