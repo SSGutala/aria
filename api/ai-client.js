@@ -325,17 +325,20 @@ async function callOllamaFallback({ system, messages, max_tokens }) {
  * @param {number}  [opts.timeout=30000]  — timeout in ms
  */
 export async function createMessage({ system, messages, max_tokens = 4000, smart = false, modelTier, timeout = 30000, aiModel }) {
-  // Resolve which model to use — explicit param > env default > ollama (standard).
-  const resolvedModel = aiModel || process.env.DEFAULT_AI_MODEL || 'ollama'
+  // Resolve which model to use — explicit param > env default > gemini (primary free tier).
+  const resolvedModel = aiModel || process.env.DEFAULT_AI_MODEL || 'gemini'
 
   // Dev mode: return mock responses without hitting the API
   if (process.env.MOCK_RESPONSES === 'true') {
     return getMockResponse(system, messages, { max_tokens, smart, modelTier })
   }
 
-  // Route to the selected AI model
+  // Route to the explicitly selected AI model (if not Gemini-first default flow)
   if (resolvedModel === 'groq' && groq) {
     return callGroqFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
+  }
+  if (resolvedModel === 'gemini' && gemini) {
+    return callGeminiFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
   }
   if (resolvedModel === 'ollama') {
     // Pure Ollama — NO Groq/Claude fallback (per user: Ollama is the standard, always).

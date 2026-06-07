@@ -31,9 +31,10 @@ export const PROVIDERS = ['gemini', 'claude', 'groq', 'ollama']
 
 // Per-stage default provider + quality tier. The default provider comes from
 // APP_ENGINE_PROVIDER (env), defaulting to 'gemini' — free, fast, and generous
-// free tier (1M tokens/min for Flash). Fallbacks: Groq (llama-3.3-70b) → Claude.
-// Users can override any stage through providerConfig (e.g. flip to 'claude' in
-// Settings for max quality, or 'ollama' for a fully-local $0 run).
+// free tier (1M tokens/min for Flash). Automatic fallback chain via ai-client:
+// Gemini → Claude → Groq. Users can override any stage through providerConfig
+// (e.g. flip to 'groq' in Settings for rate-limit tolerance, or 'ollama' for
+// a fully-local $0 run).
 //   tier: 'fast' | 'balanced' | 'smart' (maps to model strength in ai-client;
 //   ignored by Ollama, which uses OLLAMA_MODEL).
 const ENGINE_PROVIDER = process.env.APP_ENGINE_PROVIDER || 'gemini'
