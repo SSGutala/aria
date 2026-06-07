@@ -134,8 +134,12 @@ app.post('/api/template-upload', upload.single('template'), async (req, res) => 
 
 // Generate 3 distinct design-style previews for the app-build carousel.
 app.post('/api/generate-style-previews', async (req, res) => {
-  const { default: h } = await import('./api/generate-style-previews.js')
-  return h(req, res)
+  try {
+    const { default: h } = await import('./api/generate-style-previews.js')
+    return h(req, res)
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to load style preview handler: ' + (err?.message || String(err)) })
+  }
 })
 
 app.post('/api/role-brief', async (req, res) => {
