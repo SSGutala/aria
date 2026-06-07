@@ -1,6 +1,7 @@
 /**
- * Shared AI client — Multi-provider with smart failover.
- * Primary: Gemini (generous free credits). Fallbacks: Groq, Claude, Ollama.
+ * Shared AI client — Multi-provider with smart failover (Gemini-first).
+ * Primary: Gemini (1M tokens/min free tier, generous for dev).
+ * Fallbacks: Claude → Groq → Ollama.
  * All return the same shape: { content: [{ text: string }] }
  */
 import Groq from 'groq-sdk'
@@ -310,7 +311,7 @@ async function callOllamaFallback({ system, messages, max_tokens }) {
 }
 
 /**
- * Unified createMessage() — Anthropic primary, Groq fallback on 429/overload.
+ * Unified createMessage() — Gemini primary (1M tokens/min free), then Claude, then Groq.
  * Includes timeout (30s), retry logic, and graceful fallback.
  * When MOCK_RESPONSES=true, returns realistic mock data (for dev/testing without API credits).
  * Returns { content: [{ text: string }] }
@@ -333,9 +334,6 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
   }
 
   // Route to the selected AI model
-  if (resolvedModel === 'gemini' && gemini) {
-    return callGeminiFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
-  }
   if (resolvedModel === 'groq' && groq) {
     return callGroqFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
   }
@@ -355,10 +353,23 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
     }
   }
 
-  // Default to Anthropic/Claude
+  // Default: Try Gemini first (free, generous tier), then fall back to Claude
   const useSmart = smart || modelTier === 'smart'
-  const model = useSmart ? ANTHROPIC_SMART : ANTHROPIC_MODEL
 
+  // Step 1: Try Gemini (primary) if configured
+  if (gemini) {
+    try {
+      console.log(`[ai-client] Trying Gemini (${useSmart ? GEMINI_MODEL_SMART : GEMINI_MODEL_FAST}) as primary provider`)
+      const result = await callGeminiFallback({ system, messages, max_tokens, smart: useSmart })
+      _lastFallback = null
+      return result
+    } catch (geminiErr) {
+      console.warn(`[ai-client] Gemini failed (${geminiErr.message}) — falling back to Claude`)
+    }
+  }
+
+  // Step 2: Fall back to Claude
+  const model = useSmart ? ANTHROPIC_SMART : ANTHROPIC_MODEL
   const MAX_RETRIES = 2
   let lastError = null
 
@@ -394,9 +405,9 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
         continue
       }
 
-      // Fall back through the chain: Gemini → Groq → error
+      // Fall back through the chain: Gemini (primary) → Groq → error
       if ((status === 429 || status === 529 || status >= 500 || isCreditsError)) {
-        console.warn(`[ai-client] Anthropic ${isCreditsError ? 'credits exhausted' : status} — trying Gemini`)
+        console.warn(`[ai-client] Anthropic ${isCreditsError ? 'credits exhausted' : status} — trying Gemini (primary)`)
         if (gemini) {
           try {
             _lastFallback = {
@@ -407,7 +418,7 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
             }
             return await callGeminiFallback({ system, messages, max_tokens, smart: useSmart })
           } catch (geminiErr) {
-            console.warn(`[ai-client] Gemini failed (${geminiErr.message}) — trying Groq`)
+            console.warn(`[ai-client] Gemini failed (${geminiErr.message}) — falling back to Groq`)
             if (groq) {
               try {
                 _lastFallback = {
@@ -425,7 +436,7 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
             }
           }
         } else if (groq) {
-          console.warn(`[ai-client] Gemini not configured — trying Groq`)
+          console.warn(`[ai-client] Gemini not configured — falling back to Groq`)
           try {
             _lastFallback = {
               reason: isCreditsError ? 'credits' : (status === 429 ? 'rate_limit' : 'error'),
