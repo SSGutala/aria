@@ -1,9 +1,16 @@
 import React, { useState, useRef } from 'react'
 import { logAction } from '../lib/devlog'
 
-export default function InputZone({ onSubmit, disabled, currentModel, onModelChange, placeholder = 'Describe the internal tool you need...', sendHint = 'Enter to send · Shift+Enter for new line' }) {
+export default function InputZone({ onSubmit, disabled, currentModel, onModelChange, placeholder = 'Describe the internal tool you need...', sendHint = 'Enter to send · Shift+Enter for new line', onAttachTemplate }) {
   const [value, setValue] = useState('')
   const textareaRef = useRef(null)
+  const fileInputRef = useRef(null)
+
+  function handleFilePick(e) {
+    const file = e.target.files?.[0]
+    if (file) onAttachTemplate?.(file)
+    e.target.value = '' // allow re-selecting the same file
+  }
 
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -62,6 +69,21 @@ export default function InputZone({ onSubmit, disabled, currentModel, onModelCha
           }}
         />
         <style>{`textarea::placeholder { color: #6E6E6E; }`}</style>
+        {onAttachTemplate && (
+          <>
+            <input ref={fileInputRef} type="file" accept=".docx,.pdf,.md,.markdown,.txt" onChange={handleFilePick} style={{ display: 'none' }} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={disabled}
+              title="Upload a document template for Aria to fill out"
+              style={{ width: 28, height: 28, borderRadius: 6, background: 'transparent', border: '0.5px solid #2A2A2A', cursor: disabled ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: disabled ? 0.5 : 1 }}
+            >
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                <path d="M9.5 3.5L4.7 8.3a1.5 1.5 0 102.1 2.1l4.8-4.8a3 3 0 10-4.2-4.2L2.4 6.2a4.5 4.5 0 106.4 6.4" stroke="#C4C4C4" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </>
+        )}
         <button
           onClick={submit}
           disabled={disabled || !value.trim()}

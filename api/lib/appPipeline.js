@@ -707,6 +707,14 @@ export async function runAppPipeline({ prompt, context, providerConfig = {}, onP
   const lite = resolveStageProvider('codegen', providerConfig) === 'ollama'
   const maxFiles = lite ? 5 : MAX_FILES
 
+  // Chosen design direction from the style carousel (optional). When present it
+  // becomes a HARD design constraint threaded into every codegen prompt so the
+  // built app matches the preview the user picked, plus any opinion they typed.
+  const cs = context?.chosenStyle
+  const styleDirective = cs
+    ? `\n\nCHOSEN DESIGN DIRECTION (the user picked this from a preview — MATCH IT FAITHFULLY): "${cs.label || cs.id}". ${cs.vibe || ''}${cs.direction ? ` ${cs.direction}` : ''}${context?.styleOpinion ? `\n\nUSER'S DESIGN OPINION / TWEAKS (apply these on top of the chosen direction): ${context.styleOpinion}` : ''}`
+    : (context?.styleOpinion ? `\n\nUSER'S DESIGN NOTES (apply these): ${context.styleOpinion}` : '')
+
   // 1) PLAN
   emit('plan', 'Analyzing approved artifacts and planning the app architecture…', { percent: 6 })
   const plan = await generateWithModel({
@@ -731,7 +739,7 @@ export async function runAppPipeline({ prompt, context, providerConfig = {}, onP
     try {
       const content = await generateWithModel({
         taskType: 'codegen', system: SINGLE_FILE_CODEGEN_SYSTEM,
-        prompt: `Build the complete app as a single /App.js file. App: "${appName}". ${plan?.summary || ''}`,
+        prompt: `Build the complete app as a single /App.js file. App: "${appName}". ${plan?.summary || ''}${styleDirective}`,
         context: { appName, summary: plan?.summary, features: plan?.features, uiSections: plan?.uiSections, state: plan?.state },
         expectedOutputFormat: 'text', maxTokens: lite ? 2800 : 4500, providerConfig,
       })
@@ -772,7 +780,7 @@ export async function runAppPipeline({ prompt, context, providerConfig = {}, onP
           .map(p => ({ path: p, source: files[p] }))
         const content = await generateWithModel({
           taskType: 'codegen', system: CODEGEN_SYSTEM,
-          prompt: `Generate the complete contents of ${f.path} now. Purpose: ${f.purpose || 'part of the app'}.\nYou may import ONLY from the files in dependencyFiles, and only names they actually export.`,
+          prompt: `Generate the complete contents of ${f.path} now. Purpose: ${f.purpose || 'part of the app'}.\nYou may import ONLY from the files in dependencyFiles, and only names they actually export.${styleDirective}`,
           context: {
             appPlan: { appName, summary: plan?.summary, features: plan?.features, entities: plan?.entities, seedData: plan?.seedData },
             thisFile: { path: f.path, purpose: f.purpose, type: f.type },

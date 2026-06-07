@@ -22,6 +22,7 @@ try {
 
 import express from 'express'
 import cors from 'cors'
+import multer from 'multer'
 import { devlogApi, devlog } from './api/lib/devlog.js'
 import logHandler from './api/log.js'
 
@@ -55,6 +56,9 @@ app.use(cors({
   credentials: true,
 }))
 app.use(express.json())
+
+// In-memory uploads for template parsing (max 15MB) — nothing touches disk.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } })
 
 // Developer request logger — logs every non-GET API call to terminal
 app.use((req, res, next) => {
@@ -119,6 +123,18 @@ app.post('/api/pm-brief', async (req, res) => {
 
 app.post('/api/pm-document', async (req, res) => {
   const { default: h } = await import('./api/pm-document.js')
+  return h(req, res)
+})
+
+// Parse an uploaded document template into a fillable section skeleton.
+app.post('/api/template-upload', upload.single('template'), async (req, res) => {
+  const { default: h } = await import('./api/template-upload.js')
+  return h(req, res)
+})
+
+// Generate 3 distinct design-style previews for the app-build carousel.
+app.post('/api/generate-style-previews', async (req, res) => {
+  const { default: h } = await import('./api/generate-style-previews.js')
   return h(req, res)
 })
 

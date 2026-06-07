@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { supabase, MOCK_MODE } from '../lib/supabase'
-import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions, setActiveRoleContext, sendChatMessage, getModelStatus, generateAppProject, generateAppProjectStream, editAppProject, editAppProjectStream } from '../lib/claude'
+import { analyzeAndQuestion, generateSpec, generateBrief, generatePMBrief, generateTaskBrief, generateRoleBrief, requestPMDocument, buildApp, editApp, getModeQuestions, getPMPackageOrQuestions, getRolePackageOrQuestions, getEngineQuestions, setActiveRoleContext, sendChatMessage, getModelStatus, generateAppProject, generateAppProjectStream, editAppProject, editAppProjectStream, generateStylePreviews, uploadTemplate } from '../lib/claude'
 import ArtifactViewer from '../components/ArtifactViewer'
 import ArtifactPanel from '../components/ArtifactPanel'
 import { useBreakpoint } from '../hooks/useBreakpoint'
@@ -36,6 +36,7 @@ import EngineIntakeCard from '../components/EngineIntakeCard'
 import DocsTypeCard from '../components/DocsTypeCard'
 import RoleBadge from '../components/RoleBadge'
 import AppProjectPanel from '../components/AppProjectPanel'
+import StyleCarousel from '../components/StyleCarousel'
 
 export default function Workspace() {
   const { convId } = useParams()
@@ -67,6 +68,10 @@ export default function Workspace() {
   const [folders, setFolders] = useState([])           // project folders grouping chats + apps
   const [showNewApp, setShowNewApp] = useState(false)  // blank "build an app" prompt modal
   const [newAppText, setNewAppText] = useState('')
+  // Design-style carousel: before building, show 3 design directions to pick from.
+  const [styleChoices, setStyleChoices] = useState(null)   // null | [{ id, label, vibe, files }]
+  const [loadingStyles, setLoadingStyles] = useState(false)
+  const [pendingAppPrompt, setPendingAppPrompt] = useState('')
   const [messages, setMessages] = useState([])
   const [currentConv, setCurrentConv] = useState(null)
   const [currentApp, setCurrentApp] = useState(null)
@@ -594,7 +599,49 @@ export default function Workspace() {
   // Creates a hidden app-shell conversation (kind:'app', so it doesn't show in
   // Chats) purely to satisfy app_projects' FK, then runs the same generation
   // pipeline with the typed prompt and opens the live preview. No brief/spec step.
+  // Step 1 of the App-build flow: the user describes the app → generate 3 design
+  // directions and show the carousel. (The real build happens in step 2,
+  // runAppBuild, once they pick a style.)
   async function handleBuildNewApp(promptText) {
+    const prompt = (promptText || '').trim()
+    if (!prompt || !user) return
+    setPendingAppPrompt(prompt)
+    setStyleChoices(null)
+    setLoadingStyles(true)
+    try {
+      const { styles } = await generateStylePreviews(prompt, {}, currentModel)
+      if (styles?.length) {
+        setStyleChoices(styles)
+        setNewAppText('')
+      } else {
+        // No previews → fall straight through to a default build.
+        await runAppBuild(prompt, {})
+      }
+    } catch (err) {
+      // Preview generation failed → don't block the user; build directly.
+      logAction('app.style_previews_failed', { error: err?.message })
+      await runAppBuild(prompt, {})
+    } finally {
+      setLoadingStyles(false)
+    }
+  }
+
+  function handleCancelStyles() {
+    setStyleChoices(null)
+    setPendingAppPrompt('')
+  }
+
+  // Step 2: the user picked a design direction (and optional tweaks) → build the
+  // real app with that style threaded in as a hard design constraint.
+  async function handleConfirmStyle(chosenStyle, styleOpinion) {
+    const prompt = pendingAppPrompt
+    if (!prompt) return
+    await runAppBuild(prompt, { chosenStyle, styleOpinion })
+    setStyleChoices(null)
+    setPendingAppPrompt('')
+  }
+
+  async function runAppBuild(promptText, styleCtx = {}) {
     const prompt = (promptText || '').trim()
     if (!prompt || !user) return
 
@@ -632,7 +679,10 @@ export default function Workspace() {
       }))
     }
     try {
-      const result = await generateAppProjectStream(shellConvId, prompt, { onEvent }, currentModel)
+      const buildContext = {}
+      if (styleCtx?.chosenStyle) buildContext.chosenStyle = { id: styleCtx.chosenStyle.id, label: styleCtx.chosenStyle.label, vibe: styleCtx.chosenStyle.vibe }
+      if (styleCtx?.styleOpinion) buildContext.styleOpinion = styleCtx.styleOpinion
+      const result = await generateAppProjectStream(shellConvId, prompt, { onEvent, context: Object.keys(buildContext).length ? buildContext : undefined }, currentModel)
       setGenProgress({ percent: 100, message: 'Done.' })
       const project = result?.project || {
         title: result?.appName, summary: result?.summary, files: result?.files,
@@ -1687,7 +1737,7 @@ export default function Workspace() {
   }
 
   // ─── On-demand PM document request ────────────────────────────────────────
-  async function handleRequestDocument(userRequest) {
+  async function handleRequestDocument(userRequest, templateSkeleton = null) {
     if (!convId || !userRequest?.trim()) return
     const projectContext = messages
       .filter(m => m.metadata?.brief)
@@ -1696,7 +1746,7 @@ export default function Workspace() {
     setIsTyping(true)
     setBuildingLabel(`Generating document: "${userRequest.slice(0, 50)}${userRequest.length > 50 ? '…' : ''}"`)
     try {
-      const result = await requestPMDocument(convId, userRequest, projectContext, currentModel)
+      const result = await requestPMDocument(convId, userRequest, projectContext, currentModel, templateSkeleton)
       setIsTyping(false)
       setBuildingLabel(null)
       // Add a text message confirming creation
@@ -1708,6 +1758,29 @@ export default function Workspace() {
         action: 'generate the document',
         onRetry: () => handleRequestDocument(userRequest),
       })
+    } finally {
+      setIsTyping(false)
+      setBuildingLabel(null)
+    }
+  }
+
+  // ─── Upload a document template → Aria fills it for this project ────────────
+  // Parses the uploaded .docx/.pdf/.md/.txt into a section skeleton, then runs
+  // the document engine so the generated doc mirrors the user's exact structure.
+  async function handleAttachTemplate(file) {
+    if (!file || !convId) return
+    setIsTyping(true)
+    setBuildingLabel(`Reading your template: ${file.name}…`)
+    try {
+      const parsed = await uploadTemplate(file)
+      if (!parsed?.skeleton?.length) {
+        addMsg(`I couldn't find clear section headings in "${file.name}". Try a file whose sections use heading styles (.docx), # markers (.md), or clear title lines.`, true)
+        return
+      }
+      addMsg(`✓ Loaded your "${parsed.label}" template (${parsed.sectionCount} sections). Filling it out for your project…`)
+      await handleRequestDocument(`Fill out my "${parsed.label}" template for this project`, parsed.skeleton)
+    } catch (err) {
+      handleApiError(err, { action: 'read your template', onRetry: () => handleAttachTemplate(file) })
     } finally {
       setIsTyping(false)
       setBuildingLabel(null)
@@ -1913,6 +1986,22 @@ export default function Workspace() {
                hint + bottom input bar). Only the mode tag (App build, in the
                Topbar) and the build workflow differ. */
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+              {styleChoices ? (
+                <StyleCarousel
+                  styles={styleChoices}
+                  prompt={pendingAppPrompt}
+                  building={generatingApp}
+                  onBuild={handleConfirmStyle}
+                  onCancel={handleCancelStyles}
+                />
+              ) : loadingStyles ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#8A8A8A', fontSize: 13, gap: 12, minHeight: 0 }}>
+                  <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#60A5FA', animation: 'pulse 1.4s ease-in-out infinite' }} />
+                  <span>Designing 3 directions for your app…</span>
+                  <span style={{ fontSize: 11, color: '#5A5A5A', maxWidth: 320, textAlign: 'center' }}>“{pendingAppPrompt.length > 80 ? pendingAppPrompt.slice(0, 80) + '…' : pendingAppPrompt}”</span>
+                </div>
+              ) : (
+              <>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#2A2A2A', fontSize: 12, gap: 8, minHeight: 0 }}>
                 <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
                   <rect x="2" y="2" width="13" height="13" rx="2" fill="#2A2A2A" />
@@ -1938,12 +2027,14 @@ export default function Workspace() {
               )}
               <InputZone
                 onSubmit={handleBuildNewApp}
-                disabled={generatingApp}
+                disabled={generatingApp || loadingStyles}
                 currentModel={currentModel}
                 onModelChange={setCurrentModel}
                 placeholder="Describe the app you want to build. Aria will instantly build it."
                 sendHint="Enter to build · Shift+Enter for new line"
               />
+              </>
+              )}
             </div>
           ) : convId ? (
             <>
@@ -1982,7 +2073,7 @@ export default function Workspace() {
                   </div>
                   )
                 })()}
-                <InputZone onSubmit={handleSubmit} disabled={isTyping} currentModel={currentModel} onModelChange={setCurrentModel} />
+                <InputZone onSubmit={handleSubmit} disabled={isTyping} currentModel={currentModel} onModelChange={setCurrentModel} onAttachTemplate={handleAttachTemplate} />
               </div>
               {showArtifactPanel && (
                 isSmall ? (

@@ -473,15 +473,46 @@ export async function generateTaskBrief(prompt, conversationId, buildMode, clari
 }
 
 // Request an on-demand PM document
-export async function requestPMDocument(conversationId, userRequest, projectContext = null, aiModel = 'claude') {
+export async function requestPMDocument(conversationId, userRequest, projectContext = null, aiModel = 'claude', templateSkeleton = null) {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 1200))
     return { artifact: { id: 'mock-doc-' + Date.now(), artifact_type: 'custom_document', title: userRequest, content: { generated: true, request: userRequest }, status: 'draft' }, docInfo: { type: 'custom', label: userRequest, category: 'custom' } }
   }
   return postJSON('/api/pm-document',
-    { conversationId, userRequest, projectContext },
+    { conversationId, userRequest, projectContext, templateSkeleton },
     'generating the document',
     { timeoutMs: 120_000 },
+    aiModel)
+}
+
+// Upload a document template (.docx/.pdf/.md/.txt) and get back its section
+// skeleton so Aria can fill it out for the user's project. Returns
+// { label, skeleton: [{ title, hint }], rawText, sectionCount }.
+export async function uploadTemplate(file) {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 800))
+    return { label: file?.name || 'Mock Template', skeleton: [{ title: 'Overview', hint: '' }, { title: 'Details', hint: '' }], sectionCount: 2 }
+  }
+  const form = new FormData()
+  form.append('template', file)
+  const res = await fetch(`${API_URL}/api/template-upload`, { method: 'POST', body: form })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data?.error || 'Failed to parse the uploaded template.')
+  return data
+}
+
+// Generate 3 distinct design-direction previews for the app-build carousel.
+// Returns { styles: [{ id, label, vibe, files: { '/App.js': '...' } }] }.
+export async function generateStylePreviews(prompt, { context, providerConfig } = {}, aiModel = 'claude') {
+  if (MOCK_MODE) {
+    await new Promise(r => setTimeout(r, 1200))
+    const mk = (id, label, bg) => ({ id, label, vibe: label, files: { '/App.js': `export default function App(){return <div className="min-h-screen ${bg} p-8"><h1 className="text-2xl font-bold">${label}</h1></div>}` } })
+    return { styles: [mk('minimal_light', 'Clean & Minimal', 'bg-slate-50'), mk('bold_dark', 'Bold & Modern', 'bg-slate-950 text-white'), mk('warm_editorial', 'Warm & Friendly', 'bg-amber-50')] }
+  }
+  return postJSON('/api/generate-style-previews',
+    { prompt, context, providerConfig },
+    'generating design previews',
+    { timeoutMs: 180_000 },
     aiModel)
 }
 

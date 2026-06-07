@@ -461,6 +461,55 @@ export function buildDynamicTemplate(request = '') {
 }
 
 /**
+ * Build a document template from a user-uploaded template's section skeleton.
+ * The user's headings become the EXACT required sections (verbatim titles, in
+ * order), so the generated document mirrors their format precisely. Each heading
+ * may carry a `hint` (sub-bullets / placeholder text extracted from the upload).
+ *
+ * @param {Array<{title:string, hint?:string, kind?:string, columns?:string[]}>} skeleton
+ * @param {string} label  human label for the document (e.g. file name or "Uploaded Template")
+ */
+export function buildTemplateFromSkeleton(skeleton = [], label = 'Custom Template') {
+  const sections = (Array.isArray(skeleton) ? skeleton : [])
+    .map(s => (typeof s === 'string' ? { title: s } : s))
+    .filter(s => s && s.title && String(s.title).trim())
+    .map((s, i) => {
+      const title = String(s.title).trim()
+      const key = (title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `section_${i + 1}`).slice(0, 48)
+      return {
+        key,
+        title,
+        guidance: s.hint
+          ? `Fill this section following the user's template. The template indicates: ${s.hint}. Ground all content in the actual project.`
+          : `Fill out the "${title}" section with substantive, original content grounded in the actual project, matching what this heading implies.`,
+        minWords: s.kind === 'table' || s.kind === 'bullets' ? 40 : 90,
+        ...(s.kind ? { kind: s.kind } : {}),
+        ...(s.columns ? { columns: s.columns } : {}),
+      }
+    })
+
+  const safeSections = sections.length ? sections : [
+    { key: 'content', title: 'Content', guidance: 'The substantive content of this document, grounded in the project.', minWords: 150 },
+  ]
+
+  const slug = (label || 'custom').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'custom'
+  return {
+    documentType: `template_${slug}`,
+    label: label || 'Custom Template',
+    aliases: [],
+    category: 'custom',
+    formatType: 'uploaded_template', // NOT formal_doc → skip auto-appended governance fragments
+    isDynamic: true,
+    fromUploadedTemplate: true,
+    purpose: `A document that follows the user's uploaded "${label}" template structure exactly, filled with content specific to their project.`,
+    requiredSections: safeSections,
+    optionalSections: [],
+    roleRelevance: {},
+    minimumDepth: { totalWords: DEPTH_MODES.standard?.totalWords || DEPTH_MODES[DEFAULT_DEPTH_MODE].totalWords },
+  }
+}
+
+/**
  * Compose the full generation system prompt for a template, framed by the
  * user's role and the requested depth mode.
  */
