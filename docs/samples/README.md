@@ -7,16 +7,12 @@ for that type.
 
 ## Subfolders
 - `01-competitive-analysis/`
-- `02-product-strategy-vision/`
-- `03-prd-and-specs/`
-- `04-okr-kpi-success-metrics/`
-- `05-product-roadmap/`
-- `06-product-design/`
-- `07-user-journey-use-cases-stories/`
-- `08-release-scope-plan/`
-- `09-business-case/`
-- `10-product-proposal/`
-- `11-pitch-deck/`
+- `02-product-strategy-vision-okrs/`
+- `03-prd-specs-user-stories/`
+- `04-product-roadmap-release-plan/`
+- `05-product-design/`
+- `06-business-case-product-proposal/`
+- `07-pitch-deck/`
 
 ## Preferred formats (easiest → hardest for Aria to process)
 1. **Markdown (.md)** — best. Cheapest, fastest, cleanest to extract structure.
