@@ -95,7 +95,7 @@ function ModePill({ kind }) {
   )
 }
 
-export default function Topbar({ conversation, app, appBuild, onTitleChange, onAppTitleChange, onAppBuildTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel, onMenuToggle, isMobile, currentModel, isRunning, phaseLabel, lastError, lastLatencyMs }) {
+export default function Topbar({ conversation, app, appBuild, onTitleChange, onAppTitleChange, onAppBuildTitleChange, artifactCount = 0, onToggleArtifacts, showArtifactPanel, onMenuToggle, isMobile, currentModel, onModelChange, lockModel, onLockChange, isRunning, phaseLabel, lastError, lastLatencyMs }) {
   const [toast, setToast] = useState('')
 
   function showToast(msg) { setToast(msg); setTimeout(() => setToast(''), 2000) }
@@ -223,6 +223,9 @@ export default function Topbar({ conversation, app, appBuild, onTitleChange, onA
           <div style={{ marginLeft: app ? 8 : 'auto' }}>
             <SystemStatus
               currentModel={currentModel}
+              onModelChange={onModelChange}
+              lockModel={lockModel}
+              onLockChange={onLockChange}
               isRunning={isRunning}
               phaseLabel={phaseLabel}
               lastError={lastError}

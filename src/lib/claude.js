@@ -503,14 +503,14 @@ export async function uploadTemplate(file) {
 
 // Generate 3 distinct design-direction previews for the app-build carousel.
 // Returns { styles: [{ id, label, vibe, files: { '/App.js': '...' } }] }.
-export async function generateStylePreviews(prompt, { context, providerConfig } = {}, aiModel = 'claude') {
+export async function generateStylePreviews(prompt, { context, providerConfig, feedback, lockProvider } = {}, aiModel = 'claude') {
   if (MOCK_MODE) {
     await new Promise(r => setTimeout(r, 1200))
     const mk = (id, label, bg) => ({ id, label, vibe: label, files: { '/App.js': `export default function App(){return <div className="min-h-screen ${bg} p-8"><h1 className="text-2xl font-bold">${label}</h1></div>}` } })
     return { styles: [mk('minimal_light', 'Clean & Minimal', 'bg-slate-50'), mk('bold_dark', 'Bold & Modern', 'bg-slate-950 text-white'), mk('warm_editorial', 'Warm & Friendly', 'bg-amber-50')] }
   }
   return postJSON('/api/generate-style-previews',
-    { prompt, context, providerConfig },
+    { prompt, context, providerConfig, feedback, lockProvider },
     'generating design previews',
     { timeoutMs: 180_000 },
     aiModel)
@@ -607,7 +607,7 @@ export async function generateAppProject(conversationId, prompt, { providerConfi
 // Streaming variant — emits real progress events (with stage, message, percent)
 // as the staged pipeline runs. onEvent(evt) fires per progress event; resolves
 // with the final result. Falls back gracefully if streaming isn't available.
-export async function generateAppProjectStream(conversationId, prompt, { onEvent, providerConfig, context } = {}, aiModel = 'claude') {
+export async function generateAppProjectStream(conversationId, prompt, { onEvent, providerConfig, context, lockProvider } = {}, aiModel = 'claude') {
   if (MOCK_MODE) {
     const stages = [
       { stage: 'plan', message: 'Planning the app architecture…', percent: 12 },
@@ -623,7 +623,7 @@ export async function generateAppProjectStream(conversationId, prompt, { onEvent
   const res = await fetch(`${API_URL}/api/generate-app`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/x-ndjson' },
-    body: JSON.stringify({ conversationId, prompt, providerConfig, context, stream: true, aiModel }),
+    body: JSON.stringify({ conversationId, prompt, providerConfig, context, lockProvider, stream: true, aiModel }),
   })
   if (!res.ok || !res.body) {
     // Fallback to the non-streaming endpoint.

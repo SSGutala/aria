@@ -24,7 +24,9 @@ import { isCoolingDown, msUntilAvailable, getProviderHealth } from './lib/provid
 // silently falls back to STAGE_DEFAULTS and ignores the user's choice.
 const APP_STAGES = ['plan', 'file_tree', 'codegen', 'repair', 'polish', 'transform', 'summary']
 function providerConfigFromModel(aiModel) {
-  if (!aiModel || !['claude', 'groq', 'ollama'].includes(aiModel)) return {}
+  // Pin EVERY pipeline stage to the user's selected provider so their choice is
+  // honored end-to-end (including 'gemini', so it can't drift to a stage default).
+  if (!aiModel || !['gemini', 'claude', 'groq', 'ollama'].includes(aiModel)) return {}
   return Object.fromEntries(APP_STAGES.map(s => [s, { provider: aiModel }]))
 }
 function resolveProviderConfig(providerConfig, aiModel) {
@@ -75,7 +77,7 @@ async function gatherContext(conversationId) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { conversationId, prompt, context, providerConfig, aiModel, allowOllamaBridge } = req.body || {}
+  const { conversationId, prompt, context, providerConfig, aiModel, allowOllamaBridge, lockProvider } = req.body || {}
   if (!conversationId || !prompt) {
     return res.status(400).json({ error: 'Missing required fields: conversationId, prompt' })
   }
@@ -86,6 +88,12 @@ export default async function handler(req, res) {
   // Map the selected model → a concrete per-stage providerConfig so the engine
   // actually runs on the chosen provider (defaults to Groq via env otherwise).
   const effectiveProviderConfig = resolveProviderConfig(providerConfig, aiModel)
+
+  // When the user has LOCKED their model ("stay on this model"), thread a
+  // no-failover flag so the whole pipeline runs ONLY on the chosen provider —
+  // no silent gemini→groq→claude switching. Any rate-limit/quota error then
+  // surfaces honestly instead of being papered over by a fallback provider.
+  if (lockProvider) effectiveProviderConfig.__noFailover = true
 
   // Stream real progress as NDJSON when requested, so the UI can show a live,
   // honest progress bar driven by actual pipeline stages.

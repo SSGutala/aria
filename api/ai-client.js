@@ -8,8 +8,11 @@ import Groq from 'groq-sdk'
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-const GEMINI_MODEL_FAST = 'gemini-2.5-flash'   // Gemini primary — latest flash (fast + high quality)
-const GEMINI_MODEL_SMART = 'gemini-2.5-pro'    // Gemini for smart calls (highest quality)
+const GEMINI_MODEL_FAST = 'gemini-2.5-flash'   // Gemini primary — latest flash (fast + high quality, free tier)
+// NOTE: gemini-2.5-pro has a FREE-TIER quota of literally 0 (Google requires a paid
+// billing account for Pro), so "smart" calls on Pro 429 immediately. To stay 100% on
+// the free tier we route smart calls to Flash too — same 1M-tokens/min free quota.
+const GEMINI_MODEL_SMART = 'gemini-2.5-flash'  // Free-tier safe (Pro free quota = 0)
 const GEMINI_MAX_TOKENS = 8000
 
 const ANTHROPIC_MODEL   = 'claude-haiku-4-5'         // Fallback — fast + cheap

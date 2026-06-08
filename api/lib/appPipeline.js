@@ -730,7 +730,7 @@ export async function runAppPipeline({ prompt, context, chosenStyle, providerCon
   // built app matches the preview the user picked, plus any opinion they typed.
   const cs = chosenStyle || context?.chosenStyle
   const styleDirective = cs
-    ? `\n\nCHOSEN DESIGN DIRECTION (the user picked this from a preview — MATCH IT FAITHFULLY): "${cs.label || cs.id}". ${cs.vibe || ''}${cs.direction ? ` ${cs.direction}` : ''}${context?.styleOpinion ? `\n\nUSER'S DESIGN OPINION / TWEAKS (apply these on top of the chosen direction): ${context.styleOpinion}` : ''}`
+    ? `\n\nCHOSEN DESIGN DIRECTION (the user picked this from a preview — MATCH IT FAITHFULLY): "${cs.label || cs.id}". ${cs.vibe || ''}${cs.direction ? ` ${cs.direction}` : ''}${cs.previewCode ? `\n\nThe user selected this EXACT preview screen. Reuse its color palette, typography, spacing, and component styling as the foundation for the whole app — the finished app must look like it belongs in the same product as this screen:\n\`\`\`jsx\n${cs.previewCode}\n\`\`\`` : ''}${context?.styleOpinion ? `\n\nUSER'S DESIGN OPINION / TWEAKS (apply these on top of the chosen direction): ${context.styleOpinion}` : ''}`
     : (context?.styleOpinion ? `\n\nUSER'S DESIGN NOTES (apply these): ${context.styleOpinion}` : '')
 
   // 1) PLAN

@@ -28,13 +28,13 @@ export function ToastProvider({ children }) {
       title: options.title || null,
       onRetry: options.onRetry || null,
       retryLabel: options.retryLabel || 'Retry',
+      // Auto-dismiss timing is owned by the ToastItem so it can play a slide-out
+      // animation before unmounting (macOS-style). 0 = persistent.
+      duration,
     }
     setToasts(prev => [...prev, toast])
-    if (duration > 0) {
-      setTimeout(() => dismiss(id), duration)
-    }
     return id
-  }, [dismiss])
+  }, [])
 
   const api = useMemo(() => ({
     success: (msg, opts) => show('success', msg, opts),

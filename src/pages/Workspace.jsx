@@ -71,6 +71,7 @@ export default function Workspace() {
   // Design-style carousel: before building, show 3 design directions to pick from.
   const [styleChoices, setStyleChoices] = useState(null)   // null | [{ id, label, vibe, files }]
   const [loadingStyles, setLoadingStyles] = useState(false)
+  const [regeneratingStyles, setRegeneratingStyles] = useState(false)
   const [pendingAppPrompt, setPendingAppPrompt] = useState('')
   const [messages, setMessages] = useState([])
   const [currentConv, setCurrentConv] = useState(null)
@@ -89,6 +90,11 @@ export default function Workspace() {
   const [genProgress, setGenProgress] = useState({ percent: 0, message: '' })
   const [genElapsedMs, setGenElapsedMs] = useState(0)
   const genStartRef = useRef(0)
+  // Bumped every time the user opens a brand-new app/chat surface. A build that
+  // was already running captures the epoch at start; when it finishes it only
+  // surfaces its result if the epoch is unchanged — otherwise the user has moved
+  // on to a fresh surface and the finished app just lands quietly in the sidebar.
+  const surfaceEpochRef = useRef(0)
   const [isTyping, setIsTyping] = useState(false)
   const [modelStatus, setModelStatus] = useState({ degraded: false })
   const [bannerDismissed, setBannerDismissed] = useState(false)
@@ -109,6 +115,46 @@ export default function Workspace() {
     }
     catch { return 'gemini' }
   })
+  // Change the preferred provider AND remember it across reloads. This is the
+  // model Aria actually uses (passed as `aiModel` to every generation call);
+  // automatic failover still kicks in only if it's rate-limited.
+  const handleModelChange = useCallback((model) => {
+    const LABELS = { gemini: 'Gemini', groq: 'Groq', claude: 'Claude', ollama: 'Ollama (Local)' }
+    setCurrentModel(prev => {
+      if (prev === model) return prev
+      try { localStorage.setItem('aria_model', model) } catch { /* ignore */ }
+      logAction('model.preference_changed', { model })
+      toast.success(`You are now using ${LABELS[model] || model}.`, { title: 'Model switched' })
+      return model
+    })
+  }, [toast])
+  // "Stay on this model" lock. When ON, Aria runs generation ONLY on the chosen
+  // provider — no automatic failover to another provider on a rate limit. Useful
+  // for testing a single provider; the trade-off is that a quota/rate-limit error
+  // surfaces directly instead of switching. Defaults OFF so builds keep working:
+  // if your pick is rate-limited (e.g. Gemini's free 20-requests/day quota), Aria
+  // automatically falls over to another provider and the app still completes and
+  // saves. Turn it ON only when you specifically want to pin one provider.
+  const [lockModel, setLockModel] = useState(() => {
+    try {
+      const stored = localStorage.getItem('aria_lock_model')
+      return stored === null ? false : stored === 'true'
+    } catch { return false }
+  })
+  const handleLockChange = useCallback((locked) => {
+    setLockModel(prev => {
+      if (prev === locked) return prev
+      try { localStorage.setItem('aria_lock_model', String(locked)) } catch { /* ignore */ }
+      logAction('model.lock_changed', { locked })
+      toast.info(
+        locked
+          ? 'Locked to your selected model — no automatic switching if it hits a limit.'
+          : 'Auto-failover on — Aria may switch providers if your model is rate-limited.',
+        { title: locked ? 'Model locked' : 'Model unlocked' }
+      )
+      return locked
+    })
+  }, [toast])
   const [lastLatencyMs, setLastLatencyMs] = useState(null)
   const [lastError, setLastError] = useState(null)
   const opStartedAtRef = useRef(null)
@@ -224,11 +270,23 @@ export default function Workspace() {
   // run yet, the query errors and we just keep an empty folder list.
   const loadFolders = useCallback(async () => {
     if (!user) return
+    // Query without referencing `position` so this still works before the
+    // 20260608_folder_position migration is applied. Sort client-side: explicit
+    // position first (drag-to-reorder), then created_at as the stable fallback.
     const { data, error } = await supabase
       .from('project_folders').select('*').eq('user_id', user.id)
       .order('created_at', { ascending: true })
     if (error) return
-    setFolders(data || [])
+    const sorted = [...(data || [])].sort((a, b) => {
+      const ap = a.position, bp = b.position
+      const aHas = ap !== null && ap !== undefined
+      const bHas = bp !== null && bp !== undefined
+      if (aHas && bHas) return ap - bp
+      if (aHas) return -1
+      if (bHas) return 1
+      return new Date(a.created_at) - new Date(b.created_at)
+    })
+    setFolders(sorted)
   }, [user])
 
   const loadApps = useCallback(async () => {
@@ -276,6 +334,22 @@ export default function Workspace() {
     setFolders(prev => [...prev, data])
     return data
   }, [user, handleApiError])
+
+  // Drag-to-reorder folders. Apply the new order optimistically (works this
+  // session regardless of DB), then persist `position` best-effort. If the
+  // position column doesn't exist yet the update silently no-ops — the order
+  // just won't survive a reload until the migration is applied.
+  const handleReorderFolders = useCallback(async (orderedIds) => {
+    if (!Array.isArray(orderedIds) || orderedIds.length === 0) return
+    const indexOf = id => orderedIds.indexOf(id)
+    setFolders(prev => [...prev].sort((a, b) => indexOf(a.id) - indexOf(b.id)))
+    logAction('folder.reordered', { count: orderedIds.length })
+    try {
+      await Promise.all(orderedIds.map((id, i) =>
+        supabase.from('project_folders').update({ position: i }).eq('id', id)
+      ))
+    } catch { /* position column may not exist yet — best-effort */ }
+  }, [])
 
   const handleRenameFolder = useCallback(async (folderId, name) => {
     if (!folderId || !name?.trim()) return
@@ -343,8 +417,16 @@ export default function Workspace() {
   useEffect(() => {
     if (prevConvIdRef.current !== convId) {
       prevConvIdRef.current = convId
+      // Switching to a different chat (New chat or clicking an existing one) is a
+      // fresh surface — drop any in-progress app-build UI and bump the epoch so a
+      // background build can't pull the user back into its preview.
+      surfaceEpochRef.current += 1
       setShowNewApp(false)
       setCurrentProject(null)
+      setStyleChoices(null)
+      setPendingAppPrompt('')
+      setLoadingStyles(false)
+      setRegeneratingStyles(false)
     }
   }, [convId])
 
@@ -572,7 +654,7 @@ export default function Workspace() {
       }))
     }
     try {
-      const result = await generateAppProjectStream(convId, prompt, { onEvent }, currentModel)
+      const result = await generateAppProjectStream(convId, prompt, { onEvent, lockProvider: lockModel }, currentModel)
       setGenProgress({ percent: 100, message: 'Done.' })
       const project = result?.project || {
         title: result?.appName, summary: result?.summary, files: result?.files,
@@ -611,6 +693,22 @@ export default function Workspace() {
   // Step 1 of the App-build flow: the user describes the app → generate 3 design
   // directions and show the carousel. (The real build happens in step 2,
   // runAppBuild, once they pick a style.)
+  // Wipe every transient app-build surface bit back to a clean slate. Used when
+  // the user opens a brand-new app — they always get a blank composer, no matter
+  // what was on screen (a finished preview, a half-picked style carousel, or an
+  // in-flight build). Anything already in progress keeps running in the
+  // background and lands in the sidebar; it just won't hijack the new surface.
+  function resetAppBuildSurface() {
+    surfaceEpochRef.current += 1
+    setCurrentProject(null)
+    setStyleChoices(null)
+    setPendingAppPrompt('')
+    setLoadingStyles(false)
+    setRegeneratingStyles(false)
+    setNewAppText('')
+    setGenProgress({ percent: 0, message: '' })
+  }
+
   async function handleBuildNewApp(promptText) {
     const prompt = (promptText || '').trim()
     if (!prompt || !user) return
@@ -618,7 +716,7 @@ export default function Workspace() {
     setStyleChoices(null)
     setLoadingStyles(true)
     try {
-      const { styles } = await generateStylePreviews(prompt, {}, currentModel)
+      const { styles } = await generateStylePreviews(prompt, { lockProvider: lockModel }, currentModel)
       if (styles?.length) {
         setStyleChoices(styles)
         setNewAppText('')
@@ -638,6 +736,25 @@ export default function Workspace() {
   function handleCancelStyles() {
     setStyleChoices(null)
     setPendingAppPrompt('')
+  }
+
+  // The user typed design changes and asked to regenerate — re-run the 3 preview
+  // directions with their feedback applied, and refresh the carousel in place so
+  // they can review the updated designs before picking one to build full-stack.
+  async function handleRegenerateStyles(feedback) {
+    const prompt = pendingAppPrompt
+    if (!prompt || !(feedback || '').trim()) return
+    setRegeneratingStyles(true)
+    try {
+      const { styles } = await generateStylePreviews(prompt, { feedback, lockProvider: lockModel }, currentModel)
+      if (styles?.length) setStyleChoices(styles)
+      logAction('app.style_previews_regenerated', { feedbackLength: feedback.length })
+    } catch (err) {
+      logAction('app.style_previews_regenerate_failed', { error: err?.message })
+      handleApiError(err, { action: 'regenerate the designs', onRetry: () => handleRegenerateStyles(feedback) })
+    } finally {
+      setRegeneratingStyles(false)
+    }
   }
 
   // Step 2: the user picked a design direction (and optional tweaks) → build the
@@ -671,6 +788,9 @@ export default function Workspace() {
     }
     if (shellErr || !shell) { handleApiError(shellErr || new Error('Could not start the app'), { action: 'start a new app' }); return }
     const shellConvId = shell.id
+    // Snapshot the surface epoch so that if the user opens a new app/chat while
+    // this build runs, we don't yank them back into its finished preview.
+    const buildEpoch = surfaceEpochRef.current
 
     setGeneratingApp(true)
     setGenProgress({ percent: 2, message: 'Starting the generation pipeline…' })
@@ -689,20 +809,38 @@ export default function Workspace() {
     }
     try {
       const buildContext = {}
-      if (styleCtx?.chosenStyle) buildContext.chosenStyle = { id: styleCtx.chosenStyle.id, label: styleCtx.chosenStyle.label, vibe: styleCtx.chosenStyle.vibe }
+      if (styleCtx?.chosenStyle) {
+        buildContext.chosenStyle = { id: styleCtx.chosenStyle.id, label: styleCtx.chosenStyle.label, vibe: styleCtx.chosenStyle.vibe, direction: styleCtx.chosenStyle.direction }
+        // Pass the exact preview screen the user picked as a visual reference so
+        // the build faithfully reproduces the chosen palette/layout (capped).
+        const previewCode = styleCtx.chosenStyle?.files?.['/App.js']
+        if (previewCode) buildContext.chosenStyle.previewCode = String(previewCode).slice(0, 6000)
+      }
       if (styleCtx?.styleOpinion) buildContext.styleOpinion = styleCtx.styleOpinion
-      const result = await generateAppProjectStream(shellConvId, prompt, { onEvent, context: Object.keys(buildContext).length ? buildContext : undefined }, currentModel)
+      const result = await generateAppProjectStream(shellConvId, prompt, { onEvent, context: Object.keys(buildContext).length ? buildContext : undefined, lockProvider: lockModel }, currentModel)
       setGenProgress({ percent: 100, message: 'Done.' })
       const project = result?.project || {
         title: result?.appName, summary: result?.summary, files: result?.files,
         entry: result?.entry, file_tree: result?.fileTree, generation_errors: result?.errors,
       }
       autoFixedProjectRef.current = ''
-      setCurrentProject(project)
       logAction('app.new_app_built', { conversationId: shellConvId, projectId: result?.projectId })
+      // If this build was kicked off from a folder's ⋮ menu, file the new
+      // project into that folder (and its app-shell chat too).
+      const targetFolderId = pendingAppFolderRef.current
+      pendingAppFolderRef.current = null
+      const newProjId = result?.projectId || project?.id
+      if (targetFolderId && newProjId) handleMoveToFolder('app', newProjId, targetFolderId)
+      if (targetFolderId && shellConvId) handleMoveToFolder('chat', shellConvId, targetFolderId)
       loadAppProjects()
-      setShowNewApp(false)
-      setNewAppText('')
+      // Only surface the finished app if the user is still on this build's
+      // surface. If they've since opened a new app/chat, leave them there — the
+      // app is already saved and reachable from the sidebar.
+      if (surfaceEpochRef.current === buildEpoch) {
+        setCurrentProject(project)
+        setShowNewApp(false)
+        setNewAppText('')
+      }
     } catch (err) {
       if (err.providersUnavailable) {
         toast.error(err.message, { title: 'Generation paused' })
@@ -809,6 +947,9 @@ export default function Workspace() {
   // shouldn't have to click "Fix with AI". Guarded by the same attempt budget
   // as preview repairs so it can't loop forever on an unfixable build.
   const autoFixedProjectRef = useRef('')
+  // When the user picks "New app" from a folder's ⋮ menu, we stash the target
+  // folder id here so the freshly-built project gets filed into it on success.
+  const pendingAppFolderRef = useRef(null)
   useEffect(() => {
     const proj = currentProject
     if (!proj) return
@@ -1544,8 +1685,10 @@ export default function Workspace() {
 
     // Document request router — "generate a PRD", "create an SOP", "make a finance
     // breakdown" etc. route to the corporate document generator, NOT the app builder.
-    // PARKED while DIRECT_BUILD_MODE is on (docs come back later).
-    if (!DIRECT_BUILD_MODE && looksLikeDocumentRequest(prompt) && !pendingEngineRef.current) {
+    // Runs even in DIRECT_BUILD_MODE: looksLikeDocumentRequest already excludes
+    // app-build prompts (APP_BUILD_SIGNALS), so chat-mode document creation works
+    // while genuine app builds still fall through to the staged app generator.
+    if (looksLikeDocumentRequest(prompt) && !pendingEngineRef.current) {
       await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', convId)
       await handleRequestDocument(prompt)
       return
@@ -1870,8 +2013,9 @@ export default function Workspace() {
     onRenameFolder: handleRenameFolder,
     onDeleteFolder: handleDeleteFolder,
     onMoveToFolder: handleMoveToFolder,
+    onReorderFolders: handleReorderFolders,
     onPinItem: handlePinItem,
-    onNewApp: () => setShowNewApp(true),
+    onNewApp: (folderId = null) => { pendingAppFolderRef.current = folderId || null; resetAppBuildSurface(); setShowNewApp(true) },
     onConversationsChange: loadConversations, onAppsChange: loadApps,
     onConversationRename: (id, title) => {
       setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
@@ -1932,6 +2076,9 @@ export default function Workspace() {
           onMenuToggle={isSmall ? () => setShowSidebar(v => !v) : undefined}
           isMobile={isMobile}
           currentModel={currentModel}
+          onModelChange={handleModelChange}
+          lockModel={lockModel}
+          onLockChange={handleLockChange}
           isRunning={isTyping}
           phaseLabel={buildingLabel}
           lastError={lastError}
@@ -2007,7 +2154,9 @@ export default function Workspace() {
                   styles={styleChoices}
                   prompt={pendingAppPrompt}
                   building={generatingApp}
+                  regenerating={regeneratingStyles}
                   onBuild={handleConfirmStyle}
+                  onRegenerate={handleRegenerateStyles}
                   onCancel={handleCancelStyles}
                 />
               ) : loadingStyles ? (
@@ -2045,7 +2194,7 @@ export default function Workspace() {
                 onSubmit={handleBuildNewApp}
                 disabled={generatingApp || loadingStyles}
                 currentModel={currentModel}
-                onModelChange={setCurrentModel}
+                onModelChange={handleModelChange}
                 placeholder="Describe the app you want to build. Aria will instantly build it."
                 sendHint="Enter to build · Shift+Enter for new line"
               />
@@ -2089,7 +2238,7 @@ export default function Workspace() {
                   </div>
                   )
                 })()}
-                <InputZone onSubmit={handleSubmit} disabled={isTyping} currentModel={currentModel} onModelChange={setCurrentModel} onAttachTemplate={handleAttachTemplate} />
+                <InputZone onSubmit={handleSubmit} disabled={isTyping} currentModel={currentModel} onModelChange={handleModelChange} onAttachTemplate={handleAttachTemplate} />
               </div>
               {showArtifactPanel && (
                 isSmall ? (
@@ -2118,7 +2267,7 @@ export default function Workspace() {
           ) : (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
               <HomeScreen user={user} onStartConversation={handleStartFromHome} />
-              <InputZone onSubmit={handleStartFromHome} disabled={isTyping} currentModel={currentModel} onModelChange={setCurrentModel} />
+              <InputZone onSubmit={handleStartFromHome} disabled={isTyping} currentModel={currentModel} onModelChange={handleModelChange} />
             </div>
           )}
         </div>

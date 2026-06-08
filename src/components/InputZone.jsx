@@ -140,9 +140,16 @@ export default function InputZone({ onSubmit, disabled, currentModel, onModelCha
             display: 'inline-flex', alignItems: 'center', gap: 5,
             color: '#9CA3AF', fontSize: 10,
             border: '0.5px solid #2A2A2A', borderRadius: 4, padding: '4px 8px',
-          }} title="Model is configured in Settings → Integrations">
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: (currentModel || 'ollama') === 'ollama' ? '#34D399' : '#A78BFA' }} />
-            {(currentModel || 'ollama') === 'ollama' ? 'Ollama (Local)' : (currentModel === 'claude' ? 'Claude' : 'Groq')}
+          }} title="Active model — switch it from the indicator at the top right">
+            {(() => {
+              const m = currentModel || 'gemini'
+              const META = { gemini: ['Gemini', '#1A73E8'], groq: ['Groq', '#2563EB'], claude: ['Claude', '#D97706'], ollama: ['Ollama (Local)', '#34D399'] }
+              const [lbl, color] = META[m] || [m, '#A78BFA']
+              return (<>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
+                {lbl}
+              </>)
+            })()}
           </span>
           <span style={{ color: '#B5B5B5', fontSize: 10, whiteSpace: 'nowrap' }}>{sendHint}</span>
         </div>

@@ -69,14 +69,10 @@ export default function AppProjectPanel({ project, onEdit, onLanguageChange, edi
 
           {genErrors.length > 0 && !busy && (
             <div style={{ padding: '10px 16px', borderBottom: '0.5px solid #1E1E1E', background: '#120D04' }}>
-              <div style={{ fontSize: 11, color: '#F5C451', marginBottom: 8 }}>
-                {genErrors.length} build {genErrors.length === 1 ? 'issue' : 'issues'} detected
+              <div style={{ fontSize: 11, color: '#F5C451', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#F5C451', animation: 'pulse 1.4s ease-in-out infinite' }} />
+                {genErrors.length} build {genErrors.length === 1 ? 'issue' : 'issues'} detected — Aria is fixing this automatically…
               </div>
-              <button
-                onClick={() => onEdit('Fix the build/generation issues in the app.', { isRepair: true, errorText: JSON.stringify(genErrors) })}
-                style={{ width: '100%', background: '#1A1407', color: '#F5C451', border: '0.5px solid #3A2A0A', borderRadius: 7, padding: '7px 12px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
-                title="Regenerate the files that failed"
-              >✦ Fix with AI</button>
             </div>
           )}
 

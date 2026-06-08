@@ -15,6 +15,51 @@
  */
 
 import { generateWithModel } from './lib/modelRouter.js'
+import { parse } from '@babel/parser'
+
+/**
+ * Validate that a generated preview file is syntactically valid JSX. Returns
+ * { ok: true } or { ok: false, error: '<message + line>' }. This is the design-
+ * phase equivalent of the app build's compile check — a broken preview (e.g. the
+ * model truncated mid-statement) is caught here and auto-repaired before it ever
+ * reaches the carousel, so the user never sees a Sandpack syntax error.
+ */
+function validatePreview(code) {
+  if (!code || code.trim().length < 40) return { ok: false, error: 'Preview code is empty or too short (likely truncated).' }
+  try {
+    parse(code, { sourceType: 'module', plugins: ['jsx'] })
+    return { ok: true }
+  } catch (err) {
+    const loc = err?.loc ? ` (line ${err.loc.line}:${err.loc.column})` : ''
+    return { ok: false, error: `${err?.message || String(err)}${loc}` }
+  }
+}
+
+const PREVIEW_REPAIR_SYSTEM = `You are fixing a broken React preview file. It failed to parse/compile. Return the COMPLETE corrected file — same design intent, same content — but syntactically valid.
+
+Hard rules (unchanged):
+- ONE self-contained file: "export default function App()". Import ONLY from "react". NO local/relative imports.
+- Tailwind classes for ALL styling. NO external libraries, NO image URLs (use emojis/colored divs).
+- The file must be COMPLETE — never truncate. Close every brace, parenthesis, tag, and statement.
+Output ONLY the raw corrected file contents (valid JS/JSX). No markdown, no backticks, no commentary.`
+
+/** Run one AI repair pass on a broken preview file, given the parser error. */
+async function repairPreview({ code, error, preset, prompt, providerConfig, aiModel }) {
+  const fixed = await generateWithModel({
+    taskType: 'repair',
+    tier: 'balanced',
+    system: PREVIEW_REPAIR_SYSTEM,
+    prompt: `Product: "${prompt}". Design direction: "${preset.label}".\n\nThis preview file failed to compile with error:\n${error}\n\nBroken file:\n${code}\n\nReturn the complete, corrected, syntactically-valid file.`,
+    providerConfig,
+    aiModel,
+    maxTokens: 6000,
+    expectedOutputFormat: 'text',
+  })
+  return String(fixed || '')
+    .replace(/^```[a-zA-Z]*\n?/, '')
+    .replace(/\n?```\s*$/, '')
+    .trim()
+}
 
 // Three deliberately different design directions. The model fills these with the
 // user's actual app concept, but stays inside the preset's palette + layout so
@@ -55,18 +100,19 @@ Hard rules:
 
 Output ONLY the raw file contents (valid JS/JSX). No markdown, no backticks, no commentary.`
 
-async function generateOnePreview({ preset, prompt, context, providerConfig, aiModel }) {
+async function generateOnePreview({ preset, prompt, context, providerConfig, aiModel, feedback }) {
+  const fb = (feedback || '').trim()
   const system = `${PREVIEW_SYSTEM_BASE}
 
 DESIGN DIRECTION FOR THIS PREVIEW — "${preset.label}":
 ${preset.direction}
 
-Stay inside this direction's palette and mood. The goal is that this preview looks clearly DIFFERENT from other directions while still fitting the product.`
+Stay inside this direction's palette and mood. The goal is that this preview looks clearly DIFFERENT from other directions while still fitting the product.${fb ? `\n\nUSER'S DESIGN FEEDBACK (apply this to THIS preview while keeping the "${preset.label}" direction): ${fb}` : ''}`
 
   const userPrompt = `Product the user wants to build:
 "${prompt}"
 
-Produce a single polished preview screen for this product in the "${preset.label}" design direction. Make it look real and intentionally designed.`
+Produce a single polished preview screen for this product in the "${preset.label}" design direction. Make it look real and intentionally designed.${fb ? `\n\nThe user reviewed the previous designs and asked for these changes — incorporate them: ${fb}` : ''}`
 
   const file = await generateWithModel({
     taskType: 'codegen',
@@ -76,15 +122,39 @@ Produce a single polished preview screen for this product in the "${preset.label
     context,
     providerConfig,
     aiModel,
-    maxTokens: 4000,
+    // Roomier budget so the model doesn't truncate mid-statement (the usual
+    // cause of "Unexpected token" syntax errors in previews).
+    maxTokens: 6000,
     expectedOutputFormat: 'text',
   })
 
   // Strip any stray markdown fences the model may add.
-  const cleaned = String(file || '')
+  let cleaned = String(file || '')
     .replace(/^```[a-zA-Z]*\n?/, '')
     .replace(/\n?```\s*$/, '')
     .trim()
+
+  // Design-phase auto-fix: validate the generated preview and, if it's broken
+  // (e.g. truncated, unbalanced braces), automatically repair it — up to 2
+  // passes — so a syntax error never reaches the carousel.
+  let check = validatePreview(cleaned)
+  for (let attempt = 0; attempt < 2 && !check.ok; attempt++) {
+    try {
+      const repaired = await repairPreview({ code: cleaned, error: check.error, preset, prompt, providerConfig, aiModel })
+      if (repaired && repaired.length > 40) {
+        const repairedCheck = validatePreview(repaired)
+        // Keep the repaired version if it's valid, or at least no worse.
+        if (repairedCheck.ok) { cleaned = repaired; check = repairedCheck; break }
+        cleaned = repaired; check = repairedCheck
+      }
+    } catch { break }
+  }
+
+  // Final gate: if it still doesn't parse, signal failure so the caller drops
+  // this preset rather than shipping a broken preview to the user.
+  if (!validatePreview(cleaned).ok) {
+    throw new Error(`Preview for "${preset.label}" failed validation after repair`)
+  }
 
   return cleaned
 }
@@ -92,15 +162,19 @@ Produce a single polished preview screen for this product in the "${preset.label
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { prompt, context, providerConfig, aiModel } = req.body || {}
+  const { prompt, context, providerConfig, aiModel, feedback, lockProvider } = req.body || {}
   if (!prompt || !String(prompt).trim()) {
     return res.status(400).json({ error: 'Missing required field: prompt' })
   }
 
+  // When the user has locked their model, thread a no-failover flag so previews
+  // run ONLY on the chosen provider (no silent gemini→groq→claude switching).
+  const pc = lockProvider ? { ...(providerConfig || {}), __noFailover: true } : providerConfig
+
   try {
     const results = await Promise.allSettled(
       STYLE_PRESETS.map(preset =>
-        generateOnePreview({ preset, prompt, context, providerConfig, aiModel })
+        generateOnePreview({ preset, prompt, context, providerConfig: pc, aiModel, feedback })
           .then(code => ({ preset, code }))
       )
     )
@@ -113,6 +187,10 @@ export default async function handler(req, res) {
           id: preset.id,
           label: preset.label,
           vibe: preset.vibe,
+          // direction carries the precise palette/theme/mood instructions the
+          // codegen needs to faithfully reproduce the chosen design. Dropping it
+          // (previously) meant the built app ignored the selected look.
+          direction: preset.direction,
           files: { '/App.js': r.value.code },
         }
       })

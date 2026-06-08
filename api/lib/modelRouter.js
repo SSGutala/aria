@@ -100,6 +100,10 @@ export async function generateWithModel(opts) {
   const override = providerConfig[taskType] || {}
   const preferred = provider || aiModel || override.provider || stageDefault.provider
   const resolvedTier = tier || override.tier || stageDefault.tier
+  // When the user locks a provider ("stay on this model"), we skip automatic
+  // failover entirely — the request runs ONLY on the chosen provider, and any
+  // rate-limit/quota error surfaces instead of silently switching to another.
+  const noFailover = opts.noFailover || providerConfig.__noFailover || false
 
   const ctxStr = stringifyContext(context)
   const fullPrompt = ctxStr ? `${ctxStr}\n\n---\n\n${prompt}` : prompt
@@ -108,7 +112,7 @@ export async function generateWithModel(opts) {
   // rate-limit / quota error, cool it down and fail over to the next candidate
   // (other cloud provider → local Ollama). Cooled-down cloud providers are
   // skipped until their timer expires, at which point they're preferred again.
-  const chain = buildFailoverChain(preferred)
+  const chain = noFailover ? [preferred] : buildFailoverChain(preferred)
   let lastErr
 
   for (let i = 0; i < chain.length; i++) {

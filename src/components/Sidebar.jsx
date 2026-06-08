@@ -112,7 +112,7 @@ function Chevron({ open }) {
  * with Rename / Pin / (Add to project) / Delete. The parent owns which menu is open
  * (via `open`/`onToggle`) so only one is visible at a time.
  */
-function KebabMenu({ open, onToggle, onRename, onPin, pinned, onDelete, folders, onMove, currentFolderId, showProjectMove = true }) {
+function KebabMenu({ open, onToggle, onRename, onPin, pinned, onDelete, folders, onMove, currentFolderId, showProjectMove = true, topActions = [] }) {
   const [showFolders, setShowFolders] = useState(false)
   useEffect(() => { if (!open) setShowFolders(false) }, [open])
 
@@ -140,6 +140,15 @@ function KebabMenu({ open, onToggle, onRename, onPin, pinned, onDelete, folders,
             background: '#161616', border: '0.5px solid #2A2A2A', borderRadius: 8, padding: 4,
             boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
           }}>
+            {topActions.length > 0 && (
+              <>
+                {topActions.map(a => (
+                  <button key={a.label} style={itemStyle(false)} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}
+                    onClick={() => { onToggle(); a.onClick() }}>{a.label}</button>
+                ))}
+                <div style={{ height: 0.5, background: '#262626', margin: '4px 6px' }} />
+              </>
+            )}
             <button style={itemStyle(false)} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}
               onClick={() => { onToggle(); onRename() }}>Rename</button>
             <button style={itemStyle(false)} onMouseEnter={e => hov(e, true)} onMouseLeave={e => hov(e, false)}
@@ -184,7 +193,7 @@ function KebabMenu({ open, onToggle, onRename, onPin, pinned, onDelete, folders,
   )
 }
 
-export default function Sidebar({ user, conversations, apps, appProjects = [], onOpenProject, onDeleteProject, onProjectsChange, onConversationsChange, onAppsChange, onConversationRename, onAppRename, onClose, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveToFolder, onPinItem, onNewApp }) {
+export default function Sidebar({ user, conversations, apps, appProjects = [], onOpenProject, onDeleteProject, onProjectsChange, onConversationsChange, onAppsChange, onConversationRename, onAppRename, onClose, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveToFolder, onReorderFolders, onPinItem, onNewApp }) {
   const navigate = useNavigate()
   const { convId } = useParams()
   const { profile } = useProfile()
@@ -203,6 +212,38 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
   const [openMenu, setOpenMenu]             = useState(null)    // key of the kebab menu that's open
   const [collapsedFolders, setCollapsedFolders] = useState(() => new Set()) // folder ids collapsed
   const [confirmDeleteFolder, setConfirmDeleteFolder] = useState(null)
+
+  // ── Drag-and-drop state ─────────────────────────────────────────────────
+  // dragItem: what's being dragged — { kind: 'chat'|'app'|'folder', id }.
+  // dropZone: the current hover target for visual feedback —
+  //   `folder:<id>` (drop an item into / reorder before this folder) or 'unfiled'.
+  const [dragItem, setDragItem] = useState(null)
+  const [dropZone, setDropZone] = useState(null)
+
+  const endDrag = () => { setDragItem(null); setDropZone(null) }
+
+  // Drop an item (or folder) onto a folder. Items get filed into it; a dragged
+  // folder reorders to sit just before the target folder.
+  const handleDropOnFolder = (targetFolderId) => {
+    if (!dragItem) return
+    if (dragItem.kind === 'folder') {
+      if (dragItem.id === targetFolderId) { endDrag(); return }
+      const ids = sortedFolders.map(f => f.id).filter(id => id !== dragItem.id)
+      const at = ids.indexOf(targetFolderId)
+      ids.splice(at < 0 ? ids.length : at, 0, dragItem.id)
+      onReorderFolders?.(ids)
+    } else {
+      onMoveToFolder?.(dragItem.kind, dragItem.id, targetFolderId)
+    }
+    endDrag()
+  }
+
+  // Drop an item onto the unfiled "Recent" area → remove it from its folder.
+  const handleDropUnfiled = () => {
+    if (!dragItem || dragItem.kind === 'folder') { endDrag(); return }
+    onMoveToFolder?.(dragItem.kind, dragItem.id, null)
+    endDrag()
+  }
 
   useEffect(() => { if (showTrash && user) loadTrash() }, [showTrash, user])
 
@@ -242,6 +283,9 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
     return (
       <div key={conv.id}>
         <div
+          draggable={!isRenaming}
+          onDragStart={e => { e.stopPropagation(); setDragItem({ kind: 'chat', id: conv.id }) }}
+          onDragEnd={endDrag}
           onMouseEnter={() => setHoveredId(conv.id)}
           onMouseLeave={() => setHoveredId(null)}
           onClick={() => { if (!isRenaming) { logAction('conversation.opened', { conversationId: conv.id }); navigate(`/workspace/${conv.id}`) } }}
@@ -289,6 +333,9 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
     return (
       <div
         key={proj.id}
+        draggable={!isRenaming}
+        onDragStart={e => { e.stopPropagation(); setDragItem({ kind: 'app', id: proj.id }) }}
+        onDragEnd={endDrag}
         onMouseEnter={() => setHoveredId(`proj-${proj.id}`)}
         onMouseLeave={() => setHoveredId(null)}
         onClick={() => { if (!isRenaming) { logAction('app.project_reopened', { projectId: proj.id }); onOpenProject?.(proj) } }}
@@ -354,7 +401,7 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
     setTrashedItems(all)
   }
 
-  async function createConversation() {
+  async function createConversation(folderId = null) {
     // Freeze the user's current role context onto the new chat so it stays
     // consistent even if they later change their profile role.
     const roleSnapshot = profile ? {
@@ -364,11 +411,17 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
       intended_use_cases: profile.intended_use_cases || profile.use_cases || [],
       role_overridden: false,
     } : {}
-    const { data, error } = await supabase.from('conversations')
-      .insert({ user_id: user.id, title: 'New conversation', ...roleSnapshot })
+    // When created from a folder's ⋮ menu, file the chat into that folder up
+    // front. If the folder_id column isn't migrated yet, retry without it.
+    const base = { user_id: user.id, title: 'New conversation', ...roleSnapshot }
+    let { data, error } = await supabase.from('conversations')
+      .insert(folderId ? { ...base, folder_id: folderId } : base)
       .select().single()
+    if (error && folderId && /folder_id/i.test(error.message || '')) {
+      ({ data, error } = await supabase.from('conversations').insert(base).select().single())
+    }
     if (!error && data) {
-      logAction('conversation.new_created', { conversationId: data.id, role: profile?.selected_role })
+      logAction('conversation.new_created', { conversationId: data.id, role: profile?.selected_role, folderId: folderId || null })
       onConversationsChange()
       navigate(`/workspace/${data.id}`)
     }
@@ -565,7 +618,16 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
 
           {/* Recent Chats — unfiled conversations */}
           {unfiledChats.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
+            <div
+              onDragOver={e => {
+                if (!dragItem || dragItem.kind === 'folder') return
+                e.preventDefault()
+                if (dropZone !== 'unfiled') setDropZone('unfiled')
+              }}
+              onDragLeave={() => { if (dropZone === 'unfiled') setDropZone(null) }}
+              onDrop={e => { e.preventDefault(); handleDropUnfiled() }}
+              style={{ marginBottom: 14, borderRadius: 6, border: dropZone === 'unfiled' ? '0.5px dashed #3D3D3D' : '0.5px solid transparent' }}
+            >
               {sectionHeader('Recent Chats',
                 <button
                   onClick={() => { logAction('conversations.clear_all_initiated', {}); setConfirmClearAll('chats') }}
@@ -581,7 +643,16 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
 
           {/* Recent Apps — unfiled generated projects (new engine) */}
           {unfiledApps.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
+            <div
+              onDragOver={e => {
+                if (!dragItem || dragItem.kind === 'folder') return
+                e.preventDefault()
+                if (dropZone !== 'unfiled') setDropZone('unfiled')
+              }}
+              onDragLeave={() => { if (dropZone === 'unfiled') setDropZone(null) }}
+              onDrop={e => { e.preventDefault(); handleDropUnfiled() }}
+              style={{ marginBottom: 14, borderRadius: 6, border: dropZone === 'unfiled' ? '0.5px dashed #3D3D3D' : '0.5px solid transparent' }}
+            >
               {sectionHeader('Recent Apps')}
               {unfiledApps.map(proj => renderProjectRow(proj))}
             </div>
@@ -602,6 +673,18 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
                 return (
                   <div key={folder.id} style={{ marginBottom: 2 }}>
                     <div
+                      draggable={!isRenaming}
+                      onDragStart={e => { e.stopPropagation(); setDragItem({ kind: 'folder', id: folder.id }) }}
+                      onDragEnd={endDrag}
+                      onDragOver={e => {
+                        // Accept item drops always, and folder drops onto a *different* folder.
+                        if (!dragItem) return
+                        if (dragItem.kind === 'folder' && dragItem.id === folder.id) return
+                        e.preventDefault()
+                        if (dropZone !== `folder:${folder.id}`) setDropZone(`folder:${folder.id}`)
+                      }}
+                      onDragLeave={() => { if (dropZone === `folder:${folder.id}`) setDropZone(null) }}
+                      onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(folder.id) }}
                       onMouseEnter={() => setHoveredId(`folder-${folder.id}`)}
                       onMouseLeave={() => setHoveredId(null)}
                       onClick={() => { if (!isRenaming) toggleFolder(folder.id) }}
@@ -609,8 +692,9 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
                       style={{
                         padding: '7px 8px', borderRadius: 6, fontSize: 12,
                         display: 'flex', alignItems: 'center', gap: 6, cursor: isRenaming ? 'text' : 'pointer',
-                        color: '#D4D4D4', background: isHovered ? '#141414' : 'transparent',
-                        border: '0.5px solid transparent',
+                        color: '#D4D4D4',
+                        background: dropZone === `folder:${folder.id}` ? '#16241A' : isHovered ? '#141414' : 'transparent',
+                        border: dropZone === `folder:${folder.id}` ? '0.5px solid #2E5F3A' : '0.5px solid transparent',
                       }}
                     >
                       <span style={{ color: '#6B7280', display: 'flex' }}><Chevron open={!collapsed} /></span>
@@ -633,12 +717,27 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
                           pinned={folder.pinned}
                           onDelete={() => setConfirmDeleteFolder(folder)}
                           showProjectMove={false}
+                          topActions={[
+                            { label: 'New chat', onClick: () => { setCollapsedFolders(prev => { const n = new Set(prev); n.delete(folder.id); return n }); createConversation(folder.id) } },
+                            { label: 'New app', onClick: () => { setCollapsedFolders(prev => { const n = new Set(prev); n.delete(folder.id); return n }); onNewApp?.(folder.id) } },
+                          ]}
                         />
                       )}
                     </div>
 
                     {!collapsed && (
-                      <div style={{ marginLeft: 8, paddingLeft: 6, borderLeft: '0.5px solid #1A1A1A' }}>
+                      <div
+                        onDragOver={e => {
+                          if (!dragItem || dragItem.kind === 'folder') return
+                          e.preventDefault()
+                          if (dropZone !== `folder:${folder.id}`) setDropZone(`folder:${folder.id}`)
+                        }}
+                        onDrop={e => { e.preventDefault(); e.stopPropagation(); handleDropOnFolder(folder.id) }}
+                        style={{
+                          marginLeft: 8, paddingLeft: 6,
+                          borderLeft: dropZone === `folder:${folder.id}` ? '0.5px solid #2E5F3A' : '0.5px solid #1A1A1A',
+                        }}
+                      >
                         {count === 0 && (
                           <div style={{ fontSize: 10.5, color: '#525252', padding: '6px 10px' }}>Empty — add chats or apps via their ⋮ menu</div>
                         )}
