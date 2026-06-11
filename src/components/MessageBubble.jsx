@@ -9,6 +9,9 @@ import PMPackageCard from './PMPackageCard'
 import RolePackageCard from './RolePackageCard'
 import EngineIntakeCard from './EngineIntakeCard'
 import DocsTypeCard from './DocsTypeCard'
+import StyleCarousel from './StyleCarousel'
+
+const glareGradient = 'linear-gradient(110deg, #4A4A4A 0%, #8A8A8A 18%, #FFFFFF 34%, #E8E8E8 44%, #9A9A9A 58%, #5A5A5A 78%, #888888 100%)'
 
 function AIIcon() {
   return (
@@ -113,14 +116,58 @@ export default function MessageBubble({ message, isTyping, buildingLabel }) {
     )
   }
 
-  // ── Doc type picker card ─────────────────────────────────────────────────────
+  // ── Doc type picker card (multi-select checkboxes) ───────────────────────────
   if (cardType === 'doc_type_picker') {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
         <AIIcon />
         <DocsTypeCard
-          onSelect={message.onDocTypeSelect}
-          selected={meta.selectedDocType}
+          onGenerate={message.onDocsGenerate}
+          done={!!meta.docsSubmitted}
+          doneLabels={meta.doneLabels || []}
+        />
+      </div>
+    )
+  }
+
+  // ── "Any other docs?" gate — proceed to design or add more ──────────────────
+  if (cardType === 'docs_gate') {
+    const answered = !!meta.gateAnswered
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <AIIcon />
+        <div style={{ background: '#0D0D0D', border: '0.5px solid #1E1E1E', borderRadius: 14, padding: '14px 18px', maxWidth: '92%' }}>
+          <p style={{ margin: '0 0 10px', fontSize: 13, color: '#D4D4D4' }}>
+            Your documents are ready. Want any other documents, or should I move on to designing the app?
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => message.onAddMore && message.onAddMore()}
+              disabled={answered}
+              style={{ background: '#1A1A1A', color: answered ? '#444' : '#D4D4D4', border: '0.5px solid #2A2A2A', borderRadius: 7, padding: '7px 14px', fontSize: 12, cursor: answered ? 'default' : 'pointer', fontFamily: 'inherit' }}
+            >+ Add more documents</button>
+            <button
+              onClick={() => message.onProceed && message.onProceed()}
+              disabled={answered}
+              style={{ background: answered ? '#1A1A1A' : glareGradient, color: answered ? '#444' : '#111', border: '0.5px solid #2A2A2A', borderRadius: 7, padding: '7px 14px', fontSize: 12, fontWeight: 600, cursor: answered ? 'default' : 'pointer', fontFamily: 'inherit' }}
+            >Proceed to design →</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── In-chat design carousel (docs → designs → app bridge) ────────────────────
+  if (cardType === 'style_choices') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+        <AIIcon />
+        <StyleCarousel
+          styles={meta.styles || []}
+          prompt={meta.prompt || ''}
+          building={message.building}
+          onBuild={message.onStyleBuild}
+          onRegenerate={message.onStyleRegenerate}
         />
       </div>
     )

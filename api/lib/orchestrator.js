@@ -121,6 +121,7 @@ export function createOrchestrator({ workflow, aiModel, traceContext = {} }) {
         smart: flags.smart,
         modelTier: flags.modelTier,
         aiModel,
+        expectJson: !!parseJson,   // → provider JSON mode (forces valid JSON, no fences)
       })
 
       const text = res?.content?.[0]?.text || ''

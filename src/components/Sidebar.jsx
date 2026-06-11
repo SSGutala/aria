@@ -193,7 +193,7 @@ function KebabMenu({ open, onToggle, onRename, onPin, pinned, onDelete, folders,
   )
 }
 
-export default function Sidebar({ user, conversations, apps, appProjects = [], onOpenProject, onDeleteProject, onProjectsChange, onConversationsChange, onAppsChange, onConversationRename, onAppRename, onClose, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveToFolder, onReorderFolders, onPinItem, onNewApp }) {
+export default function Sidebar({ user, conversations, apps, appProjects = [], docs = [], onOpenDoc, onDocsChange, onOpenProject, onDeleteProject, onProjectsChange, onConversationsChange, onAppsChange, onConversationRename, onAppRename, onClose, folders = [], onCreateFolder, onRenameFolder, onDeleteFolder, onMoveToFolder, onReorderFolders, onPinItem, onNewApp }) {
   const navigate = useNavigate()
   const { convId } = useParams()
   const { profile } = useProfile()
@@ -269,6 +269,7 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
   const unfiledApps  = sortPinned(standaloneApps.filter(p => !fid(p)))
   const chatsInFolder = (id) => sortPinned(conversations.filter(c => fid(c) === id))
   const appsInFolder  = (id) => sortPinned(standaloneApps.filter(p => fid(p) === id))
+  const docsInFolder  = (id) => docs.filter(d => fid(d) === id)
   const sortedFolders = sortPinned(folders)
 
   // ── Row renderers (shared between Recent sections and folder contents) ────
@@ -370,6 +371,33 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
             showProjectMove={!branch}
           />
         )}
+      </div>
+    )
+  }
+
+  // A generated document row (lives inside a folder — the "Aria drive").
+  // Draggable between folders; click opens it in the editable artifact viewer.
+  const renderDocRow = (doc, indent = 8) => {
+    const isHovered = hoveredId === `doc-${doc.id}`
+    return (
+      <div
+        key={doc.id}
+        draggable
+        onDragStart={e => { e.stopPropagation(); setDragItem({ kind: 'doc', id: doc.id }) }}
+        onDragEnd={endDrag}
+        onMouseEnter={() => setHoveredId(`doc-${doc.id}`)}
+        onMouseLeave={() => setHoveredId(null)}
+        onClick={() => { logAction('doc.opened_from_sidebar', { docId: doc.id }); onOpenDoc?.(doc.id) }}
+        style={{
+          padding: '6px 10px', borderRadius: 6, fontSize: 12, marginLeft: indent,
+          display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
+          color: '#9A9A9A', marginBottom: 1,
+          background: isHovered ? '#141414' : 'transparent', border: '0.5px solid transparent',
+        }}
+        title={doc.title}
+      >
+        <span style={{ fontSize: 11, flexShrink: 0 }}>📄</span>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.title || 'Untitled doc'}</span>
       </div>
     )
   }
@@ -666,7 +694,8 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
                 const collapsed = collapsedFolders.has(folder.id)
                 const fChats = chatsInFolder(folder.id)
                 const fApps  = appsInFolder(folder.id)
-                const count  = fChats.length + fApps.length
+                const fDocs  = docsInFolder(folder.id)
+                const count  = fChats.length + fApps.length + fDocs.length
                 const isHovered = hoveredId === `folder-${folder.id}`
                 const isRenaming = renamingId === `folder-${folder.id}`
                 const menuKey = `folder-${folder.id}`
@@ -739,8 +768,12 @@ export default function Sidebar({ user, conversations, apps, appProjects = [], o
                         }}
                       >
                         {count === 0 && (
-                          <div style={{ fontSize: 10.5, color: '#525252', padding: '6px 10px' }}>Empty — add chats or apps via their ⋮ menu</div>
+                          <div style={{ fontSize: 10.5, color: '#525252', padding: '6px 10px' }}>Empty — generate docs in chat, or add chats &amp; apps via their ⋮ menu</div>
                         )}
+                        {fDocs.length > 0 && (
+                          <div style={{ fontSize: 9, color: '#525252', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '5px 10px 2px' }}>Docs</div>
+                        )}
+                        {fDocs.map(doc => renderDocRow(doc, 8))}
                         {fChats.length > 0 && (
                           <div style={{ fontSize: 9, color: '#525252', letterSpacing: '0.05em', textTransform: 'uppercase', padding: '5px 10px 2px' }}>Chats</div>
                         )}

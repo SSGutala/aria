@@ -39,6 +39,23 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
 
+// Flatten a normalized document's content into a compact text digest so it can
+// ground generation without blowing the context budget (~1.8k chars/doc).
+function digestDocContent(content) {
+  try {
+    if (!content) return ''
+    if (typeof content === 'string') return content.slice(0, 1800)
+    const sections = Array.isArray(content.sections) ? content.sections : []
+    if (sections.length) {
+      return sections.map(s => {
+        const body = s.body || s.content || s.text || (Array.isArray(s.items) ? s.items.join('; ') : '')
+        return `## ${s.title || ''}\n${String(body).replace(/\s+/g, ' ').trim()}`
+      }).join('\n').slice(0, 1800)
+    }
+    return JSON.stringify(content).slice(0, 1800)
+  } catch { return '' }
+}
+
 // Pull the most useful approved artifacts for this conversation as generation context.
 async function gatherContext(conversationId) {
   const ctx = {}
@@ -67,6 +84,21 @@ async function gatherContext(conversationId) {
       for (const a of artifacts) {
         if (!ctx.artifacts[a.artifact_type]) ctx.artifacts[a.artifact_type] = a.content
       }
+    }
+
+    // The generated 7-doc PM set (PRD, product design, strategy, etc.). These are
+    // the source of truth for a CHAT build: the app must be built FROM the docs,
+    // not just the one-line prompt. Trimmed to keep the context token-bounded.
+    const { data: pmDocs } = await supabase
+      .from('artifacts')
+      .select('artifact_type, title, content')
+      .eq('conversation_id', conversationId)
+      .in('artifact_type', ['prd', 'feature_scope', 'product_design', 'technical_spec', 'product_strategy', 'product_roadmap', 'competitive_analysis', 'business_case'])
+      .neq('status', 'deleted')
+      .order('created_at', { ascending: false })
+      .limit(6)
+    if (pmDocs?.length) {
+      ctx.sourceDocuments = pmDocs.map(d => ({ type: d.artifact_type, title: d.title, text: digestDocContent(d.content) }))
     }
   } catch (e) {
     devlogError('generate_app.context_failed', { conversationId, error: e.message })
@@ -131,7 +163,12 @@ export default async function handler(req, res) {
     return res.status(503).json(payload)
   }
 
-  const generationContext = context || await gatherContext(conversationId)
+  // Always gather the conversation's docs/artifacts and MERGE them under any
+  // explicit context the client passed (e.g. chosenStyle/styleOpinion from the
+  // carousel). This is what makes a CHAT build come FROM the docs: the design
+  // choice and the source documents both reach the pipeline.
+  const gathered = await gatherContext(conversationId)
+  const generationContext = { ...gathered, ...(context || {}) }
 
   if (wantsStream) {
     res.setHeader('Content-Type', 'application/x-ndjson')

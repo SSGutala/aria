@@ -89,6 +89,8 @@ createRoot(document.getElementById("root")).render(<App />);`,
 // ── Prompts ──────────────────────────────────────────────────────────────────
 const PLAN_SYSTEM = `You are a senior product engineer planning a REAL, working React + Tailwind web app that runs in an in-browser sandbox (Sandpack).
 
+SOURCE DOCUMENTS: If the prepended context contains "sourceDocuments" (a PRD, product design doc, strategy, etc.), treat them as the AUTHORITATIVE specification. Derive the app's features, screens, entities, and data model FROM those documents — the user already specified the product there. The one-line prompt is just a pointer; the documents are the source of truth. Where a PRD lists functional requirements or user stories, the plan's features MUST cover them. Where a design doc describes screens/flows, the uiSections MUST reflect them.
+
 Plan EXACTLY what the user asked for — nothing more, nothing less. Match scope to the request:
 - "simple": a single-purpose app (timer, calculator, to-do, note pad, converter, quiz, single dashboard). One screen. A handful of pieces of state. No backend concepts, no records, no CRUD, no status workflow.
 - "standard": a multi-feature tool (CRM, tracker, project board, admin console) that genuinely needs multiple screens, seeded records, and create/edit/delete.

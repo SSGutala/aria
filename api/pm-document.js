@@ -28,6 +28,39 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 )
 
+// Resolve (or lazily create) the project folder a generated doc should file into
+// — the "Aria drive" for the project. Strategy (per product decision):
+//   • If the conversation already sits in a folder, file the doc there.
+//   • Otherwise create a folder named from the project and move the conversation
+//     into it, so the project and all its docs live together.
+// Entirely best-effort: any failure (missing folder_id column, no user) returns
+// null and the doc is saved unfiled rather than blocking generation.
+async function resolveProjectFolder(supabase, conversationId, conv, projectContext, userRequest) {
+  try {
+    if (!conv?.user_id) return null
+    if (conv.folder_id) return conv.folder_id
+
+    // Derive a readable project name: conversation title → project context → request.
+    const raw = (conv.title && conv.title !== 'New conversation' ? conv.title : '')
+      || (typeof projectContext === 'string' ? projectContext : '')
+      || String(userRequest || '')
+    let name = raw.trim().replace(/\s+/g, ' ').slice(0, 60) || 'New project'
+
+    const { data: folder, error: fErr } = await supabase
+      .from('project_folders')
+      .insert({ user_id: conv.user_id, name })
+      .select('id')
+      .single()
+    if (fErr || !folder) return null
+
+    // File the conversation into the new folder (best-effort).
+    await supabase.from('conversations').update({ folder_id: folder.id }).eq('id', conversationId)
+    return folder.id
+  } catch {
+    return null
+  }
+}
+
 // Pull a human label out of a request like: Fill out my "Vendor Risk Form" template…
 function deriveTemplateLabel(userRequest = '') {
   const quoted = String(userRequest).match(/["“']([^"”']{2,60})["”']/)
@@ -125,24 +158,35 @@ export default async function handler(req, res) {
     const title = normalized.meta?.title || template.label
 
     // ── Persist as an artifact ───────────────────────────────────────────────────
-    const { data: conv } = await supabase.from('conversations').select('user_id').eq('id', conversationId).single()
+    const { data: conv } = await supabase.from('conversations').select('user_id, folder_id, title').eq('id', conversationId).single()
     const userId = conv?.user_id || null
 
-    const { data: artifact, error: artErr } = await supabase
+    // Resolve the project folder (the "Aria drive" for this project): reuse the
+    // conversation's folder if it's in one, otherwise create one for the project
+    // and file the conversation into it too. Best-effort — never block the doc.
+    const folderId = await resolveProjectFolder(supabase, conversationId, conv, projectContext, userRequest)
+
+    const baseRow = {
+      conversation_id: conversationId,
+      user_id: userId,
+      artifact_type: template.documentType,
+      title,
+      content: normalized,
+      source_prompt: userRequest,
+      version: 1,
+      status: 'draft',
+      file_urls: {},
+    }
+    let { data: artifact, error: artErr } = await supabase
       .from('artifacts')
-      .insert({
-        conversation_id: conversationId,
-        user_id: userId,
-        artifact_type: template.documentType,
-        title,
-        content: normalized,
-        source_prompt: userRequest,
-        version: 1,
-        status: 'draft',
-        file_urls: {},
-      })
+      .insert(folderId ? { ...baseRow, folder_id: folderId } : baseRow)
       .select()
       .single()
+    // If the folder_id column hasn't been migrated yet, retry without it so doc
+    // generation still works (the doc just won't be filed until the migration lands).
+    if (artErr && folderId && /folder_id/i.test(artErr.message || '')) {
+      ({ data: artifact, error: artErr } = await supabase.from('artifacts').insert(baseRow).select().single())
+    }
 
     if (artErr) throw new Error('Failed to save document: ' + artErr.message)
 

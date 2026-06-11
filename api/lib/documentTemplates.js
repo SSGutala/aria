@@ -114,6 +114,122 @@ export const DOCUMENT_TEMPLATES = {
     ],
   }),
 
+  // ── STRATEGY / DESIGN / GTM (style-trained: docStyleProfiles.js) ─────────────
+  // Section spines mirror the distilled style profiles so the registry structure
+  // and the injected style reference agree.
+  competitive_analysis: doc({
+    documentType: 'competitive_analysis',
+    label: 'Competitive Analysis',
+    aliases: ['competitive analysis', 'competitor analysis', 'competitive landscape', 'competitive research', 'market analysis'],
+    category: 'product',
+    purpose: 'Map the competitive landscape so the team can position, differentiate, and find whitespace.',
+    requiredSections: [
+      { key: 'executive_summary',  title: 'Executive Summary',                guidance: 'The headline competitive picture and the single biggest strategic takeaway.', minWords: 70 },
+      { key: 'market_overview',    title: 'Market Overview & Category Definition', guidance: 'Define the category, its boundaries, size, and the trends shaping it.', minWords: 70 },
+      { key: 'competitor_landscape', title: 'Competitor Landscape',           guidance: 'The set of competitors and a positioning map (e.g. axes of price vs capability).', minWords: 60 },
+      { key: 'competitor_deep_dives', title: 'Per-Competitor Deep Dives',     guidance: 'For each major competitor: strengths, weaknesses, pricing, and target user.', minWords: 120 },
+      { key: 'feature_matrix',     title: 'Feature Comparison Matrix',        guidance: 'Capability × competitor matrix; cells are ✓/partial/✗ or short notes. This is the centerpiece.', minWords: 60, kind: 'table', columns: ['Capability', 'Us', 'Competitor A', 'Competitor B', 'Competitor C'] },
+      { key: 'pricing_comparison', title: 'Pricing & Packaging Comparison',   guidance: 'How each competitor prices and packages, side by side.', minWords: 50, kind: 'table', columns: ['Competitor', 'Entry Price', 'Packaging', 'Notable Limits'] },
+      { key: 'differentiation',    title: 'Differentiation & Whitespace',     guidance: 'Where we win and the unserved opportunity (whitespace) to attack.', minWords: 60 },
+      { key: 'threats',            title: 'Threats & Defensive Moves',        guidance: 'Competitive threats and the defensive moves to counter them.', minWords: 50, kind: 'bullets' },
+      { key: 'recommendations',    title: 'Strategic Recommendations',        guidance: 'Crisp, prioritized recommendations grounded in the analysis.', minWords: 60, kind: 'bullets' },
+    ],
+  }),
+
+  product_strategy: doc({
+    documentType: 'product_strategy',
+    label: 'Product Strategy, Vision & OKRs',
+    aliases: ['product strategy, vision & okrs', 'strategy vision and okrs', 'product strategy', 'product vision', 'strategy & vision', 'vision and okrs', 'strategy document', 'okrs'],
+    category: 'product',
+    purpose: 'Set the long-horizon vision, the strategic bets to get there, and measurable OKRs.',
+    requiredSections: [
+      { key: 'executive_summary', title: 'Executive Summary',      guidance: 'The strategy in brief: where we are going and why it wins.', minWords: 70 },
+      { key: 'vision',            title: 'Vision Statement',        guidance: 'A singular, aspirational long-horizon north star.', minWords: 40 },
+      { key: 'mission',           title: 'Mission Statement',       guidance: 'The operational mission — what we do, for whom, day to day.', minWords: 30 },
+      { key: 'market_context',    title: 'Market Context & Why Now', guidance: 'The market dynamics and the timing case for this strategy.', minWords: 60 },
+      { key: 'target_segments',   title: 'Target Segments',         guidance: 'Who we serve, prioritized, with the rationale for focus.', minWords: 50 },
+      { key: 'strategic_pillars', title: 'Strategic Pillars',       guidance: '3–5 pillars, each titled "Pillar N: <name>" with a clear rationale (named bets).', minWords: 100 },
+      { key: 'strategic_bets',    title: 'Strategic Bets / Where We Are Investing', guidance: 'The concrete investments and trade-offs behind the pillars.', minWords: 60 },
+      { key: 'okrs',              title: 'Objectives & Key Results', guidance: 'Each Objective has 2–4 measurable Key Results with explicit baseline→target deltas.', minWords: 90 },
+      { key: 'kpis',              title: 'KPIs / Success Metrics',  guidance: 'Top-line metrics with baselines, targets, and timeframe.', minWords: 40, kind: 'table', columns: ['Metric', 'Baseline', 'Target', 'Timeframe'] },
+      { key: 'positioning',       title: 'Competitive Positioning', guidance: 'How this strategy positions us against the competition.', minWords: 50 },
+      { key: 'strategic_risks',   title: 'Strategic Risks & Mitigations', guidance: 'Material risks to the strategy with mitigations and owners.', minWords: 50, kind: 'table', columns: ['Risk', 'Likelihood', 'Impact', 'Mitigation'] },
+    ],
+  }),
+
+  roadmap_release: doc({
+    documentType: 'product_roadmap',
+    label: 'Product Roadmap & Release Plan',
+    aliases: ['product roadmap & release plan', 'roadmap and release plan', 'roadmap & release plan', 'product roadmap', 'release roadmap', 'roadmap'],
+    category: 'product',
+    purpose: 'Lay out the strategic roadmap and the tactical plan to release it safely.',
+    requiredSections: [
+      { key: 'executive_summary', title: 'Executive Summary',     guidance: 'What the roadmap delivers and the release approach in brief.', minWords: 60 },
+      { key: 'vision_northstar',  title: 'Vision / North Star',    guidance: 'The outcome the roadmap is driving toward.', minWords: 40 },
+      { key: 'strategic_themes',  title: 'Strategic Themes',       guidance: '3–4 named themes that organize the work.', minWords: 60 },
+      { key: 'roadmap_timeline',  title: 'Roadmap Timeline',       guidance: 'Theme × quarter matrix, or Now / Next / Later.', minWords: 50, kind: 'table', columns: ['Theme', 'Now', 'Next', 'Later'] },
+      { key: 'key_initiatives',   title: 'Key Initiatives',        guidance: 'Deep-dive per theme: the initiatives, scope, and expected impact.', minWords: 90 },
+      { key: 'roadmap_metrics',   title: 'Success Metrics',        guidance: 'How roadmap progress and outcomes are measured.', minWords: 40 },
+      { key: 'release_overview',  title: 'Release Overview',       guidance: 'What is being released and the target window. Begins the tactical Release Plan half.', minWords: 40 },
+      { key: 'release_scope',     title: 'Release Scope',          guidance: 'Explicit In Scope and Out of Scope for this release.', minWords: 50, kind: 'bullets' },
+      { key: 'release_timeline',  title: 'Release Timeline',       guidance: 'Dated alpha → beta → GA milestones.', minWords: 40, kind: 'table', columns: ['Milestone', 'Date', 'Audience', 'Exit Criteria'] },
+      { key: 'rollout_strategy',  title: 'Rollout Strategy',       guidance: 'Percentage ramp, feature flags, canary approach.', minWords: 50 },
+      { key: 'go_no_go',          title: 'Go / No-Go Criteria',    guidance: 'The gates that must be green to proceed.', minWords: 40, kind: 'bullets' },
+      { key: 'launch_checklist',  title: 'Launch Readiness Checklist', guidance: 'Readiness broken out by function: Eng, QA, Docs, GTM, Legal.', minWords: 50, kind: 'table', columns: ['Function', 'Item', 'Owner', 'Status'] },
+      { key: 'rollback_plan',     title: 'Rollback Plan',          guidance: 'Named triggers and the exact steps to revert safely.', minWords: 50, kind: 'bullets' },
+      { key: 'comms_plan',        title: 'Stakeholder Communication Plan', guidance: 'Who is told what, when, through which channel.', minWords: 40 },
+      { key: 'deps_risks',        title: 'Dependencies & Risks',   guidance: 'Cross-team dependencies and release risks with mitigations.', minWords: 50 },
+    ],
+  }),
+
+  product_design: doc({
+    documentType: 'product_design',
+    label: 'Product Design Document',
+    aliases: ['product design document', 'product design', 'design document', 'ux design doc', 'product design spec'],
+    category: 'product',
+    purpose: 'Specify the experience — flows, IA, screens, design system, and accessibility — for engineering handoff.',
+    requiredSections: [
+      { key: 'design_summary',    title: 'Design Summary',         guidance: 'What is being designed and the experience outcome it targets.', minWords: 50 },
+      { key: 'design_principles', title: 'Design Vision & Principles', guidance: '3–5 named principles, each with a concrete design signal (not platitudes).', minWords: 70 },
+      { key: 'problem_goals',     title: 'Problem Statement & Design Goals', guidance: 'The user problem and the measurable design goals.', minWords: 50 },
+      { key: 'personas',          title: 'User Personas',          guidance: 'Key personas with context, needs, and pain points.', minWords: 50, kind: 'table', columns: ['Persona', 'Context', 'Needs', 'Pain Points'] },
+      { key: 'user_flows',        title: 'User Flows',             guidance: 'Numbered primary flow plus a flow-state table.', minWords: 70 },
+      { key: 'information_arch',  title: 'Information Architecture', guidance: 'Screen/navigation hierarchy as a tree.', minWords: 50 },
+      { key: 'screen_specs',      title: 'Screen-by-Screen Specs', guidance: 'Per screen: purpose, key elements, and interactions.', minWords: 100 },
+      { key: 'design_system',     title: 'Design System / Visual Spec', guidance: 'Real token values: color hex, type scale, spacing, radius, elevation.', minWords: 70 },
+      { key: 'component_states',  title: 'Component & Interaction States', guidance: 'Per component: default / hover / active / disabled / error / loading.', minWords: 50, kind: 'table', columns: ['Component', 'Default', 'Hover', 'Active', 'Disabled', 'Error/Loading'] },
+      { key: 'accessibility',     title: 'Accessibility Considerations', guidance: 'WCAG specifics: contrast, focus order, SR labels, motion, target sizes.', minWords: 50, kind: 'bullets' },
+      { key: 'edge_states',       title: 'Edge Cases & Empty/Error States', guidance: 'Empty, error, and boundary states for the key screens.', minWords: 50, kind: 'bullets' },
+      { key: 'handoff',           title: 'Design QA / Handoff Notes', guidance: 'Engineering handoff notes and a design QA checklist.', minWords: 40 },
+      { key: 'design_metrics',    title: 'Success Metrics',        guidance: 'How design success is measured.', minWords: 40, kind: 'table', columns: ['Metric', 'Baseline', 'Target', 'How Measured'] },
+    ],
+  }),
+
+  // ── PITCH DECK (slide-structured; rendered as a designed landscape PDF) ──────
+  // Each "section" is ONE slide. Content is punchy (headline + a few tight bullets),
+  // NOT prose — the deck PDF renderer lays each out as a styled slide.
+  pitch_deck: doc({
+    documentType: 'pitch_deck',
+    label: 'Pitch Deck',
+    aliases: ['pitch deck', 'investor deck', 'investor pitch', 'seed deck', 'fundraising deck', 'startup deck'],
+    category: 'presentation',
+    formatType: 'presentation',
+    purpose: 'A crisp investor pitch deck — one idea per slide, punchy and visual.',
+    requiredSections: [
+      { key: 'cover',          title: 'Company & Vision',      guidance: 'Company name + a single bold one-line pitch (what you do, for whom, why it matters). 1 sentence.', minWords: 12 },
+      { key: 'problem',        title: 'The Problem',           guidance: 'The pain, who feels it, and how big/costly it is. 3-4 punchy bullets.', minWords: 25, kind: 'bullets' },
+      { key: 'solution',       title: 'The Solution',          guidance: 'How you solve it, in plain language. 3-4 bullets, each a concrete capability + benefit.', minWords: 25, kind: 'bullets' },
+      { key: 'product',        title: 'How It Works',          guidance: 'The product in 3 simple steps or key capabilities the user experiences.', minWords: 25, kind: 'bullets' },
+      { key: 'market',         title: 'Market Opportunity',    guidance: 'TAM / SAM / SOM with rough numbers and the trend making now the time. 3-4 bullets.', minWords: 25, kind: 'bullets' },
+      { key: 'business_model', title: 'Business Model',        guidance: 'How you make money — pricing, who pays, unit economics. 3-4 bullets.', minWords: 25, kind: 'bullets' },
+      { key: 'gtm',            title: 'Go-To-Market',          guidance: 'How you acquire customers and the wedge/first beachhead. 3-4 bullets.', minWords: 25, kind: 'bullets' },
+      { key: 'competition',    title: 'Competitive Edge',      guidance: 'Who else is out there and your defensible advantage. 3-4 bullets.', minWords: 25, kind: 'bullets' },
+      { key: 'traction',       title: 'Traction & Milestones', guidance: 'Proof points: users, revenue, pilots, signed LOIs, key milestones hit. 3-4 bullets.', minWords: 20, kind: 'bullets' },
+      { key: 'team',           title: 'Team',                  guidance: 'Founders/key people and why they win — relevant edge. 2-4 bullets.', minWords: 20, kind: 'bullets' },
+      { key: 'ask',            title: 'The Ask',               guidance: 'How much you are raising and the use of funds + the milestones it unlocks. 3-4 bullets.', minWords: 20, kind: 'bullets' },
+    ],
+  }),
+
   // ── TECHNICAL / ENGINEERING ─────────────────────────────────────────────────
   technical_spec: doc({
     documentType: 'technical_spec',

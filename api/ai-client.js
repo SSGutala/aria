@@ -233,7 +233,7 @@ function getMockResponse(system, messages, { max_tokens, smart, modelTier }) {
   }
 }
 
-async function callGeminiFallback({ system, messages, max_tokens, smart }) {
+async function callGeminiFallback({ system, messages, max_tokens, smart, json = false }) {
   if (!gemini) throw new Error('Gemini not configured — set GOOGLE_API_KEY')
   const model = smart ? GEMINI_MODEL_SMART : GEMINI_MODEL_FAST
   const safetySettings = [
@@ -254,7 +254,12 @@ async function callGeminiFallback({ system, messages, max_tokens, smart }) {
 
     const res = await genModel.generateContent({
       contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-      generationConfig: { maxOutputTokens: Math.min(max_tokens, GEMINI_MAX_TOKENS) },
+      generationConfig: {
+        maxOutputTokens: Math.min(max_tokens, GEMINI_MAX_TOKENS),
+        // Native JSON mode — forces syntactically valid JSON with no markdown
+        // fences or prose, which is what large structured docs/specs need to parse.
+        ...(json ? { responseMimeType: 'application/json' } : {}),
+      },
     })
 
     // Track token usage from Gemini metadata
@@ -341,7 +346,7 @@ async function callOllamaFallback({ system, messages, max_tokens }) {
  * @param {string}  [opts.modelTier]      — 'fast'|'medium'|'smart' (maps to smart flag)
  * @param {number}  [opts.timeout=30000]  — timeout in ms
  */
-export async function createMessage({ system, messages, max_tokens = 4000, smart = false, modelTier, timeout = 30000, aiModel }) {
+export async function createMessage({ system, messages, max_tokens = 4000, smart = false, modelTier, timeout = 30000, aiModel, expectJson = false }) {
   // Resolve which model to use — explicit param > env default > gemini (primary free tier).
   const resolvedModel = aiModel || process.env.DEFAULT_AI_MODEL || 'gemini'
 
@@ -350,12 +355,52 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
     return getMockResponse(system, messages, { max_tokens, smart, modelTier })
   }
 
-  // Route to the explicitly selected AI model (if not Gemini-first default flow)
+  // Route to the explicitly selected AI model. CRITICAL: even when a specific
+  // provider is selected, fail over on error — a Gemini 503 ("high demand") or
+  // quota hit must NOT hard-fail doc/design generation. Order: selected → the
+  // other cloud providers → Claude. (App builds that need a hard pin use the
+  // modelRouter's __noFailover path instead; this is the resilient default.)
+  const wantSmart = smart || modelTier === 'smart'
+  async function claudeDirect() {
+    if (!anthropic) throw new Error('Anthropic not configured')
+    const res = await anthropic.messages.create({ model: wantSmart ? ANTHROPIC_SMART : ANTHROPIC_MODEL, max_tokens, system, messages })
+    if (res?.usage) {
+      const { trackUsage, setCurrentProvider } = await import('./lib/tokenTracker.js')
+      trackUsage('claude', { inputTokens: res.usage.input_tokens || 0, outputTokens: res.usage.output_tokens || 0 })
+      setCurrentProvider('claude')
+    }
+    return res
+  }
+  // Try a chain of provider thunks in order; return the first success, marking the
+  // degraded-provider banner when we move off the selected one.
+  async function tryChain(label, chain) {
+    const errs = []
+    for (let i = 0; i < chain.length; i++) {
+      try {
+        const r = await chain[i].fn()
+        _lastFallback = i === 0 ? null : { reason: 'error', provider: chain[i].name, model: null, at: Date.now() }
+        return r
+      } catch (e) {
+        errs.push(`${chain[i].name}: ${e?.message || e}`)
+        console.warn(`[ai-client] ${chain[i].name} failed (${e?.message || e})${i < chain.length - 1 ? ' — failing over' : ''}`)
+      }
+    }
+    throw new Error(`All providers failed for ${label}. ${errs.join(' | ')}`)
+  }
+
   if (resolvedModel === 'groq' && groq) {
-    return callGroqFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
+    return tryChain('groq-selected', [
+      { name: 'groq', fn: () => callGroqFallback({ system, messages, max_tokens, smart: wantSmart }) },
+      ...(gemini ? [{ name: 'gemini', fn: () => callGeminiFallback({ system, messages, max_tokens, smart: wantSmart, json: expectJson }) }] : []),
+      ...(anthropic ? [{ name: 'claude', fn: claudeDirect }] : []),
+    ])
   }
   if (resolvedModel === 'gemini' && gemini) {
-    return callGeminiFallback({ system, messages, max_tokens, smart: smart || modelTier === 'smart' })
+    return tryChain('gemini-selected', [
+      { name: 'gemini', fn: () => callGeminiFallback({ system, messages, max_tokens, smart: wantSmart, json: expectJson }) },
+      ...(groq ? [{ name: 'groq', fn: () => callGroqFallback({ system, messages, max_tokens, smart: wantSmart }) }] : []),
+      ...(anthropic ? [{ name: 'claude', fn: claudeDirect }] : []),
+    ])
   }
   if (resolvedModel === 'ollama') {
     // Pure Ollama — NO Groq/Claude fallback (per user: Ollama is the standard, always).
@@ -380,7 +425,7 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
   if (gemini) {
     try {
       console.log(`[ai-client] Trying Gemini (${useSmart ? GEMINI_MODEL_SMART : GEMINI_MODEL_FAST}) as primary provider`)
-      const result = await callGeminiFallback({ system, messages, max_tokens, smart: useSmart })
+      const result = await callGeminiFallback({ system, messages, max_tokens, smart: useSmart, json: expectJson })
       _lastFallback = null
       return result
     } catch (geminiErr) {
@@ -441,7 +486,7 @@ export async function createMessage({ system, messages, max_tokens = 4000, smart
               model: useSmart ? GEMINI_MODEL_SMART : GEMINI_MODEL_FAST,
               at: Date.now(),
             }
-            return await callGeminiFallback({ system, messages, max_tokens, smart: useSmart })
+            return await callGeminiFallback({ system, messages, max_tokens, smart: useSmart, json: expectJson })
           } catch (geminiErr) {
             console.warn(`[ai-client] Gemini failed (${geminiErr.message}) — falling back to Groq`)
             if (groq) {

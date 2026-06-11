@@ -66,6 +66,7 @@ export default function Workspace() {
   const [apps, setApps] = useState([])
   const [appProjects, setAppProjects] = useState([])   // new-engine multi-file projects (app_projects table)
   const [folders, setFolders] = useState([])           // project folders grouping chats + apps
+  const [folderDocs, setFolderDocs] = useState([])     // generated docs (artifacts) shown under folders — the "Aria drive"
   const [showNewApp, setShowNewApp] = useState(false)  // blank "build an app" prompt modal
   const [newAppText, setNewAppText] = useState('')
   // Design-style carousel: before building, show 3 design directions to pick from.
@@ -182,6 +183,9 @@ export default function Workspace() {
   const pendingRoleRef         = useRef(null)  // stores selected role ('operations'|'finance'|etc)
   const pendingEngineIntakeMsgId = useRef(null)   // engine_intake card
   const pendingDocTypeMsgId    = useRef(null)     // doc_type_picker card
+  const pendingStyleMsgIdRef   = useRef(null)     // in-chat style carousel card
+  const pendingChatBuildRef    = useRef(null)     // { prompt, docsCtx } for the chat docs→designs→app bridge
+  const pendingProjectPromptRef = useRef('')      // the project description that opened the doc menu
   const pendingEngineRef       = useRef(null)     // current engine ('software'|'docs'|'automation'|'analytics')
   const pendingDocTypeRef      = useRef(null)     // selected doc type
 
@@ -310,6 +314,20 @@ export default function Workspace() {
     setAppProjects(data || [])
   }, [user])
 
+  // Generated documents (artifacts) for the sidebar "Aria drive". Best-effort:
+  // if the artifacts.folder_id migration hasn't run, folder_id reads as undefined
+  // and docs simply won't appear under folders (no crash).
+  const loadDocs = useCallback(async () => {
+    if (!user) return
+    const { data, error } = await supabase
+      .from('artifacts').select('id, title, folder_id, conversation_id, artifact_type, status, created_at')
+      .eq('user_id', user.id)
+      .neq('status', 'deleted')
+      .order('created_at', { ascending: false })
+    if (error) return
+    setFolderDocs(data || [])
+  }, [user])
+
   // Soft-delete a generated project (status → 'deleted'). Closes the preview if
   // the deleted project is the one currently open, then refreshes the list.
   const handleDeleteProject = useCallback(async (projectId) => {
@@ -367,12 +385,15 @@ export default function Workspace() {
     loadConversations(); loadAppProjects()
   }, [handleApiError, loadConversations, loadAppProjects])
 
-  // Move a chat or app into a folder (folderId = null → unfile it).
+  // Move a chat, app, or doc into a folder (folderId = null → unfile it).
   const handleMoveToFolder = useCallback(async (itemType, itemId, folderId) => {
     if (!itemId) return
     if (itemType === 'chat') {
       setConversations(prev => prev.map(c => c.id === itemId ? { ...c, folder_id: folderId } : c))
       await supabase.from('conversations').update({ folder_id: folderId }).eq('id', itemId)
+    } else if (itemType === 'doc') {
+      setFolderDocs(prev => prev.map(d => d.id === itemId ? { ...d, folder_id: folderId } : d))
+      await supabase.from('artifacts').update({ folder_id: folderId }).eq('id', itemId)
     } else {
       setAppProjects(prev => prev.map(p => p.id === itemId ? { ...p, folder_id: folderId } : p))
       await supabase.from('app_projects').update({ folder_id: folderId }).eq('id', itemId)
@@ -405,8 +426,8 @@ export default function Workspace() {
   }, [])
 
   useEffect(() => {
-    if (user) { loadConversations(); loadApps(); loadAppProjects(); loadFolders() }
-  }, [user, loadConversations, loadApps, loadAppProjects, loadFolders])
+    if (user) { loadConversations(); loadApps(); loadAppProjects(); loadFolders(); loadDocs() }
+  }, [user, loadConversations, loadApps, loadAppProjects, loadFolders, loadDocs])
 
   // Navigating to a different chat (New chat, or clicking an existing chat/home)
   // should immediately surface that chat — never leave the user stranded on the
@@ -628,7 +649,102 @@ export default function Workspace() {
   // Runs the real pipeline (plan → file tree → per-file codegen → assemble) via
   // Aria's model router (defaults to Ollama, $0). Renders a live Sandpack preview.
   // Falls back to the legacy template build only if the new engine errors.
-  async function handleGenerateApp() {
+  // Compact digest of this conversation's generated docs, used to seed the design
+  // previews so the look is derived from the docs (the app build also re-gathers
+  // the full docs server-side as the authoritative spec).
+  async function buildDocsContext() {
+    if (!convId) return null
+    try {
+      const { data } = await supabase
+        .from('artifacts')
+        .select('artifact_type, title, content')
+        .eq('conversation_id', convId)
+        .neq('status', 'deleted')
+        .order('created_at', { ascending: false })
+        .limit(6)
+      if (!data?.length) return null
+      const docToText = (content) => {
+        try {
+          if (!content) return ''
+          if (typeof content === 'string') return content.slice(0, 1400)
+          const sections = Array.isArray(content.sections) ? content.sections : []
+          if (sections.length) {
+            return sections.map(s => {
+              const body = s.body || s.content || s.text || (Array.isArray(s.items) ? s.items.join('; ') : '')
+              return `## ${s.title || ''}\n${String(body).replace(/\s+/g, ' ').trim()}`
+            }).join('\n').slice(0, 1400)
+          }
+          return JSON.stringify(content).slice(0, 1400)
+        } catch { return '' }
+      }
+      return { sourceDocuments: data.map(d => ({ type: d.artifact_type, title: d.title, text: docToText(d.content) })) }
+    } catch { return null }
+  }
+
+  // CHAT BUILD bridge — docs → designs → app. Generates style previews (seeded by
+  // the docs when present), shows the carousel inline in chat; picking a style
+  // builds the app FROM the docs + the chosen design.
+  async function runChatBuild(prompt) {
+    const docsCtx = await buildDocsContext()
+    pendingChatBuildRef.current = { prompt, docsCtx }
+    setIsTyping(true)
+    setBuildingLabel(docsCtx ? 'Designing from your docs…' : 'Designing your app…')
+    try {
+      const { styles } = await generateStylePreviews(prompt, { context: docsCtx || undefined, lockProvider: lockModel }, currentModel)
+      setIsTyping(false); setBuildingLabel(null)
+      if (styles?.length) {
+        const scId = Date.now().toString() + '_styles'
+        pendingStyleMsgIdRef.current = scId
+        setMessages(prev => [...prev, {
+          id: scId, role: 'assistant', content: '', message_type: 'style_choices',
+          metadata: { cardType: 'style_choices', styles, prompt, fromDocs: !!docsCtx },
+        }])
+      } else {
+        // No previews came back — build directly (docs still ground it server-side).
+        pendingPromptRef.current = prompt
+        await handleGenerateApp(docsCtx || null)
+      }
+    } catch (err) {
+      setIsTyping(false); setBuildingLabel(null)
+      handleApiError(err, { action: 'design your app', onRetry: () => runChatBuild(prompt) })
+    }
+  }
+
+  // User picked a design in the in-chat carousel → build the app from docs + style.
+  async function handleChatStyleConfirm(chosenStyle, styleOpinion) {
+    const { prompt, docsCtx } = pendingChatBuildRef.current || {}
+    if (!prompt) return
+    pendingStyleMsgIdRef.current = null
+    pendingPromptRef.current = prompt
+    const context = { ...(docsCtx || {}) }
+    if (chosenStyle) {
+      context.chosenStyle = { id: chosenStyle.id, label: chosenStyle.label, vibe: chosenStyle.vibe, direction: chosenStyle.direction }
+      const previewCode = chosenStyle?.files?.['/App.js']
+      if (previewCode) context.chosenStyle.previewCode = String(previewCode).slice(0, 6000)
+    }
+    if (styleOpinion) context.styleOpinion = styleOpinion
+    await handleGenerateApp(context)
+  }
+
+  // User asked to rework the 3 designs (typed tweaks) before building.
+  async function handleChatStyleRegenerate(feedback) {
+    const { prompt, docsCtx } = pendingChatBuildRef.current || {}
+    if (!prompt) return
+    setIsTyping(true); setBuildingLabel('Reworking the designs…')
+    try {
+      const { styles } = await generateStylePreviews(prompt, { context: docsCtx || undefined, feedback, lockProvider: lockModel }, currentModel)
+      const scId = pendingStyleMsgIdRef.current
+      if (styles?.length && scId) {
+        setMessages(prev => prev.map(m => m.id === scId ? { ...m, metadata: { ...m.metadata, styles } } : m))
+      }
+    } catch (err) {
+      handleApiError(err, { action: 'rework the designs', onRetry: () => handleChatStyleRegenerate(feedback) })
+    } finally {
+      setIsTyping(false); setBuildingLabel(null)
+    }
+  }
+
+  async function handleGenerateApp(buildContext = null) {
     const prompt = pendingPromptRef.current || pendingSpecRef.current?.appTitle
     if (!prompt) return
     pendingSpecMsgIdRef.current = null
@@ -654,7 +770,7 @@ export default function Workspace() {
       }))
     }
     try {
-      const result = await generateAppProjectStream(convId, prompt, { onEvent, lockProvider: lockModel }, currentModel)
+      const result = await generateAppProjectStream(convId, prompt, { onEvent, context: buildContext || undefined, lockProvider: lockModel }, currentModel)
       setGenProgress({ percent: 100, message: 'Done.' })
       const project = result?.project || {
         title: result?.appName, summary: result?.summary, files: result?.files,
@@ -1518,18 +1634,55 @@ export default function Workspace() {
     await runEngineQuestions(pendingPromptRef.current, engine, null)
   }
 
-  // ─── User selects doc type (docs engine only) ─────────────────────────────────
-  async function handleDocTypeSelect(docType) {
-    pendingDocTypeRef.current = docType
-    logAction('docs_engine.type_selected', { docType, conversationId: convId })
-    // Mark doc type card as selected
-    if (pendingDocTypeMsgId.current) {
-      const dtId = pendingDocTypeMsgId.current
-      setMessages(prev => prev.map(m =>
-        m.id === dtId ? { ...m, metadata: { ...m.metadata, selectedDocType: docType } } : m
-      ))
+  // Surface the 7-doc PM menu in chat. Picking a card generates that document and
+  // files it into the project folder; the user can pick several. This is the
+  // entry point of the chat build (docs → designs → prototype).
+  function showDocMenu(intro) {
+    if (intro) addMsg(intro)
+    const dtId = Date.now().toString() + '_docmenu'
+    pendingDocTypeMsgId.current = dtId
+    setMessages(prev => [...prev, {
+      id: dtId, role: 'assistant', content: '', message_type: 'doc_type_picker',
+      metadata: { cardType: 'doc_type_picker', menuMode: 'pm7' },
+    }])
+  }
+
+  // ─── User checked docs in the picker → generate them IN ORDER ────────────────
+  async function handleGenerateDocs(selectedDocs, cardMsgId) {
+    if (!Array.isArray(selectedDocs) || !selectedDocs.length) return
+    // Lock the picker card and show what's generating.
+    setMessages(prev => prev.map(m =>
+      m.id === cardMsgId ? { ...m, metadata: { ...m.metadata, docsSubmitted: true, doneLabels: selectedDocs.map(d => d.label) } } : m
+    ))
+    logAction('pm_docs.batch_started', { conversationId: convId, count: selectedDocs.length, docTypes: selectedDocs.map(d => d.id) })
+
+    // Generate sequentially — each doc waits for the previous so they file in order
+    // and later docs can build on earlier ones (server re-gathers prior docs).
+    for (let i = 0; i < selectedDocs.length; i++) {
+      const doc = selectedDocs[i]
+      addMsg(`📝 Generating document ${i + 1} of ${selectedDocs.length}: **${doc.label}**…`)
+      await handleRequestDocument(doc.request)
     }
-    await runEngineQuestions(pendingPromptRef.current, 'docs', docType)
+
+    // All done → ask the gate question (any more docs, or proceed to design).
+    const gateId = Date.now().toString() + '_docsgate'
+    setMessages(prev => [...prev, {
+      id: gateId, role: 'assistant', content: '', message_type: 'docs_gate',
+      metadata: { cardType: 'docs_gate' },
+    }])
+  }
+
+  // Gate: user wants to add more documents → re-open a fresh checkbox picker.
+  function handleDocsGateAddMore(gateId) {
+    setMessages(prev => prev.map(m => m.id === gateId ? { ...m, metadata: { ...m.metadata, gateAnswered: true } } : m))
+    showDocMenu('Sure — check any additional documents to generate.')
+  }
+
+  // Gate: user is done with docs → proceed to designs → app (the bridge).
+  async function handleDocsGateProceed(gateId) {
+    setMessages(prev => prev.map(m => m.id === gateId ? { ...m, metadata: { ...m.metadata, gateAnswered: true } } : m))
+    const projectPrompt = pendingProjectPromptRef.current || currentConv?.title || 'this project'
+    await runChatBuild(projectPrompt)
   }
 
   // ─── Quick clarification answered ─────────────────────────────────────────
@@ -1716,11 +1869,21 @@ export default function Workspace() {
     setCurrentConv(prev => prev ? { ...prev, title: prompt.slice(0, 60) } : prev)
     loadConversations()
 
-    // DIRECT BUILD: skip the guided intake/brief pipeline and generate the app now.
+    // CHAT BUILD: a general project prompt leads with the 7-doc menu (docs →
+    // designs → prototype). Only explicit app-build language jumps straight to the
+    // app generator; specific document requests were already routed above.
     if (DIRECT_BUILD_MODE) {
       pendingEngineRef.current = null
       pendingPromptRef.current = prompt
-      await handleGenerateApp()
+      if (isExplicitBuildCommand(prompt)) {
+        // EXPLICIT "build the app" command → docs → designs → app bridge. Shows the
+        // design carousel (seeded by this project's docs), then builds from docs + style.
+        await runChatBuild(prompt)
+      } else {
+        // Any project description ALWAYS leads with the doc menu — docs first.
+        pendingProjectPromptRef.current = prompt
+        showDocMenu(`Here's your project workspace for "${prompt.slice(0, 80)}${prompt.length > 80 ? '…' : ''}". Check the documents you want — I'll generate them in order and save each to this project's folder (downloadable as PDF). When the docs are done I'll ask if you want more, then move on to designing and building the app.`)
+      }
       return
     }
 
@@ -1863,6 +2026,24 @@ export default function Workspace() {
     return false
   }
 
+  // CHAT build = docs ALWAYS come first. A project *description* (even one that
+  // says "I want to build an onboarding tool") must NOT jump to the app — it opens
+  // the 7-doc menu. Only a SHORT, EXPLICIT command like "build the app" / "build it"
+  // triggers the design → prototype step. This is the line between describing the
+  // project and asking to ship it.
+  function isExplicitBuildCommand(text) {
+    const t = text.trim().toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (t.length > 60) return false   // a long message is a description, not a command
+    const CMDS = [
+      'build the app', 'build it', 'build this', 'build my app', 'build the prototype',
+      'build the tool', 'make the app', 'make it', 'generate the app', 'create the app',
+      'spin up the app', 'turn it into an app', 'turn this into an app', 'now build',
+      'build now', 'go ahead and build', 'lets build', 'let s build', 'build the project',
+      'ship it', 'prototype it', 'design and build',
+    ]
+    return CMDS.some(c => t.includes(c))
+  }
+
   async function runConversationalResponse(prompt) {
     setIsTyping(true)
     try {
@@ -1909,9 +2090,13 @@ export default function Workspace() {
       setIsTyping(false)
       setBuildingLabel(null)
       // Add a text message confirming creation
-      addMsg(`✓ "${result.artifact.title}" has been added to your project assets.`)
-      // Refresh artifacts
+      addMsg(`✓ "${result.artifact.title}" has been added to your project. It's fully editable — open it to edit by hand or with AI.`)
+      // Refresh artifacts, and folders/conversations (the doc may have created a
+      // project folder and filed this conversation into it — the "Aria drive").
       if (convId) loadArtifacts(convId)
+      loadFolders(); loadConversations(); loadDocs()
+      // Surface the new doc immediately in the editable viewer.
+      if (result?.artifact) openArtifact(result.artifact)
     } catch (err) {
       handleApiError(err, {
         action: 'generate the document',
@@ -1954,8 +2139,16 @@ export default function Workspace() {
       return { ...m, onEngineConfirm: isActive && !m.metadata?.confirmed ? handleEngineConfirm : null }
     }
     if (ct === 'doc_type_picker') {
-      const isActive = m.id === pendingDocTypeMsgId.current && !isTyping
-      return { ...m, onDocTypeSelect: isActive ? handleDocTypeSelect : null }
+      const isActive = !m.metadata?.docsSubmitted && !isTyping
+      return { ...m, onDocsGenerate: isActive ? ((docs) => handleGenerateDocs(docs, m.id)) : null }
+    }
+    if (ct === 'docs_gate') {
+      const isActive = !m.metadata?.gateAnswered && !isTyping
+      return {
+        ...m,
+        onAddMore: isActive ? () => handleDocsGateAddMore(m.id) : null,
+        onProceed: isActive ? () => handleDocsGateProceed(m.id) : null,
+      }
     }
     if (ct === 'build_mode') {
       const isActive = m.id === pendingBuildModeMsgId.current && !isTyping
@@ -1985,12 +2178,21 @@ export default function Workspace() {
       }
       return { ...m, onClarifyV2: null, onRestart: handleRestartFromClarification }
     }
+    if (ct === 'style_choices') {
+      const isActive = m.id === pendingStyleMsgIdRef.current && !generatingApp
+      return {
+        ...m,
+        onStyleBuild: isActive ? handleChatStyleConfirm : null,
+        onStyleRegenerate: isActive ? handleChatStyleRegenerate : null,
+        building: generatingApp,
+      }
+    }
     if (ct === 'spec' && m.id === pendingSpecMsgIdRef.current && !isTyping) {
-      return { ...m, onBuild: handleGenerateApp, onSpecChange: (updatedSpec) => { pendingSpecRef.current = updatedSpec } }
+      return { ...m, onBuild: () => handleGenerateApp(), onSpecChange: (updatedSpec) => { pendingSpecRef.current = updatedSpec } }
     }
     if (ct === 'enterprise_brief') {
       const handlers = { onOpenArtifact: openArtifact, artifacts, onRequestDocument: handleRequestDocument }
-      if (m.id === pendingBriefMsgIdRef.current && !isTyping) handlers.onBuild = handleGenerateApp
+      if (m.id === pendingBriefMsgIdRef.current && !isTyping) handlers.onBuild = () => handleGenerateApp()
       return { ...m, ...handlers }
     }
     return m
@@ -2012,6 +2214,12 @@ export default function Workspace() {
     onCreateFolder: handleCreateFolder,
     onRenameFolder: handleRenameFolder,
     onDeleteFolder: handleDeleteFolder,
+    docs: folderDocs,
+    onOpenDoc: async (docId) => {
+      const { data } = await supabase.from('artifacts').select('*').eq('id', docId).single()
+      if (data) { openArtifact(data); if (isSmall) setShowSidebar(false) }
+    },
+    onDocsChange: loadDocs,
     onMoveToFolder: handleMoveToFolder,
     onReorderFolders: handleReorderFolders,
     onPinItem: handlePinItem,

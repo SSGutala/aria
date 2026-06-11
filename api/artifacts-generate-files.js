@@ -89,7 +89,83 @@ function toMarkdown(artifact) {
 }
 
 // ── PDF generator — clean white professional document ────────────────────────
+// ── Pitch deck → designed landscape slide PDF (one slide per page) ────────────
+function generateDeckPDF(artifact) {
+  return new Promise((resolve, reject) => {
+    const W = 720, H = 405          // 16:9 landscape
+    const M = 54
+    const doc = new PDFDocument({ size: [W, H], margin: 0, autoFirstPage: false })
+    const chunks = []
+    doc.on('data', c => chunks.push(c))
+    doc.on('end', () => resolve(Buffer.concat(chunks)))
+    doc.on('error', reject)
+
+    const content = artifact.content || {}
+    const meta = content.meta || {}
+    let sections = getDocSections(content) || []
+    if (!sections.length) sections = [{ title: artifact.title || 'Pitch', body: '' }]
+    const company = meta.title || artifact.title || 'Company'
+
+    const BG = '#0B0F19', TEXT = '#F4F5F7', SUB = '#9AA3B2'
+    const PALETTE = ['#6366F1', '#34D399', '#F59E0B', '#EC4899', '#22D3EE', '#A78BFA', '#FB923C', '#60A5FA', '#F472B6', '#4ADE80', '#FBBF24']
+    const accentFor = (i) => PALETTE[i % PALETTE.length]
+
+    sections.forEach((s, i) => {
+      const accent = accentFor(i)
+      doc.addPage()
+      doc.rect(0, 0, W, H).fill(BG)
+      doc.rect(0, 0, 7, H).fill(accent)                       // left accent bar
+      // footer
+      doc.font('Helvetica').fontSize(8.5).fillColor(SUB)
+        .text(company, M, H - 30)
+        .text(`${i + 1} / ${sections.length}`, W - 90, H - 30, { width: 60, align: 'right' })
+
+      const bullets = (Array.isArray(s.bullets) && s.bullets.length)
+        ? s.bullets
+        : (s.body ? String(s.body).split(/\n+/).map(x => x.trim()).filter(Boolean) : [])
+
+      if (i === 0) {
+        // Cover slide — big company name + one-line pitch (all bounded to one page)
+        if (meta.project) doc.font('Helvetica-Bold').fontSize(12).fillColor(accent).text(String(meta.project).toUpperCase(), M, H / 2 - 96, { width: W - 2 * M, characterSpacing: 1, lineBreak: false, ellipsis: true })
+        // Hero title: allow up to ~2 lines (drop font size for very long names).
+        const titleFont = company.length > 28 ? 30 : 40
+        doc.font('Helvetica-Bold').fontSize(titleFont).fillColor(TEXT).text(company, M, H / 2 - 74, { width: W - 2 * M, height: 78, lineGap: 1, ellipsis: true })
+        let oneLiner = String(s.body || bullets[0] || '').replace(/^[-•\s]+/, '').trim()
+        if (oneLiner.length > 160) oneLiner = oneLiner.slice(0, 157).trimEnd() + '…'
+        if (oneLiner) doc.font('Helvetica').fontSize(15).fillColor(SUB).text(oneLiner, M, H / 2 - 6, { width: W - 2 * M - 40, height: 60, lineGap: 2 })
+        return
+      }
+
+      // Content slide — eyebrow + title + bullets. Everything is bounded so each
+      // slide stays exactly ONE page (no pdfkit auto-pagination from overflow).
+      doc.font('Helvetica-Bold').fontSize(10.5).fillColor(accent).text(String(s.title || '').toUpperCase(), M, 46, { width: W - 2 * M, characterSpacing: 1, lineBreak: false, ellipsis: true })
+      doc.font('Helvetica-Bold').fontSize(26).fillColor(TEXT).text(String(s.title || ''), M, 62, { width: W - 2 * M, height: 36, lineBreak: false, ellipsis: true })
+      doc.rect(M, 100, 46, 3).fill(accent)                    // underline accent
+      let y = 118
+      const BOTTOM = H - 46
+      // Cap to 5 bullets and clamp each so the whole slide fits one page.
+      const items = bullets.slice(0, 5).map(b => {
+        let t = String(b).replace(/^[-•\s]+/, '').trim()
+        if (t.length > 170) t = t.slice(0, 167).trimEnd() + '…'
+        return t
+      })
+      doc.font('Helvetica').fontSize(13)
+      for (const t of items) {
+        const h = doc.heightOfString(t, { width: W - 2 * M - 16, lineGap: 2 })
+        if (y + h > BOTTOM) break                             // stop before overflowing the slide
+        doc.circle(M + 4, y + 7, 3).fill(accent)
+        doc.fillColor(TEXT).text(t, M + 16, y, { width: W - 2 * M - 16, lineGap: 2, height: h, lineBreak: true })
+        y += h + 11
+      }
+    })
+
+    doc.end()
+  })
+}
+
 function generatePDF(artifact) {
+  // Pitch decks render as a designed slide deck, not a prose document.
+  if (artifact.artifact_type === 'pitch_deck') return generateDeckPDF(artifact)
   return new Promise((resolve, reject) => {
     const MARGIN = 60
     const PAGE_W = 595.28  // A4 width in pts
@@ -647,6 +723,7 @@ async function uploadFile(buffer, path, contentType) {
 
 // ── Determine which formats to generate per artifact type ─────────────────────
 const FORMAT_MAP = {
+  pitch_deck:        ['pdf'],   // designed slide deck — PDF only
   intake_summary:    ['pdf', 'docx', 'md'],
   product_brief:     ['pdf', 'docx', 'md'],
   workflow_map:      ['pdf', 'md', 'json'],
