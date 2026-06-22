@@ -1,0 +1,11 @@
+{
+  "name": "greenfield",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Isolated app — not part of the root Aria application",
+  "scripts": {
+    "dev": "node -e \"console.log('Scaffold only. Add your dev server (e.g. vite, next dev) and update scripts.'); process.exit(0)\"",
+    "build": "node -e \"console.log('Scaffold only. Add your build command.'); process.exit(0)\""
+  }
+}
