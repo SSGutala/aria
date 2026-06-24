@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String?
+  projects     Project[]
+  integrations Integration[]
+  createdAt    DateTime      @default(now())
+}
+
+model Project {
+  id             String          @id @default(cuid())
+  title          String
+  userId         String
+  user           User            @relation(fields: [userId], references: [id])
+  status         String          @default("intake")
+  designFeedback String?
+  artifacts      Artifact[]
+  designVariants DesignVariant[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model Artifact {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type          String
+  title         String
+  content       String   @default("{}")
+  externalLinks String   @default("[]")
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model DesignVariant {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String
+  styleKey      String
+  previewHtml   String?
+  previewImage  String?
+  figmaSpec     String?
+  figmaEmbedUrl String?
+  figmaOpenUrl  String?
+  selected      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
+model Integration {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  metadata     String   @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, provider])
+}
