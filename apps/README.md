@@ -23,6 +23,10 @@ npm install
 npm run dev   # or whatever scripts the app defines
 ```
 
+### Chai (`apps/chai`)
+
+Rich artifact editors + OAuth connectors (Google, Microsoft 365, Lucidchart, Figma plugin). Dev server on **port 4321**. See `apps/chai/README.md`.
+
 Run Aria separately from the repo root:
 
 ```bash
