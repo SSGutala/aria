@@ -1,33 +1,25 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { captureIframeToPng, saveVariantPreviewImage } from "@/lib/capture-preview";
+import { useState } from "react";
 
 type Variant = {
   id: string;
   name: string;
   styleKey: string;
   previewHtml?: string | null;
-  previewImage?: string | null;
   selected: boolean;
 };
 
 type Props = {
-  projectId: string;
   variants: Variant[];
   onSelectionChange: (ids: string[]) => void;
-  onCapture?: () => void;
 };
 
 export function StyleCarousel({
-  projectId,
   variants,
   onSelectionChange,
-  onCapture,
 }: Props) {
   const [active, setActive] = useState(0);
-  const [capturing, setCapturing] = useState(false);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const current = variants[active];
 
   const toggle = (id: string) => {
@@ -36,21 +28,6 @@ export function StyleCarousel({
       ? selected.filter((x) => x !== id)
       : [...selected, id];
     onSelectionChange(next);
-  };
-
-  const capturePng = async () => {
-    if (!iframeRef.current || !current) return;
-    setCapturing(true);
-    try {
-      const dataUrl = await captureIframeToPng(iframeRef.current);
-      await saveVariantPreviewImage(projectId, current.id, dataUrl);
-      onCapture?.();
-    } catch (e) {
-      console.error(e);
-      alert(e instanceof Error ? e.message : "Capture failed");
-    } finally {
-      setCapturing(false);
-    }
   };
 
   if (!current) return null;
@@ -74,22 +51,12 @@ export function StyleCarousel({
       </div>
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
-        {current.previewImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={current.previewImage}
-            alt={current.name}
-            className="mx-auto max-h-[480px] w-full object-contain"
-          />
-        ) : (
-          <iframe
-            ref={iframeRef}
-            title={current.name}
-            srcDoc={current.previewHtml || ""}
-            className="h-[480px] w-full border-0 bg-white"
-            sandbox="allow-same-origin"
-          />
-        )}
+        <iframe
+          title={current.name}
+          srcDoc={current.previewHtml || ""}
+          className="h-[480px] w-full border-0 bg-white"
+          sandbox="allow-same-origin"
+        />
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -103,14 +70,6 @@ export function StyleCarousel({
           }`}
         >
           {current.selected ? "Selected for build" : "Select for build"}
-        </button>
-        <button
-          type="button"
-          onClick={capturePng}
-          disabled={capturing || !!current.previewImage}
-          className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm disabled:opacity-50"
-        >
-          {capturing ? "Capturing…" : "Save PNG reference"}
         </button>
       </div>
       <p className="text-xs text-slate-500">

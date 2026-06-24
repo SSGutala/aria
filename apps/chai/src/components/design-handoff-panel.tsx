@@ -7,7 +7,6 @@ type Variant = {
   name: string;
   figmaEmbedUrl?: string | null;
   figmaOpenUrl?: string | null;
-  previewImage?: string | null;
 };
 
 type Props = {
@@ -19,7 +18,6 @@ type Props = {
 export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pluginUrl, setPluginUrl] = useState<string | null>(null);
 
   const connectFigma = async () => {
     setLoading(true);
@@ -35,8 +33,6 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Figma connect failed");
-      const base = typeof window !== "undefined" ? window.location.origin : "";
-      setPluginUrl(`${base}/api/integrations/figma/plugin-spec?variantId=${variant.id}`);
       window.location.reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connect failed");
@@ -45,28 +41,13 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
     }
   };
 
-  const specUrl =
-    pluginUrl ||
-    (typeof window !== "undefined"
-      ? `${window.location.origin}/api/integrations/figma/plugin-spec?variantId=${variant.id}`
-      : "");
-
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
       <h3 className="font-semibold text-slate-900">Figma handoff</h3>
       <p className="text-sm text-slate-600">
-        Connect posts mockup spec to your Figma template. Run the Chai plugin to
-        create frames (REST API cannot create Figma files).
+        Connect posts a mockup spec comment to your Figma template file and
+        embeds it here for review.
       </p>
-
-      {variant.previewImage && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={variant.previewImage}
-          alt="Reference"
-          className="max-h-40 rounded-lg border"
-        />
-      )}
 
       <button
         type="button"
@@ -95,10 +76,6 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
           Open in Figma
         </a>
       )}
-
-      <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 break-all">
-        Plugin spec URL: {specUrl}
-      </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>

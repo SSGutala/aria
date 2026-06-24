@@ -1,6 +1,6 @@
 import type { MockupSpec } from "@/lib/types";
 
-/** Parse static mockup HTML into a frame tree for the Figma plugin */
+/** Parse static mockup HTML into a frame spec for Figma handoff comments */
 export function mockupHtmlToSpec(html: string, title: string): MockupSpec {
   const widthMatch = html.match(/width:\s*(\d+)px/i);
   const heightMatch = html.match(/height:\s*(\d+)px/i);
@@ -77,12 +77,4 @@ export async function postFigmaComment(
     throw new Error(err.err || err.message || "Figma comment failed");
   }
   return res.json();
-}
-
-export function specToPluginPayload(spec: MockupSpec) {
-  return {
-    version: 1,
-    command: "create_mockup_frames",
-    spec,
-  };
 }

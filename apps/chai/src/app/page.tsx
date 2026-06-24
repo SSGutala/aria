@@ -11,7 +11,7 @@ export default function HomePage() {
         </h1>
         <p className="mt-3 text-lg text-slate-600">
           Artifacts first — rich native editors, optional connectors to Google,
-          Microsoft 365, Lucidchart, and Figma.
+          Lucidchart, and Figma.
         </p>
       </div>
       <div className="flex flex-wrap gap-3">

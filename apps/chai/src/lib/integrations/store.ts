@@ -37,23 +37,6 @@ export const OAUTH_CONFIGS: Record<IntegrationProvider, OAuthConfig> = {
       prompt: "consent",
     },
   },
-  microsoft: {
-    provider: "microsoft",
-    label: "Microsoft 365",
-    authUrl:
-      "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-    tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-    scopes: [
-      "User.Read",
-      "Files.ReadWrite.All",
-      "offline_access",
-    ],
-    clientIdEnv: "MICROSOFT_CLIENT_ID",
-    clientSecretEnv: "MICROSOFT_CLIENT_SECRET",
-    extraAuthParams: {
-      response_mode: "query",
-    },
-  },
   figma: {
     provider: "figma",
     label: "Figma",
