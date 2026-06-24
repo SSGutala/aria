@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { cn } from "@/lib/cn";
 
 type Variant = {
   id: string;
@@ -40,9 +41,12 @@ export function StyleCarousel({
             key={v.id}
             type="button"
             onClick={() => setActive(i)}
-            className={`shrink-0 rounded-lg border px-4 py-2 text-sm ${
-              i === active ? "border-indigo-500 bg-indigo-50" : "border-slate-200"
-            }`}
+            className={cn(
+              "shrink-0 rounded-lg border px-4 py-2 text-sm transition-colors",
+              i === active
+                ? "border-chai-pink/50 bg-chai-pink/10 text-chai-text"
+                : "border-chai-border text-chai-subtle hover:border-chai-border-subtle"
+            )}
           >
             {v.name}
             {v.selected && " ✓"}
@@ -50,11 +54,11 @@ export function StyleCarousel({
         ))}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-900">
+      <div className="overflow-hidden rounded-xl border border-chai-border bg-chai-bg">
         <iframe
           title={current.name}
           srcDoc={current.previewHtml || ""}
-          className="h-[480px] w-full border-0 bg-white"
+          className="h-[420px] w-full border-0 bg-white"
           sandbox="allow-same-origin"
         />
       </div>
@@ -63,17 +67,18 @@ export function StyleCarousel({
         <button
           type="button"
           onClick={() => toggle(current.id)}
-          className={`rounded-lg px-4 py-2 text-sm ${
+          className={cn(
+            "rounded-lg px-4 py-2 text-sm transition-colors",
             current.selected
-              ? "bg-indigo-600 text-white"
-              : "border border-slate-200 bg-white"
-          }`}
+              ? "bg-chai-pink text-white"
+              : "border border-chai-border text-chai-subtle hover:border-chai-pink/40"
+          )}
         >
           {current.selected ? "Selected for build" : "Select for build"}
         </button>
       </div>
-      <p className="text-xs text-slate-500">
-        Static HTML mockups — multi-select styles, then build the full app.
+      <p className="text-xs text-chai-muted">
+        Static HTML mockups — multi-select styles, then say <strong className="text-chai-subtle">build</strong> in chat.
       </p>
     </div>
   );

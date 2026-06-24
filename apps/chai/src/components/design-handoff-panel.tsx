@@ -42,9 +42,9 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
-      <h3 className="font-semibold text-slate-900">Figma handoff</h3>
-      <p className="text-sm text-slate-600">
+    <div className="space-y-3 rounded-xl border border-chai-border bg-chai-panel p-4">
+      <h3 className="font-semibold text-chai-text">Figma handoff</h3>
+      <p className="text-sm text-chai-subtle">
         Connect posts a mockup spec comment to your Figma template file and
         embeds it here for review.
       </p>
@@ -53,7 +53,7 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
         type="button"
         onClick={connectFigma}
         disabled={loading}
-        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+        className="rounded-lg bg-chai-pink px-4 py-2 text-sm text-white disabled:opacity-50"
       >
         {loading ? "Connecting…" : "Connect Figma"}
       </button>
@@ -62,7 +62,7 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
         <iframe
           src={variant.figmaEmbedUrl}
           title="Figma"
-          className="h-[360px] w-full rounded-lg border"
+          className="h-[360px] w-full rounded-lg border border-chai-border"
         />
       )}
 
@@ -71,13 +71,13 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
           href={variant.figmaOpenUrl}
           target="_blank"
           rel="noreferrer"
-          className="text-sm text-indigo-600 underline"
+          className="text-sm text-chai-pink underline"
         >
           Open in Figma
         </a>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
     </div>
   );
 }

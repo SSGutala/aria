@@ -1,23 +1,10 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { seedProjectLifecycle } from "@/lib/lifecycle";
+import { createProjectFromPrompt } from "@/lib/create-project";
 
 export async function POST() {
-  const user = await db.user.upsert({
-    where: { email: "demo@chai.local" },
-    create: { email: "demo@chai.local", name: "Demo User" },
-    update: {},
-  });
+  const { userId, projectId } = await createProjectFromPrompt(
+    "Build an expense approval hub with manager and finance review steps, audit trail, and email notifications."
+  );
 
-  const project = await db.project.create({
-    data: {
-      title: "Expense Approval Hub",
-      userId: user.id,
-      status: "artifacts",
-    },
-  });
-
-  await seedProjectLifecycle(project.id, project.title);
-
-  return NextResponse.json({ userId: user.id, projectId: project.id });
+  return NextResponse.json({ userId, projectId });
 }
