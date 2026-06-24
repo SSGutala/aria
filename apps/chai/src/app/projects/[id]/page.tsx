@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { WorkspaceClient } from "@/components/workspace-client";
+import { ChaiShell } from "@/components/chai-shell";
+import { ProjectWorkspace } from "@/components/project-workspace";
 
 export default async function ProjectPage({
   params,
@@ -14,36 +15,25 @@ export default async function ProjectPage({
     include: {
       artifacts: { orderBy: { sortOrder: "asc" } },
       designVariants: true,
-      messages: { orderBy: { createdAt: "asc" } },
       user: true,
     },
   });
   if (!project) notFound();
 
-  const tabMap: Record<string, string> = {
-    artifacts: "artifacts",
-    designs: "designs",
-    preview: "preview",
-    code: "code",
-  };
-  const initialTab = tabMap[searchParams.tab || ""] || undefined;
+  const tab = searchParams.tab || "artifacts";
 
   return (
-    <WorkspaceClient
-      projectId={project.id}
-      userId={project.userId}
+    <ChaiShell
       title={project.title}
-      status={project.status}
-      artifacts={project.artifacts}
-      variants={project.designVariants}
-      messages={project.messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        stage: m.stage,
-        createdAt: m.createdAt.toISOString(),
-      }))}
-      initialTab={initialTab}
-    />
+      subtitle={`${project.artifacts.length} artifacts · ${project.designVariants.length} design styles`}
+    >
+      <ProjectWorkspace
+        projectId={project.id}
+        userId={project.userId}
+        artifacts={project.artifacts}
+        designVariants={project.designVariants}
+        initialTab={tab}
+      />
+    </ChaiShell>
   );
 }

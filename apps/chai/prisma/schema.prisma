@@ -25,19 +25,8 @@ model Project {
   designFeedback String?
   artifacts      Artifact[]
   designVariants DesignVariant[]
-  messages       Message[]
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-}
-
-model Message {
-  id        String   @id @default(cuid())
-  projectId String
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  role      String
-  content   String
-  stage     String?
-  createdAt DateTime @default(now())
 }
 
 model Artifact {

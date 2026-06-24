@@ -1,5 +1,5 @@
-import { HomePrompt } from "@/components/home-prompt";
+import { ChaiLanding } from "@/components/chai-landing";
 
 export default function HomePage() {
-  return <HomePrompt />;
+  return <ChaiLanding />;
 }

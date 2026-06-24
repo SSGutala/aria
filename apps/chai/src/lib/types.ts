@@ -52,6 +52,7 @@ export type MockupSpec = {
 
 export const INTEGRATION_PROVIDERS = [
   "google",
+  "microsoft",
   "figma",
   "lucidchart",
 ] as const;

@@ -8,6 +8,7 @@ export function suggestConnectors(
   const map: Record<string, Array<{ provider: string; label: string; target: string }>> = {
     product_brief: [
       { provider: "google", label: "Google Docs", target: "google_docs" },
+      { provider: "microsoft", label: "Word", target: "microsoft_word" },
     ],
     workflow_map: [
       { provider: "lucidchart", label: "Lucidchart", target: "lucidchart" },
@@ -17,19 +18,24 @@ export function suggestConnectors(
     ],
     data_model: [
       { provider: "google", label: "Google Sheets", target: "google_sheets" },
+      { provider: "microsoft", label: "Excel", target: "microsoft_excel" },
     ],
     roadmap: [
       { provider: "google", label: "Google Slides", target: "google_slides" },
+      { provider: "microsoft", label: "PowerPoint", target: "microsoft_ppt" },
+      { provider: "lucidchart", label: "Lucidchart Gantt", target: "lucidchart" },
     ],
     ux_recommendation: [
       { provider: "figma", label: "Figma", target: "figma" },
     ],
     app_spec: [
       { provider: "google", label: "Google Docs", target: "google_docs" },
+      { provider: "microsoft", label: "Word", target: "microsoft_word" },
     ],
   };
   return map[artifactType] || [
     { provider: "google", label: "Google Docs", target: "google_docs" },
+    { provider: "microsoft", label: "Word", target: "microsoft_word" },
   ];
 }
 

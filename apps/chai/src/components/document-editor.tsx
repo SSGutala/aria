@@ -25,7 +25,7 @@ export function DocumentEditor({ content, onChange, readOnly }: Props) {
   }, [content, editor]);
 
   return (
-    <div className="prose max-w-none rounded-xl border border-slate-200 bg-white p-4">
+    <div className="prose prose-invert max-w-none rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
       <EditorContent editor={editor} />
     </div>
   );

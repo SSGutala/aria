@@ -5,7 +5,7 @@ import type { ExternalLink } from "@/lib/types";
 import { suggestConnectors } from "@/lib/integrations/suggest";
 import { IntegrationEmbed } from "./integration-embed";
 import { DocumentEditor } from "./document-editor";
-import { FlowDiagramEditor } from "./flow-diagram-editor";
+import { FlowDiagramEditor } from "./flow-diagram-editor-lazy";
 import { SpreadsheetEditor } from "./spreadsheet-editor";
 import { SlidesEditor } from "./slides-editor";
 import { RoadmapEditor } from "./roadmap-editor";
@@ -129,10 +129,10 @@ export function ArtifactViewer({ projectId, artifact, userId, onUpdated }: Props
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-chai-border bg-chai-bg px-3 py-1 text-xs font-medium text-chai-muted">
+        <span className="rounded-full bg-indigo-500/15 px-3 py-1 text-xs font-medium text-indigo-300">
           {artifact.type}
         </span>
-        <h2 className="text-lg font-semibold text-chai-text">{artifact.title}</h2>
+        <h2 className="text-lg font-semibold text-zinc-100">{artifact.title}</h2>
         <div className="ml-auto flex gap-2">
           {(["view", "manual"] as const).map((m) => (
             <button
@@ -141,8 +141,8 @@ export function ArtifactViewer({ projectId, artifact, userId, onUpdated }: Props
               onClick={() => setMode(m)}
               className={`rounded-lg px-3 py-1.5 text-sm ${
                 mode === m
-                  ? "bg-chai-pink text-white"
-                  : "border border-chai-border text-chai-subtle hover:text-chai-text"
+                  ? "bg-indigo-500 text-white"
+                  : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
               }`}
             >
               {m === "view" ? "View" : "Edit"}
@@ -155,7 +155,7 @@ export function ArtifactViewer({ projectId, artifact, userId, onUpdated }: Props
               className={`rounded-lg px-3 py-1.5 text-sm ${
                 mode === "connected"
                   ? "bg-emerald-600 text-white"
-                  : "border border-chai-border text-chai-subtle"
+                  : "bg-zinc-800 text-zinc-300"
               }`}
             >
               Connected
@@ -171,8 +171,8 @@ export function ArtifactViewer({ projectId, artifact, userId, onUpdated }: Props
       )}
 
       {mode !== "connected" && (
-        <div className="rounded-xl border border-dashed border-chai-border p-4">
-          <p className="mb-2 text-sm font-medium text-chai-subtle">
+        <div className="rounded-xl border border-dashed border-zinc-700 bg-zinc-900/50 p-4">
+          <p className="mb-2 text-sm font-medium text-zinc-300">
             Connect to external editor (optional)
           </p>
           <div className="flex flex-wrap gap-2">
@@ -182,17 +182,17 @@ export function ArtifactViewer({ projectId, artifact, userId, onUpdated }: Props
                 type="button"
                 disabled={connecting}
                 onClick={() => connect(s.target)}
-                className="rounded-lg border border-chai-border px-3 py-2 text-sm text-chai-subtle transition-colors hover:border-chai-pink/40 hover:text-chai-text disabled:opacity-50"
+                className="rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:border-indigo-500/50"
               >
                 Connect {s.label}
               </button>
             ))}
           </div>
-          {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
           {activeLink && (
-            <p className="mt-2 text-xs text-chai-muted">
+            <p className="mt-2 text-xs text-zinc-500">
               Linked:{" "}
-              <a href={activeLink.url} className="text-chai-pink underline" target="_blank" rel="noreferrer">
+              <a href={activeLink.url} className="text-indigo-600 underline" target="_blank" rel="noreferrer">
                 Open in {activeLink.provider}
               </a>
             </p>

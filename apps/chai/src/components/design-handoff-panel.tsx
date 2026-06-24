@@ -7,6 +7,7 @@ type Variant = {
   name: string;
   figmaEmbedUrl?: string | null;
   figmaOpenUrl?: string | null;
+  previewImage?: string | null;
 };
 
 type Props = {
@@ -18,6 +19,7 @@ type Props = {
 export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pluginUrl, setPluginUrl] = useState<string | null>(null);
 
   const connectFigma = async () => {
     setLoading(true);
@@ -33,6 +35,8 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Figma connect failed");
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      setPluginUrl(`${base}/api/integrations/figma/plugin-spec?variantId=${variant.id}`);
       window.location.reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connect failed");
@@ -41,19 +45,34 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
     }
   };
 
+  const specUrl =
+    pluginUrl ||
+    (typeof window !== "undefined"
+      ? `${window.location.origin}/api/integrations/figma/plugin-spec?variantId=${variant.id}`
+      : "");
+
   return (
-    <div className="space-y-3 rounded-xl border border-chai-border bg-chai-panel p-4">
-      <h3 className="font-semibold text-chai-text">Figma handoff</h3>
-      <p className="text-sm text-chai-subtle">
-        Connect posts a mockup spec comment to your Figma template file and
-        embeds it here for review.
+    <div className="chai-card space-y-3 p-4">
+      <h3 className="font-semibold text-zinc-100">Figma handoff</h3>
+      <p className="text-sm text-zinc-500">
+        Connect posts mockup spec to your Figma template. Run the Chai plugin to
+        create frames (REST API cannot create Figma files).
       </p>
+
+      {variant.previewImage && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={variant.previewImage}
+          alt="Reference"
+          className="max-h-40 rounded-lg border"
+        />
+      )}
 
       <button
         type="button"
         onClick={connectFigma}
         disabled={loading}
-        className="rounded-lg bg-chai-pink px-4 py-2 text-sm text-white disabled:opacity-50"
+        className="chai-btn-primary disabled:opacity-50"
       >
         {loading ? "Connecting…" : "Connect Figma"}
       </button>
@@ -62,7 +81,7 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
         <iframe
           src={variant.figmaEmbedUrl}
           title="Figma"
-          className="h-[360px] w-full rounded-lg border border-chai-border"
+          className="h-[360px] w-full rounded-lg border"
         />
       )}
 
@@ -71,13 +90,17 @@ export function DesignHandoffPanel({ projectId, variant, userId }: Props) {
           href={variant.figmaOpenUrl}
           target="_blank"
           rel="noreferrer"
-          className="text-sm text-chai-pink underline"
+          className="text-sm text-indigo-600 underline"
         >
           Open in Figma
         </a>
       )}
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      <div className="rounded-lg bg-zinc-900 p-3 text-xs text-zinc-500 break-all">
+        Plugin spec URL: {specUrl}
+      </div>
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );
 }

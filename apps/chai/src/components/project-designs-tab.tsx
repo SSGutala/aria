@@ -37,8 +37,10 @@ export function ProjectDesignsTab({ projectId, userId, variants }: Props) {
   return (
     <div className="grid gap-8 lg:grid-cols-2">
       <StyleCarousel
+        projectId={projectId}
         variants={variants}
         onSelectionChange={onSelectionChange}
+        onCapture={() => router.refresh()}
       />
       {activeVariant && (
         <DesignHandoffPanel

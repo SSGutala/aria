@@ -3,46 +3,63 @@
 @tailwind utilities;
 
 :root {
-  --chai-bg: #0a0a0a;
-  --chai-surface: #0d0d0d;
-  --chai-panel: #111111;
-  --chai-border: #1e1e1e;
-  --chai-border-subtle: #2a2a2a;
-  --chai-text: #e5e5e5;
-  --chai-muted: #737373;
-  --chai-subtle: #a3a3a3;
-  --chai-pink: #f43f7e;
-  --chai-pink-soft: #fb7185;
-  --chai-pink-glow: rgba(244, 63, 126, 0.35);
+  --chai-bg: #0c0c0e;
+  --chai-surface: #141416;
+  --chai-surface-2: #1c1c1f;
+  --chai-border: #2a2a2e;
+  --chai-text: #f4f4f5;
+  --chai-muted: #a1a1aa;
+  --chai-subtle: #52525b;
+  --chai-accent: #818cf8;
+  --chai-accent-2: #a78bfa;
+  --background: var(--chai-bg);
+  --foreground: var(--chai-text);
 }
 
 * {
   box-sizing: border-box;
 }
 
-html,
-body {
-  height: 100%;
+html {
+  color-scheme: dark;
 }
 
 body {
-  color: var(--chai-text);
-  background: var(--chai-bg);
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
-@keyframes chai-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
+.chai-glare {
+  background: linear-gradient(
+    110deg,
+    #6b6b6b 0%,
+    #a3a3a3 18%,
+    #ffffff 34%,
+    #e4e4e7 44%,
+    #9ca3af 58%,
+    #6b7280 78%,
+    #a1a1aa 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.chai-pulse {
-  animation: chai-pulse 1.4s ease-in-out infinite;
+.chai-card {
+  @apply rounded-2xl border border-[var(--chai-border)] bg-[var(--chai-surface)] shadow-xl shadow-black/20;
+}
+
+.chai-btn-primary {
+  @apply rounded-xl px-5 py-2.5 text-sm font-medium transition hover:opacity-90;
+  background: linear-gradient(110deg, #c4b5fd 0%, #e9d5ff 40%, #a78bfa 100%);
+  color: #18181b;
+  border: 1px solid #52525b;
+}
+
+.chai-btn-ghost {
+  @apply rounded-xl border border-[var(--chai-border)] bg-[var(--chai-surface-2)] px-4 py-2 text-sm text-zinc-300 transition hover:border-zinc-500 hover:text-white;
 }
 
 @layer utilities {

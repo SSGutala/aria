@@ -5,7 +5,10 @@
   "description": "Chai — isolated AI workflow builder (not part of root Aria app)",
   "scripts": {
     "dev": "next dev -p 4321",
+    "predev": "node -e \"try{require('fs').rmSync('.next',{recursive:true,force:true})}catch(e){}\"",
+    "dev:clean": "rm -rf .next node_modules/.cache && next dev -p 4321",
     "build": "prisma generate && next build",
+    "prebuild": "rm -rf .next",
     "start": "next start -p 4321",
     "lint": "next lint",
     "db:push": "prisma db push",

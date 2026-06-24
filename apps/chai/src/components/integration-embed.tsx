@@ -7,9 +7,9 @@ type Props = {
 
 export function IntegrationEmbed({ embedUrl, title }: Props) {
   return (
-    <div className="flex h-full min-h-[480px] flex-col rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div className="flex h-full min-h-[480px] flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900">
       {title && (
-        <div className="border-b border-slate-100 px-4 py-2 text-sm font-medium text-slate-700">
+        <div className="border-b border-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300">
           {title} — connected editor
         </div>
       )}

@@ -1,6 +1,6 @@
 # Chai
 
-Isolated Next.js app under `apps/chai/` — Phase 1–2: rich artifact editors + Google/Figma/Lucid connectors.
+Isolated Next.js app under `apps/chai/` — AI-native workflow builder with rich artifact editors and external connectors.
 
 ## Quick start
 
@@ -12,17 +12,40 @@ npm run db:push
 npm run dev   # http://localhost:4321
 ```
 
-Click **Create demo project** on the home page.
+If you see `Cannot find module './vendor-chunks/...'` or `'./948.js'`, the `.next` cache is stale:
+
+```bash
+npm run dev:clean
+```
+
+`npm run dev` now auto-clears `.next` before each start. Do not mix `npm run build` and `npm run dev` without cleaning.
+
+**Important:** API routes (especially `api/projects/[id]/repair`) must never import React Flow or diagram UI components — only server-safe libs (`db`, AI pipeline, etc.).
+
+Click **Create demo project** on the home page to seed artifacts + design mockups.
 
 ## Connectors (OAuth)
 
-| Provider | Creates |
-|----------|---------|
-| Google | Docs, Sheets, Slides |
-| Lucidchart | Empty diagram (embed after connect) |
-| Figma | Template embed + mockup spec comment |
+| Provider | Creates | Env vars |
+|----------|---------|----------|
+| Google | Docs, Sheets, Slides | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| Microsoft 365 | Word, Excel, PowerPoint (OneDrive) | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` |
+| Lucidchart | Diagram with **Standard Import** (flow nodes / roadmap tasks) | `LUCID_CLIENT_ID`, `LUCID_CLIENT_SECRET` |
+| Figma | Template embed + plugin spec (cannot create files via REST) | `FIGMA_*`, `FIGMA_TEMPLATE_FILE_KEY` |
 
-Settings → Connect each provider. On an artifact, **Connect** creates a file in the user's account.
+Settings → Connect each provider. On an artifact, **Connect** creates a real file in the user's account and embeds it.
+
+## Figma plugin
+
+Figma REST cannot create files. Use the bundled plugin:
+
+1. In Figma: Plugins → Development → Import plugin from manifest → `apps/chai/figma-plugin/manifest.json`
+2. Connect a design variant in Chai (Designs tab)
+3. Run plugin → paste plugin-spec URL: `/api/integrations/figma/plugin-spec?variantId=...`
+
+## PNG mockup capture
+
+On the Designs tab, **Save PNG reference** captures the static HTML mockup via `html-to-image` and stores `previewImage` on the variant for Figma handoff.
 
 ## Isolation
 
